@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
 import { MeasurementSeriesChart } from './MeasurementSeriesChart'
-import { buildSeriesChart } from './data/seriesChart'
+import { buildSeriesChart, getHoveredSeriesPoint } from './data/seriesChart'
 import type { MeasurementSeries, MeasurementSeriesPoint } from './shared/types'
 
 function bucket(hour: number, value: number | null): MeasurementSeriesPoint {
@@ -65,4 +65,21 @@ it('distinguishes an empty received period from initial loading', () => {
   expect(empty).not.toContain('Загрузка')
   expect(empty).not.toContain('неизвестным временем измерения')
   expect(renderToStaticMarkup(<MeasurementSeriesChart />)).toContain('Загрузка истории за 7 дней')
+})
+
+it('uses the current value for a hovered dot when the server refreshes the same interval', () => {
+  const hovered = { metric: series.metric, startAt: series.points[1].startAt }
+  const refreshed = { ...series, points: [bucket(1, 83)] }
+  expect(getHoveredSeriesPoint(refreshed, hovered)?.value).toBe(83)
+})
+
+it('releases dot selection when its interval disappears or becomes a gap', () => {
+  const hovered = { metric: series.metric, startAt: series.points[1].startAt }
+  expect(getHoveredSeriesPoint({ ...series, points: [bucket(2, 73)] }, hovered)).toBeUndefined()
+  expect(getHoveredSeriesPoint({ ...series, points: [bucket(1, null)] }, hovered)).toBeUndefined()
+})
+
+it('does not carry a hovered pulse value into another metric with the same interval', () => {
+  const hovered = { metric: series.metric, startAt: series.points[1].startAt }
+  expect(getHoveredSeriesPoint({ ...series, metric: 'mood' }, hovered)).toBeUndefined()
 })

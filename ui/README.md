@@ -1,5 +1,10 @@
 # AstroCheck UI (Rust)
 
+The main application now ports this layout and anatomy to React (`../src/features/`).
+Run the Rust API and React app from the repository root; that client uses the real
+BE-05 endpoints. The native programs in this directory remain a standalone demo
+with `DemoBackend`; they are not HTTP clients for the server yet.
+
 Two interfaces, one contract, for two audiences:
 
 | Audience | What they get |

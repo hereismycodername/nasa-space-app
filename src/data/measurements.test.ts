@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { ApiError, getHistory, getLatestMeasurements, getMeasurementSeries, saveMeasurement, updateTask } from './measurements'
+import { ApiError, getAssessment, getHistory, getLatestMeasurements, getMeasurementSeries, getTasks, saveMeasurement, updateTask } from './measurements'
 import type { Measurement, NewMeasurement } from '../shared/types'
 
 const input: NewMeasurement = {
@@ -7,7 +7,7 @@ const input: NewMeasurement = {
   metric: 'heartRate', value: 70, unit: 'bpm',
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 it('reads an empty history page from the relative server API', async () => {
   const page = { items: [], hasMore: false, nextCursor: null }
@@ -158,4 +158,44 @@ it('keeps the task update payload and encodes the task ID', async () => {
   expect(fetchMock).toHaveBeenCalledWith('/api/tasks/daily%2Fcheck', expect.objectContaining({
     method: 'PATCH', body: '{"completed":false}',
   }))
+})
+
+it('propagates caller cancellation through every read without dropping the deadline', async () => {
+  const caller = new AbortController()
+  const timeout = new AbortController()
+  const deadline = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal)
+  const signals: AbortSignal[] = []
+  vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => {
+    const signal = init.signal as AbortSignal
+    signals.push(signal)
+    return new Promise<Response>((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+    })
+  }))
+  const reads = [
+    getHistory({}, caller.signal), getLatestMeasurements(caller.signal), getAssessment(caller.signal), getTasks(caller.signal),
+    getMeasurementSeries({ metric: 'heartRate', from: '2026-11-07T00:00:00Z', to: '2026-11-14T00:00:00Z' }, caller.signal),
+  ]
+  const result = Promise.allSettled(reads)
+  const reason = new DOMException('View closed', 'AbortError')
+  caller.abort(reason)
+  expect(await result).toEqual(reads.map(() => ({ status: 'rejected', reason })))
+  expect(signals.every(signal => signal.aborted)).toBe(true)
+  expect(deadline).toHaveBeenCalledTimes(5)
+  expect(deadline).toHaveBeenCalledWith(5000)
+})
+
+it('still times out a read when its caller has not aborted', async () => {
+  const caller = new AbortController()
+  const timeout = new AbortController()
+  vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal)
+  vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+    const signal = init.signal as AbortSignal
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+  })))
+  const request = getTasks(caller.signal)
+  const result = expect(request).rejects.toMatchObject({ name: 'TimeoutError' })
+  timeout.abort(new DOMException('Request timed out', 'TimeoutError'))
+  await result
+  expect(caller.signal.aborted).toBe(false)
 })
