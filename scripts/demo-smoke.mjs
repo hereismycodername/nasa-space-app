@@ -19,7 +19,7 @@ const base = `http://127.0.0.1:${port}`
 let active
 function launch(args, extra = {}) {
   active = spawn(process.execPath, ['scripts/run.mjs', '--no-build', ...args], {
-    cwd: root, env: { ...process.env, BIND_ADDR: `127.0.0.1:${port}`, DATABASE_URL: `sqlite://${directory}/demo.db`, SIM_INTERVAL_MS: '100', SHUTDOWN_STDIN: '1', ...extra }, stdio: ['pipe', 'inherit', 'inherit'],
+    cwd: root, env: { ...process.env, BIND_ADDR: `127.0.0.1:${port}`, DATABASE_URL: `sqlite://${directory}/demo.db`, SIM_INTERVAL_MS: '100', SHUTDOWN_STDIN: process.platform === 'win32' ? '1' : '0', ...extra }, stdio: [process.platform === 'win32' ? 'pipe' : 'inherit', 'inherit', 'inherit'],
   })
   active.done = once(active, 'exit')
   return active
@@ -50,6 +50,10 @@ try {
   await assert.rejects(fetch(`${base}/api/health`, { signal: AbortSignal.timeout(500) }))
   console.log('PASS: demo finite run, child cleanup, persisted samples, restart, UI and Ctrl+C cleanup')
 } finally {
-  if (active && active.exitCode === null && !active.signalCode) { active.stdin.end('shutdown\n'); await finish(active) }
+  if (active && active.exitCode === null && !active.signalCode) {
+    if (process.platform === 'win32') active.stdin.end('shutdown\n')
+    else active.kill('SIGTERM')
+    await finish(active)
+  }
   await rm(directory, { recursive: true, force: true })
 }

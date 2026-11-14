@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { setTimeout as delay } from 'node:timers/promises'
 import { generateHistory, SCENARIOS } from '../simulator/history.mjs'
-import { cargoPath, root } from './tooling.mjs'
+import { cargoPath, isWindows, root } from './tooling.mjs'
 
 const demoDirectory = join(root, 'demo')
 let binary
@@ -19,14 +19,21 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
     controller.abort(new Error('Demo interrupted'))
   })
 }
+if (isWindows && process.env.SHUTDOWN_STDIN === '1') {
+  process.stdin.on('data', () => process.emit('SIGINT'))
+  process.stdin.on('end', () => process.emit('SIGINT'))
+}
 
 function launch(command, args, env = {}, capture = false) {
   controller.signal.throwIfAborted()
+  const controlled = isWindows && env.SHUTDOWN_STDIN === '1'
   const child = spawn(command, args, {
-    cwd: root, env: { ...process.env, ...env },
-    stdio: ['pipe', capture ? 'pipe' : 'inherit', 'inherit'], windowsHide: true,
+    cwd: root, env: { ...process.env, ...env, SHUTDOWN_STDIN: controlled ? '1' : '0' },
+    stdio: [controlled ? 'pipe' : 'inherit', capture ? 'pipe' : 'inherit', 'inherit'], windowsHide: true,
+    detached: !isWindows,
   })
-  child.stdin.on('error', () => { /* child may exit before shutdown is written */ })
+  child.demoShutdown = controlled
+  child.stdin?.on('error', () => { /* child may exit before shutdown is written */ })
   children.add(child)
   child.completion = new Promise(resolve => {
     child.once('error', error => resolve({ error }))
@@ -43,10 +50,9 @@ async function waitForChild(child) {
 
 async function stop(child) {
   if (child.exitCode !== null || child.signalCode !== null || !child.pid) return
-  // Opt-in stdin control works on Windows too, where kill('SIGINT') is forced
-  // termination. HTTP and standalone Ctrl+C behavior stay unchanged.
+  // Unix supervisors signal the process group; Windows uses the private pipe.
   if (child.demoShutdown) child.stdin.end('shutdown\n')
-  else child.kill('SIGINT')
+  else signal(child, 'SIGINT')
   let timer
   const exited = await Promise.race([
     child.completion.then(() => true),
@@ -55,9 +61,16 @@ async function stop(child) {
   clearTimeout(timer)
   if (!exited) {
     console.warn(`Process ${child.pid} did not stop after shutdown; terminating it.`)
-    child.kill('SIGKILL')
+    signal(child, 'SIGKILL')
     await child.completion
   }
+}
+
+function signal(child, value) {
+  try {
+    if (isWindows) child.kill(value)
+    else process.kill(-child.pid, value)
+  } catch (error) { if (error.code !== 'ESRCH') console.error(error.message) }
 }
 
 async function ensureBinary() {
@@ -114,9 +127,8 @@ async function startServer(scenario, port) {
   const base = `http://127.0.0.1:${port}`
   const child = launch(binary, [], {
     DATABASE_URL: `sqlite://demo/${scenario}.db`, BIND_ADDR: `127.0.0.1:${port}`, FRONTEND_DIST: 'dist',
-    SHUTDOWN_STDIN: '1',
+    SHUTDOWN_STDIN: isWindows ? '1' : '0',
   })
-  child.demoShutdown = true
   for (let attempt = 0; attempt < 100; attempt++) {
     controller.signal.throwIfAborted()
     if (child.exitCode !== null || child.signalCode !== null || !child.pid) {
@@ -207,9 +219,9 @@ async function start(scenario, port) {
   console.log(`Series (7 days): ${base}/api/measurements/series?${new URLSearchParams({ metric: 'heartRate', from, to: reference })}`)
   console.log('Ctrl+C stops the demo server and simulator.')
   const simulator = scenario === 'stale' ? null : launch(process.execPath, [join(root, 'simulator', 'sensors.mjs')], {
-    API_URL: base, SIM_COUNT: '0', SIM_INTERVAL_MS: '2000', SHUTDOWN_STDIN: '1',
+    API_URL: base, SIM_COUNT: '0', SIM_INTERVAL_MS: '2000', SHUTDOWN_STDIN: isWindows ? '1' : '0',
+    SIM_PROFILE: scenario === 'attention' ? 'attention' : 'normal',
   })
-  if (simulator) simulator.demoShutdown = true
   await Promise.race([
     waitForChild(child).then(() => { throw new Error('Demo server stopped unexpectedly') }),
     ...(simulator ? [waitForChild(simulator).then(() => { throw new Error('Live simulator stopped unexpectedly') })] : []),
@@ -238,8 +250,9 @@ try {
   }
 } catch (error) {
   if (!interrupted) console.error(`Demo failed: ${error.message}`)
-  process.exitCode = interrupted ? 130 : 1
+  process.exitCode = interrupted ? 0 : 1
 } finally {
   // Stop producers before storage, including on failed readiness/build/HTTP.
   for (const child of [...children].reverse()) await stop(child)
+  process.stdin.pause()
 }
