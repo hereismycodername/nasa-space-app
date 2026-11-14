@@ -1014,13 +1014,13 @@ components:
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
         - metric: diastolicPressure
@@ -1030,13 +1030,13 @@ components:
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
         - metric: temperature
@@ -1046,13 +1046,13 @@ components:
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
         - metric: sleepHours
@@ -1062,13 +1062,13 @@ components:
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 86400
+            freshForSeconds: 93600
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 86400
+            freshForSeconds: 93600
             ageSeconds: null
             clockSkew: false
         - metric: mood
@@ -1078,13 +1078,13 @@ components:
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 86400
+            freshForSeconds: 93600
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 86400
+            freshForSeconds: 93600
             ageSeconds: null
             clockSkew: false
         evaluatedAt: '2026-11-13T08:00:03Z'
@@ -1152,11 +1152,11 @@ components:
           type: integer
           enum:
           - 15
-          - 60
-          - 3600
-          - 86400
-          description: 'Demo policy in seconds: heartRate 15; spo2 60; both pressures, temperature, glucose, headache
-            and backPain 3600; sleepHours, mood, visionBlur and exerciseMinutes 86400. These operational
+          - 7200
+          - 46800
+          - 93600
+          description: 'Demo policy in seconds: heartRate 15; spo2 7200; both pressures, temperature, headache
+            and backPain 46800; sleepHours, mood, glucose, visionBlur and exerciseMinutes 93600. These operational
             freshness windows are not medical thresholds.'
         ageSeconds:
           type:
@@ -1681,65 +1681,65 @@ components:
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
         - metric: diastolicPressure
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
         - metric: temperature
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
         - metric: sleepHours
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 86400
+            freshForSeconds: 93600
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 86400
+            freshForSeconds: 93600
             ageSeconds: null
             clockSkew: false
         - metric: mood
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 86400
+            freshForSeconds: 93600
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 86400
+            freshForSeconds: 93600
             ageSeconds: null
             clockSkew: false
     MissionDate:

@@ -35,15 +35,16 @@ export function AnatomyDiagram({ mode = 'organs', selected, hovered = null, onHo
         <title id={titleId}>Анатомическая карта: выберите систему, чтобы открыть связанные показатели</title>
         <g aria-hidden="true">
           {parts.map((part, index) => {
-            const appearance = anatomyAppearance(mode, part.system, part.layer, selected, hovered)
+            const appearance = anatomyAppearance(mode, part.system, part.layer, selected, hovered, healthStatuses, part.name)
+            const color = appearance.color ?? part.color
             // The flat skin is the backdrop; keep its silhouette readable behind the organs.
             const opacity = part.layer === 'skin' ? 1 : appearance.opacity
             return <path key={index} d={part.d}
             data-system={part.system}
             className={`anatomy-part anatomy-layer-${part.layer}${part.system === selected ? ' anatomy-selected' : ''}${part.hit ? ' anatomy-clickable' : ''}`}
             style={{ opacity, filter: `brightness(${appearance.light})`, pointerEvents: part.hit && appearance.pickable ? 'visiblePainted' : 'none' }}
-            fill={part.width === 0 ? part.color : 'none'}
-            stroke={part.width === 0 ? (part.layer === 'skin' ? '#40546c' : part.color) : part.color}
+            fill={part.width === 0 ? color : 'none'}
+            stroke={part.width === 0 ? (part.layer === 'skin' ? '#40546c' : color) : color}
             strokeWidth={part.width || 0.65} strokeLinejoin="round" strokeLinecap="round"
             onPointerEnter={() => onHover?.(part.system)}
             onClick={part.hit && appearance.pickable ? () => choose(part.system) : undefined} />

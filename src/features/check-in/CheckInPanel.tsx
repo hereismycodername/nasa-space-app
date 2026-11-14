@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { METRICS } from '../dashboard/metrics'
+import { METRICS, formatUnit, formatValue } from '../dashboard/metrics'
 import type { Metric } from '../../shared/types'
 import { createMeasurementSaver, isUnconfirmedSave, localDateTime, parseCheckIn } from './submission'
 import './forms.css'
@@ -50,7 +50,7 @@ export function CheckInPanel({ initialMetric = 'heartRate', onSaved, onClose, su
     setPending(true)
     try {
       const saved = await submitMeasurement(input)
-      setSuccess(`${config.label}: ${saved.value} ${saved.unit}. Измерение сохранено.`)
+      setSuccess(`${config.label}: ${formatValue(saved.value)} ${formatUnit(saved.unit, saved.metric)}. Измерение сохранено.`)
       setValue('')
       setLocalTime(localDateTime())
       setUnconfirmed(false)
@@ -81,7 +81,7 @@ export function CheckInPanel({ initialMetric = 'heartRate', onSaved, onClose, su
           </select>
         </div>
         <div className="form-field">
-          <label htmlFor="checkin-value">Значение · {config.unit}</label>
+          <label htmlFor="checkin-value">Значение · {formatUnit(config.unit, config.id)}</label>
           <input id="checkin-value" name="value" type="number" inputMode="decimal" value={value} disabled={!supported}
             min={config.input.min} max={config.input.max} step="any" required
             placeholder={config.input.max !== undefined ? `От ${config.input.min} до ${config.input.max}` : 'Введите значение'}

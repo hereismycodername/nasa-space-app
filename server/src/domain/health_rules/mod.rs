@@ -212,7 +212,12 @@ fn evaluate_metric(
     result.status = outcome.status;
     result.explanation = format!(
         "{} {}. {} {}",
-        row.value, row.unit, outcome.criterion, definition.limitation,
+        format_value(row.value),
+        explanation_unit(policy).trim_end_matches('.'),
+        outcome
+            .criterion
+            .replace(policy.unit, explanation_unit(policy)),
+        definition.limitation,
     );
     result.measurement_ids.push(row.id.clone());
     result.valid_until = Some(
@@ -227,6 +232,26 @@ fn evaluate_metric(
 
 fn valid_value(row: &Measurement, policy: &MetricDefinition) -> bool {
     row.metric == policy.metric && row.unit == policy.unit && policy.bounds.contains(row.value)
+}
+
+fn format_value(value: f64) -> String {
+    format!("{value:.2}")
+        .trim_end_matches('0')
+        .trim_end_matches('.')
+        .replace('.', ",")
+}
+
+fn explanation_unit(policy: &MetricDefinition) -> &str {
+    match policy.unit {
+        "score" if policy.metric == "mood" => "из 5",
+        "score" => "из 10",
+        "h" => "ч",
+        "bpm" => "уд/мин",
+        "mmHg" => "мм рт. ст.",
+        "min" => "мин",
+        "mg/dL" => "мг/дл",
+        unit => unit,
+    }
 }
 
 #[cfg(test)]
