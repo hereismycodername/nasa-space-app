@@ -2,7 +2,7 @@ use super::{
     freshness::{evaluate, FreshnessStatus},
     history::LatestMetric,
     measurements::Measurement,
-    metric_config::{definition_for, LEGACY_SUMMARY_METRICS},
+    metric_config::definition_for,
 };
 use chrono::{DateTime, Utc};
 
@@ -54,7 +54,7 @@ pub(crate) fn assess(
     })
 }
 
-/// Select the compatibility summary from the same per-metric read snapshot.
+/// Select the last receipt across all metrics from the same read snapshot.
 pub(crate) fn assess_snapshot(
     metrics: &[LatestMetric],
     now: DateTime<Utc>,
@@ -62,7 +62,6 @@ pub(crate) fn assess_snapshot(
     let mut latest: Option<(i64, &str, &Measurement)> = None;
     for row in metrics
         .iter()
-        .filter(|metric| LEGACY_SUMMARY_METRICS.contains(&metric.metric))
         .filter_map(|metric| metric.latest_received_measurement.as_ref())
     {
         let received_ms = DateTime::parse_from_rfc3339(&row.received_at)
@@ -163,8 +162,8 @@ mod tests {
                 ),
             ),
             entry(
-                "sleepHours",
-                sample("z", "sleepHours", None, "2026-11-14T05:00:00+05:00"),
+                "headache",
+                sample("z", "headache", None, "2026-11-14T05:00:00+05:00"),
             ),
             entry(
                 "mood",

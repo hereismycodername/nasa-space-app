@@ -599,8 +599,8 @@ async fn new_metrics_accept_manual_input_validate_fields_and_expose_all_latest_e
 }
 
 #[tokio::test]
-async fn new_series_aggregate_mean_and_last_without_changing_the_legacy_summary() {
-    let app = setup().await;
+async fn new_series_aggregate_mean_and_last_and_summary_selects_latest_received_metric() {
+    let (app, pool) = setup_with_pool().await;
     let measured = chrono::Utc::now().to_rfc3339();
     for (sequence, (metric, unit, value)) in [
         ("heartRate", "bpm", 72.0),
@@ -622,6 +622,7 @@ async fn new_series_aggregate_mean_and_last_without_changing_the_legacy_summary(
     }
     let (_, before) = call(&app, "GET", "/api/assessments", Value::Null).await;
     assert_eq!(before["status"], "not-evaluated");
+    assert_eq!(before["metrics"].as_array().unwrap().len(), 12);
     assert_eq!(
         before["metrics"]
             .as_array()
@@ -659,7 +660,32 @@ async fn new_series_aggregate_mean_and_last_without_changing_the_legacy_summary(
             assert_eq!(series["points"][0]["max"], Value::Null);
         }
     }
+    // Keep earlier receipts strictly older, regardless of clock resolution or id ties.
+    sqlx::query("UPDATE measurements SET received_at='2020-01-01T00:00:00Z'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let input = json!({"deviceId":"manual-01", "sessionId":"headache", "sequence":2,
+        "metric":"headache", "unit":"score", "value":4.5});
+    let (status, headache) = call(&app, "POST", "/api/measurements", input).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(headache["measuredAt"], Value::Null);
     let (_, after) = call(&app, "GET", "/api/assessments", Value::Null).await;
-    assert_eq!(after["status"], before["status"]);
-    assert_eq!(after["explanation"], before["explanation"]);
+    assert_eq!(after["status"], "unknown-time");
+    assert_ne!(after["explanation"], before["explanation"]);
+    let metrics = after["metrics"].as_array().unwrap();
+    assert_eq!(metrics.len(), 12);
+    assert_eq!(
+        metrics
+            .iter()
+            .filter(|row| row["quality"]["status"] == "missing")
+            .count(),
+        4
+    );
+    let quality = &metrics
+        .iter()
+        .find(|row| row["metric"] == "headache")
+        .unwrap()["latestReceivedQuality"];
+    assert_eq!(quality["measurementId"], headache["id"]);
+    assert_eq!(quality["status"], "unknownTime");
 }
