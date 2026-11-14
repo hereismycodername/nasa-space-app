@@ -30,6 +30,12 @@ impl ApiError {
         self.field = Some(field);
         self
     }
+    pub fn task_body_error(mut self) -> Self {
+        if self.status == StatusCode::UNPROCESSABLE_ENTITY {
+            self.status = StatusCode::BAD_REQUEST;
+        }
+        self
+    }
 }
 
 #[derive(Serialize)]
@@ -77,6 +83,9 @@ impl From<ValidationError> for ApiError {
 }
 impl From<InvalidStoredTimestamp> for ApiError {
     fn from(_: InvalidStoredTimestamp) -> Self {
+        eprintln!(
+            "Storage error: invalid timestamp in a stored measurement; check database integrity"
+        );
         Self::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             "DATABASE_ERROR",
@@ -97,6 +106,9 @@ impl From<sqlx::Error> for ApiError {
 
 impl From<InvalidSeriesData> for ApiError {
     fn from(_: InvalidSeriesData) -> Self {
+        eprintln!(
+            "Storage error: invalid aggregate in a measurement series; check database integrity"
+        );
         Self::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             "DATABASE_ERROR",

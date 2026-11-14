@@ -5,16 +5,19 @@ import { anatomySystems } from './anatomySystems'
 import type { AnatomyMode } from './anatomySystems'
 import { anatomyAppearance } from './anatomyAppearance'
 import type { SystemId } from './types'
+import type { RuleStatus } from '../../shared/types'
+import { healthLabels } from '../dashboard/health'
 
 const callouts = anatomySystems.map(callout => ({ ...callout, ...ANATOMY_ANCHORS[callout.system] }))
 
-export function AnatomyDiagram({ mode = 'organs', selected, hovered = null, onHover, onSelect, availableSystems }: {
+export function AnatomyDiagram({ mode = 'organs', selected, hovered = null, onHover, onSelect, availableSystems, healthStatuses }: {
   mode?: AnatomyMode
   selected: SystemId | null
   hovered?: SystemId | null
   onHover?: (system: SystemId | null) => void
   onSelect: (system: SystemId | null) => void
   availableSystems: SystemId[]
+  healthStatuses?: Partial<Record<SystemId, RuleStatus>>
 }) {
   const titleId = useId()
   const order = (part: typeof anatomyParts[number]) => part.layer === 'skin' ? 0 : part.system === selected ? 3
@@ -65,6 +68,7 @@ export function AnatomyDiagram({ mode = 'organs', selected, hovered = null, onHo
             <rect className="anatomy-marker" x={callout.x - 2.5} y={callout.y - 2.5} width={5} height={5} />
             <text className="anatomy-label" x={textX} y={callout.labelY - 3} textAnchor={left ? 'start' : 'end'}>{callout.label}</text>
             <text className="anatomy-state" x={textX} y={callout.labelY + 10} textAnchor={left ? 'start' : 'end'}>{available ? 'Есть данные' : 'Нет данных'}</text>
+            {healthStatuses?.[callout.system] ? <text className={`anatomy-health-label health-${healthStatuses[callout.system]}`} x={textX} y={callout.labelY + 21} textAnchor={left ? 'start' : 'end'}>{healthLabels[healthStatuses[callout.system]!]}</text> : null}
           </g>
         })}
       </svg>

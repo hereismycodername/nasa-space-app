@@ -2,7 +2,7 @@ use super::{
     dto::{
         AssessmentResponse, HealthResponse, HistoryRequest, HistoryResponse, LatestRequest,
         LatestResponse, MeasurementResponse, NewMeasurementRequest, SeriesRequest, SeriesResponse,
-        TaskResponse, TaskUpdateRequest,
+        TaskUpdateRequest, TaskUpdateResponse, TasksRequest, TasksResponse,
     },
     error::{ApiError, ApiResult},
     extractors::{ApiJson, ApiPath, ApiQuery},
@@ -12,7 +12,6 @@ use crate::{domain, storage};
 use axum::{extract::State, http::StatusCode, Json};
 use chrono::Utc;
 use sqlx::SqlitePool;
-use std::collections::HashMap;
 
 pub(crate) async fn health(State(pool): State<SqlitePool>) -> ApiResult<Json<HealthResponse>> {
     storage::check_connection(&pool).await?;
@@ -78,6 +77,7 @@ pub(crate) async fn ingest(
         storage::measurements::insert_or_get(&pool, &input, &device, &received_at.to_rfc3339())
             .await?;
     let matches = outcome.measurement.matches_payload(&input).map_err(|_| {
+        eprintln!("Storage error: saved measurement has invalid time; check database integrity");
         ApiError::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             "DATABASE_ERROR",
@@ -113,26 +113,42 @@ pub(crate) async fn assessments(
 }
 pub(crate) async fn tasks(
     State(pool): State<SqlitePool>,
-    ApiQuery(_): ApiQuery<HashMap<String, String>>,
-) -> ApiResult<Json<Vec<TaskResponse>>> {
-    Ok(Json(
-        storage::tasks::list(&pool)
+    ApiQuery(input): ApiQuery<TasksRequest>,
+) -> ApiResult<Json<TasksResponse>> {
+    let mission_date = match input.date.as_deref() {
+        Some(date) => domain::tasks::parse_date(Some(date), "date")?,
+        None => Utc::now().date_naive(),
+    };
+    Ok(Json(TasksResponse {
+        mission_date: mission_date.to_string(),
+        tasks: storage::tasks::list_for_date(&pool, DEMO_ASTRONAUT_ID, mission_date)
             .await?
             .into_iter()
             .map(Into::into)
             .collect(),
-    ))
+    }))
 }
 pub(crate) async fn update_task(
     State(pool): State<SqlitePool>,
     ApiPath(id): ApiPath<String>,
-    ApiJson(input): ApiJson<TaskUpdateRequest>,
-) -> ApiResult<Json<TaskResponse>> {
-    let completed_at = domain::tasks::completion_time(input.completed, Utc::now());
-    let task = storage::tasks::set_completion(&pool, &id, completed_at)
-        .await?
-        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "TASK_NOT_FOUND", "Task not found"))?;
-    Ok(Json(task.into()))
+    input: Result<ApiJson<TaskUpdateRequest>, ApiError>,
+) -> ApiResult<Json<TaskUpdateResponse>> {
+    let ApiJson(input) = input.map_err(ApiError::task_body_error)?;
+    let mission_date = domain::tasks::parse_date(input.mission_date.as_str(), "missionDate")?;
+    let task = storage::tasks::set_completion_for_date(
+        &pool,
+        DEMO_ASTRONAUT_ID,
+        &id,
+        mission_date,
+        input.completed,
+        Utc::now(),
+    )
+    .await?
+    .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "TASK_NOT_FOUND", "Task not found"))?;
+    Ok(Json(TaskUpdateResponse {
+        mission_date: mission_date.to_string(),
+        task: task.into(),
+    }))
 }
 pub(crate) async fn not_found() -> ApiError {
     ApiError::new(StatusCode::NOT_FOUND, "NOT_FOUND", "Unknown API route")

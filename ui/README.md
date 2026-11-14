@@ -3,7 +3,7 @@
 Both native programs now default to the same BE-06 HTTP API as React. Run
 `npm run demo` from the repository root, then start the window or terminal client.
 No native SQLite database or additional API server is created. A shared `ui-http`
-adapter polls real measurements, seven-day UTC series and tasks on a background
+adapter polls real measurements, server health guidance, seven-day UTC series and tasks on a background
 thread. Writes are confirmed by the server before success is reported.
 
 ```bash
@@ -16,12 +16,27 @@ cargo run --locked --manifest-path ui/Cargo.toml -p ui-gui -- --api-url http://1
 
 `--api-url` overrides `ASTROCHECK_API_URL`, whose default is `http://127.0.0.1:8080`.
 `--ground` starts TUI in Ground; GUI uses `--role ground`. Both support `--help`.
-The API owns the single `demo-astronaut` profile, six metrics and task completion.
-Live clients display source, measurement/receipt time and server freshness;
-medical assessment, scores, baseline advice, uplink and ACK are not implemented
-by BE-06 and are not simulated in live mode. API failures keep the client in live
+The API owns the single `demo-astronaut` profile, measurements and task completion.
+The clients discover supported metrics from the latest-measurements response: the
+original six work on older servers; the additional six appear only when the
+server advertises them. Live clients display source, measurement/receipt time and
+server freshness separately from BE-08 health guidance. The server owns all health
+rules; green means no configured rule alert, amber attention, red urgent action,
+and grey means unevaluated or insufficient data. These are demonstration rules,
+not diagnoses or validated astronaut limits. Rules with an expired validity time,
+unmatched measurement ID, failed assessment refresh or offline connection cannot
+remain current; prior guidance stays explicitly historical.
+
+GUI metric cards and body-system labels reflect current rules. Expand a card for
+next steps, escalation, flight context and source links; the health panel includes
+urgent-symptom guidance and the five spaceflight hazards. In TUI, use `i` for the
+selected metric, `h` for health guidance, and `f` for flight education; arrow keys
+and PageUp/PageDown scroll these views. New urgent results automatically open the
+health view. `Enter` edits a measurement, `Tab` switches to tasks, and `?` lists keys.
+An older BE-06 server without health rules stays usable with neutral status.
+Scores, baseline advice, uplink and ACK remain unavailable in live mode. API failures keep the client in live
 mode with a visible error and cached data, never switch to fake measurements.
-Polling is about 2 seconds for latest/tasks and 10 seconds for series.
+Polling is about 2 seconds for latest/tasks/assessments and 10 seconds for series.
 Pending writes are in memory, not a durable offline outbox; await confirmation
 before closing the client. Retry attempts reuse the exact measurement payload/key.
 Task updates with a lost response are not automatically replayed: the existing
@@ -101,7 +116,8 @@ docs/             screenshots and terminal frames
 ## Backend extension point
 
 `ui-http::HttpBackend` implements this contract for the main server. Its live-mode
-methods expose connection state, provenance, timed series, pending sends and tasks.
+methods expose connection state, provenance, timed series, pending sends, tasks and
+health reports with client validity metadata. No health threshold is duplicated in the UI.
 The original methods below remain the interface for standalone demo extensions.
 
 1. `impl ui_model::Backend for YourBackend` (see `crates/ui-model/src/backend.rs`, every method is documented).

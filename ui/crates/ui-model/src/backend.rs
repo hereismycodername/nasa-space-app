@@ -7,6 +7,9 @@ use crate::types::*;
 pub trait Backend {
     /// The explicit standalone demo has additional simulated capabilities.
     fn is_demo(&self) -> bool { true }
+    /// Server-owned rules, evidence and flight guidance; independent of data freshness.
+    fn health_report(&self) -> crate::HealthReport { crate::HealthReport::default() }
+    fn health_rule(&self, _indicator: &str) -> Option<crate::HealthRule> { None }
     fn connection_label(&self) -> String { "Standalone demo data".into() }
     /// Provenance, measurement time and quality of the displayed latest value.
     fn measurement_detail(&self, _indicator: &str) -> String { String::new() }

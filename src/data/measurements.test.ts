@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { ApiError, getAssessment, getHistory, getLatestMeasurements, getMeasurementSeries, getTasks, saveMeasurement, updateTask } from './measurements'
 import type { Measurement, NewMeasurement } from '../shared/types'
+import { confirmTaskUpdate } from '../features/tasks/confirmation'
 
 const input: NewMeasurement = {
   deviceId: 'manual-01', sessionId: 'test', sequence: 0,
@@ -156,13 +157,40 @@ it('preserves network failures instead of turning them into HTTP errors', async 
 })
 
 it('keeps the task update payload and encodes the task ID', async () => {
-  const task = { id: 'daily/check', title: 'Check', completedAt: null }
+  const task = { missionDate: '2026-11-14', id: 'daily/check', title: 'Check', completedAt: null }
   const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(task), { status: 200 }))
   vi.stubGlobal('fetch', fetchMock)
-  expect(await updateTask(task.id, false)).toEqual(task)
+  expect(await updateTask(task.id, '2026-11-14', false)).toEqual(task)
   expect(fetchMock).toHaveBeenCalledWith('/api/tasks/daily%2Fcheck', expect.objectContaining({
-    method: 'PATCH', body: '{"completed":false}',
+    method: 'PATCH', body: '{"missionDate":"2026-11-14","completed":false}',
   }))
+})
+
+it('sends the missionDate returned by GET when confirming a task after UTC midnight', async () => {
+  vi.useFakeTimers()
+  try {
+    vi.setSystemTime(new Date('2026-11-14T23:59:59Z'))
+    const task = { id: 'daily-check', title: 'Check', completedAt: null }
+    const snapshot = { missionDate: '2026-11-14', tasks: [task] }
+    const saved = { ...task, missionDate: snapshot.missionDate, completedAt: '2026-11-15T00:00:01Z' }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(snapshot), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(saved), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(snapshot), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const received = await getTasks()
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/tasks')
+    vi.setSystemTime(new Date('2026-11-15T00:00:01Z'))
+    const confirmed = await confirmTaskUpdate(task.id, received.missionDate, true, () => received.tasks[0])
+    expect(fetchMock.mock.calls[1]).toEqual(['/api/tasks/daily-check', expect.objectContaining({
+      method: 'PATCH', body: JSON.stringify({ missionDate: received.missionDate, completed: true }),
+    })])
+    expect(confirmed.value).toEqual(saved)
+    expect(await getTasks(received.missionDate)).toEqual(snapshot)
+    expect(fetchMock.mock.calls[2][0]).toBe('/api/tasks?date=2026-11-14')
+  } finally {
+    vi.useRealTimers()
+  }
 })
 
 it('propagates caller cancellation through every read without dropping the deadline', async () => {
@@ -178,7 +206,7 @@ it('propagates caller cancellation through every read without dropping the deadl
     })
   }))
   const reads = [
-    getHistory({}, caller.signal), getLatestMeasurements(caller.signal), getAssessment(caller.signal), getTasks(caller.signal),
+    getHistory({}, caller.signal), getLatestMeasurements(caller.signal), getAssessment(caller.signal), getTasks(undefined, caller.signal),
     getMeasurementSeries({ metric: 'heartRate', from: '2026-11-07T00:00:00Z', to: '2026-11-14T00:00:00Z' }, caller.signal),
   ]
   const result = Promise.allSettled(reads)
@@ -198,7 +226,7 @@ it('still times out a read when its caller has not aborted', async () => {
     const signal = init.signal as AbortSignal
     signal.addEventListener('abort', () => reject(signal.reason), { once: true })
   })))
-  const request = getTasks(caller.signal)
+  const request = getTasks(undefined, caller.signal)
   const result = expect(request).rejects.toMatchObject({ name: 'TimeoutError' })
   timeout.abort(new DOMException('Request timed out', 'TimeoutError'))
   await result

@@ -23,6 +23,7 @@ struct Prepared {
 pub struct Figure {
     parts: Vec<Prepared>,
     callouts: Vec<anatomy::Callout>,
+    live_labels: bool,
 }
 
 fn tint(c: [u8; 3], k: f32, a: f32) -> Color32 {
@@ -48,7 +49,26 @@ impl Figure {
                 Prepared { part, tris, center, half }
             })
             .collect();
-        Figure { parts, callouts: anatomy::callouts() }
+        Figure { parts, callouts: anatomy::callouts(), live_labels: false }
+    }
+
+    /// The shared-server view reports metric-rule alerts, not organ diagnoses.
+    pub fn with_live_labels(mut self) -> Self {
+        self.live_labels = true;
+        self
+    }
+
+    fn callout_labels<'a>(&self, system: &str, original: &'a str, status: Status) -> (&'a str, &'a str) {
+        if self.live_labels {
+            (if system == "immune" { "BODY / TEMP" } else { original }, match status {
+                Status::Normal => "NO ALERTS",
+                Status::Watch => "ATTENTION",
+                Status::Act => "URGENT",
+                Status::Unassessed | Status::NoData => "NOT ASSESSED",
+            })
+        } else {
+            (original, status.name())
+        }
     }
 
     fn layer_alpha(layer: Layer, mode: Mode) -> f32 {
@@ -207,7 +227,11 @@ impl Figure {
         // --- callouts: leader line, status marker, label
         for (c, (lr, _)) in self.callouts.iter().zip(&label_rects) {
             let st = status_of(c.sys);
-            let col = status_color(st);
+            let col = if self.live_labels { match st {
+                Status::Normal => Color32::from_rgb(89, 199, 139),
+                Status::Unassessed | Status::NoData => MUT,
+                _ => status_color(st),
+            }} else { status_color(st) };
             let sel = c.sys == selected;
             let hov = hovered == Some(c.sys);
             let anchor = to_screen(c.anchor);
@@ -228,8 +252,9 @@ impl Figure {
                 Side::Left => (pos2(lr.left() + 2.0, ly), Align2::LEFT_CENTER),
                 Side::Right => (pos2(lr.right() - 2.0, ly), Align2::RIGHT_CENTER),
             };
-            painter.text(pos + vec2(0.0, -6.0), al, c.label.to_uppercase(), FontId::proportional(10.5), if sel { TXT } else { Color32::from_rgb(0xc4, 0xcd, 0xd9) });
-            painter.text(pos + vec2(0.0, 7.0), al, st.name().to_uppercase(), FontId::proportional(8.5), col);
+            let (label, status) = self.callout_labels(c.sys, c.label, st);
+            painter.text(pos + vec2(0.0, -6.0), al, label.to_uppercase(), FontId::proportional(10.5), if sel { TXT } else { Color32::from_rgb(0xc4, 0xcd, 0xd9) });
+            painter.text(pos + vec2(0.0, 7.0), al, status.to_uppercase(), FontId::proportional(8.5), col);
         }
 
         if resp.clicked() {
@@ -247,4 +272,19 @@ fn mesh(pts: &[Pos2], tris: &[[u32; 3]], colors: &[Color32]) -> Shape {
         m.indices.extend_from_slice(&[t[0], t[1], t[2]]);
     }
     Shape::Mesh(Arc::new(m))
+}
+
+#[cfg(test)]
+mod live_label_tests {
+    use super::*;
+    #[test]
+    fn live_temperature_and_missing_data_do_not_claim_organ_health() {
+        let demo = Figure::new();
+        assert_eq!(demo.callout_labels("immune", "Immune", Status::Normal), ("Immune", "Normal"));
+        let live = demo.with_live_labels();
+        assert_eq!(live.callout_labels("immune", "Immune", Status::Normal), ("BODY / TEMP", "NO ALERTS"));
+        assert_eq!(live.callout_labels("eyes", "Eyes", Status::NoData), ("Eyes", "NOT ASSESSED"));
+        assert_eq!(live.callout_labels("heart", "Heart", Status::Unassessed), ("Heart", "NOT ASSESSED"));
+        assert_eq!(live.callout_labels("heart", "Heart", Status::Act), ("Heart", "URGENT"));
+    }
 }

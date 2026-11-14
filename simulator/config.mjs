@@ -19,8 +19,10 @@ function integer(env, name, fallback, minimum, maximum) {
 
 export function simulatorConfig(env = process.env) {
   const interval = integer(env, 'SIM_INTERVAL_MS', 2000, 100, 2_147_483_647)
+  const profile = env.SIM_PROFILE ?? 'normal'
+  if (!['normal', 'attention'].includes(profile)) throw new Error('SIM_PROFILE must be normal or attention (synthetic test data)')
   return {
-    base: apiOrigin(env.API_URL), interval,
+    base: apiOrigin(env.API_URL), interval, profile,
     count: integer(env, 'SIM_COUNT', 0, 0, Number.MAX_SAFE_INTEGER),
     retry: integer(env, 'SIM_RETRY_MS', interval, 100, 2_147_483_647),
     timeout: integer(env, 'SIM_REQUEST_TIMEOUT_MS', 5000, 100, 60_000),
