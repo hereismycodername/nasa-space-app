@@ -3,6 +3,7 @@
 
 mod figure;
 mod ground;
+mod live;
 mod theme;
 mod widgets;
 
@@ -41,6 +42,8 @@ enum Pvt {
 
 #[derive(Default)]
 struct Opts {
+    demo: bool,
+    api_url: Option<String>,
     lite: bool,
     shot: Option<String>,
     tab: Option<String>,
@@ -240,7 +243,7 @@ impl<B: Backend> GuiApp<B> {
                 Status::Normal => Some(100),
                 Status::Watch => Some(62),
                 Status::Act => Some(25),
-                Status::NoData => None,
+                Status::NoData | Status::Unassessed => None,
             })
             .collect();
         if v.is_empty() {
@@ -1163,6 +1166,10 @@ fn main() -> eframe::Result {
     let mut a = std::env::args().skip(1);
     while let Some(x) = a.next() {
         match x.as_str() {
+            "--demo" => o.demo = true,
+            "--api-url" => {
+                o.api_url = Some(a.next().ok_or_else(|| eframe::Error::AppCreation(Box::new(std::io::Error::other("--api-url requires a URL"))))?);
+            }
             "--lite" => o.lite = true,
             "--screenshot" => o.shot = a.next(),
             "--tab" => o.tab = a.next(),
@@ -1193,10 +1200,10 @@ fn main() -> eframe::Result {
                 }
             }
             "--help" | "-h" => {
-                println!("astrocheck-gui [--lite] [--role crew|ground] [--pos X,Y] [--env iss|orion|moon|mars|transit] [--size WxH]\n  visual checks: --screenshot FILE.png --tab main|comms|system --system ID --metric ID --crew ID --mode organs|skeleton|xray --blackout --storm --checkin --pvt");
+                println!("astrocheck-gui [--api-url URL] [--role crew|ground] [--lite] [--size WxH]\n  Default: shared Rust API, ASTROCHECK_API_URL or http://127.0.0.1:8080\n  --demo: standalone synthetic demo, separate from the server\n  visual checks: --screenshot FILE.png --system ID --metric ID --mode organs|skeleton|xray --pos X,Y\n  demo-only: --tab main|comms|system --crew ID --env iss|orion|moon|mars|transit --blackout --storm --checkin --pvt");
                 return Ok(());
             }
-            _ => {}
+            _ => return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(format!("Unknown option: {x}"))))),
         }
     }
     let (w, h) = o.size.unwrap_or((1360.0, 800.0));
@@ -1211,8 +1218,13 @@ fn main() -> eframe::Result {
         options,
         Box::new(move |cc| {
             theme::apply(&cc.egui_ctx);
-            // Swap DemoBackend for the real backend: anything that implements ui_model::Backend.
-            Ok(Box::new(GuiApp::new(DemoBackend::new(), o)))
+            if o.demo {
+                Ok(Box::new(GuiApp::new(DemoBackend::new(), o)))
+            } else {
+                let url = o.api_url.clone().or_else(|| std::env::var("ASTROCHECK_API_URL").ok()).unwrap_or_else(|| "http://127.0.0.1:8080".into());
+                let backend = ui_http::HttpBackend::connect(&url).map_err(std::io::Error::other)?;
+                Ok(Box::new(live::LiveApp::new(backend, o)))
+            }
         }),
     )
 }

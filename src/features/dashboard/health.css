@@ -1,0 +1,57 @@
+.health-badge { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; border: 1px solid currentColor; padding: 4px 6px; color: #9aa5b4; font: 10px/1.4 var(--technical); }
+.health-badge i { width: 5px; height: 5px; background: currentColor; flex-shrink: 0; }
+.health-noAlert { color: #79c5a5; }
+.health-attention { color: var(--warning); }
+.health-critical { color: #ff978c; }
+.health-panel { margin-bottom: 20px; border-top: 2px solid #596473; }
+.health-panel-noAlert { border-top-color: #79c5a5; }
+.health-panel-attention { border-top-color: var(--warning); }
+.health-panel-critical { border-top-color: var(--error); }
+.health-panel .section-heading { gap: 12px; align-items: flex-start; }
+.health-panel .section-heading .note { margin-top: 5px; }
+.health-summary { font-size: 14px; line-height: 1.6; }
+.health-coverage { display: flex; gap: 8px 20px; flex-wrap: wrap; margin-top: 12px; color: var(--muted); font: 10px/1.6 var(--technical); }
+.metric-health { margin: 12px 0 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+.metric-health-label { display: block; margin-bottom: 6px; font-size: 10px; color: var(--muted); }
+.metric-card.metric-health-noAlert::before { background: #79c5a5; }
+.metric-card.metric-health-attention::before { background: var(--warning); }
+.metric-card.metric-health-critical::before { background: var(--error); }
+.health-reason { font-size: 11px; line-height: 1.7; margin-top: 7px; color: #b1bbc9; }
+.health-next-action { margin-top: 10px; padding-left: 10px; border-left: 2px solid #8d8472; font-size: 11px; line-height: 1.7; color: #d2d7de; }
+.health-next-action strong { font-weight: 500; }
+.health-next-action p { margin-top: 4px; }
+.health-details details { margin-top: 9px; font-size: 11px; }
+.health-details summary, .emergency-guidance summary, .hazard-list summary { cursor: pointer; color: #b2c4df; line-height: 1.6; padding: 6px 0; }
+.health-guidance { display: grid; gap: 12px; margin-top: 10px; line-height: 1.7; }
+.health-guidance h4 { color: var(--text); font-size: 11px; font-weight: 600; margin-bottom: 3px; }
+.health-guidance p { color: #b1bbc9; }
+.health-sources { list-style: none; display: flex; flex-wrap: wrap; gap: 5px 14px; padding: 0; margin: 6px 0 0; font-size: 10px; }
+.health-sources a { color: #9cbdfa; text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.historical-health { margin-top: 10px; border-left: 2px solid #6d6c6b; padding: 6px 9px; font-size: 11px; line-height: 1.6; color: #adb3bc; background: #ffffff04; }
+.historical-health strong { font-weight: 500; color: #d5c2ae; }
+.historical-health p + p { margin-top: 5px; }
+.health-alerts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; margin-top: 17px; padding-top: 14px; border-top: 1px solid var(--border); }
+.health-alert-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.health-disclaimer { padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--border); font-size: 11px; line-height: 1.7; color: var(--muted); }
+.emergency-guidance { margin-top: 14px; font-size: 12px; line-height: 1.7; }
+.emergency-guidance p { margin-top: 5px; }
+.health-panel-critical .emergency-guidance { border-left: 2px solid var(--error); padding-left: 12px; }
+.flight-education { margin-top: 20px; }
+.hazard-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; margin-top: 12px; }
+.hazard-list details { border-top: 1px solid var(--border); padding: 6px 0; font-size: 12px; line-height: 1.7; }
+.hazard-list details > div { padding: 6px 0 10px; }
+.hazard-list p + p { margin-top: 8px; }
+.system-row .health-badge { justify-self: end; font-size: 8px; padding: 2px 3px; text-align: left; }
+.system-health-list .system-row { grid-template-columns: minmax(0, 1fr) auto 28px; }
+.ground-center > .health-panel { margin-top: 16px; }
+.observation-row .metric-health { grid-column: 1 / -1; }
+.telemetry-channel .metric-health { margin-bottom: 0; }
+.anatomy-health-status { display: block; font-size: 9px; margin-top: 2px; }
+.anatomy-health-label { fill: currentColor; color: #9aa5b4; font-size: 7px; }
+.anatomy-health-label.health-noAlert { color: #79c5a5; }
+.anatomy-health-label.health-attention { color: var(--warning); }
+.anatomy-health-label.health-critical { color: #ff978c; }
+.system-checkin-actions { margin: 12px 0 20px; padding: 12px; border: 1px solid var(--border); background: var(--panel); }
+.system-checkin-actions > div { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.system-checkin-actions button { white-space: normal; text-align: left; font-size: 10px; justify-content: flex-start; }
+@media (max-width: 650px) { .health-panel .section-heading { flex-wrap: wrap; } .hazard-list { grid-template-columns: 1fr; } .health-panel { padding: 14px; } }

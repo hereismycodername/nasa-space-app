@@ -21,6 +21,8 @@
     "test:bridge": "python3 -B -m unittest discover -s tools -p \"test_*.py\"",
     "test:tools": "npm run test:tooling && npm run test:bridge",
     "test:demo": "node scripts/demo-smoke.mjs",
+    "test:native-api": "node scripts/native-http-smoke.mjs",
+    "test:assessment": "node scripts/assessment-smoke.mjs",
     "demo:prepare": "node scripts/demo.mjs prepare",
     "demo:start": "node scripts/demo.mjs start",
     "check:server": "cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",
@@ -35,12 +37,14 @@
     "react-dom": "^19.3.1",
     "recharts": "^3.10.1",
     "tailwindcss": "^4.3.5",
+    "three": "0.187.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/three": "0.187.0",
     "@vitejs/plugin-react": "^6.1.2",
     "oxlint": "^1.90.0",
     "typescript": "~7.0.2",

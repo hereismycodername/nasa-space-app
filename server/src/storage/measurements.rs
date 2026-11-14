@@ -121,7 +121,7 @@ pub(crate) async fn latest_by_metric(
         );
     let rows = query.build().fetch_all(pool).await?;
     let mut metrics: Vec<_> = METRICS
-        .into_iter()
+        .iter()
         .map(|definition| LatestMetric {
             metric: definition.metric,
             latest_measurement: None,

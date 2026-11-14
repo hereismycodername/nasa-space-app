@@ -18,6 +18,7 @@ fn bright(s: Status) -> Color {
         Status::Watch => Color::LightYellow,
         Status::Act => Color::LightRed,
         Status::NoData => Color::LightCyan,
+        Status::Unassessed => Color::White,
     }
 }
 fn normal(s: Status) -> Color {
@@ -26,6 +27,7 @@ fn normal(s: Status) -> Color {
         Status::Watch => Color::Yellow,
         Status::Act => Color::Red,
         Status::NoData => Color::Cyan,
+        Status::Unassessed => Color::Gray,
     }
 }
 

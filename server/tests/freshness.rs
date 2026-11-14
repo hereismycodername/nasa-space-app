@@ -66,14 +66,14 @@ fn metric<'a>(response: &'a Value, name: &str) -> &'a Value {
 }
 
 #[tokio::test]
-async fn empty_snapshot_exposes_six_missing_metrics_with_explicit_policy() {
+async fn empty_snapshot_exposes_all_missing_metrics_with_explicit_policy() {
     let (app, _) = setup().await;
     for path in ["/api/measurements/latest", "/api/assessments"] {
         let (status, result) = call(&app, "GET", path, Value::Null).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(result["astronautId"], "demo-astronaut");
         DateTime::parse_from_rfc3339(result["evaluatedAt"].as_str().unwrap()).unwrap();
-        assert_eq!(result["metrics"].as_array().unwrap().len(), 6);
+        assert_eq!(result["metrics"].as_array().unwrap().len(), 12);
         for (name, ttl) in [
             ("heartRate", 15),
             ("systolicPressure", 3600),
@@ -81,6 +81,12 @@ async fn empty_snapshot_exposes_six_missing_metrics_with_explicit_policy() {
             ("temperature", 3600),
             ("sleepHours", 86400),
             ("mood", 86400),
+            ("spo2", 60),
+            ("glucose", 3600),
+            ("visionBlur", 86400),
+            ("exerciseMinutes", 86400),
+            ("headache", 3600),
+            ("backPain", 3600),
         ] {
             let entry = metric(&result, name);
             let expected = json!({"status":"missing","measurementId":null,"freshForSeconds":ttl,"ageSeconds":null,"clockSkew":false});
