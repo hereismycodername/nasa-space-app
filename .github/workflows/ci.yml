@@ -9,8 +9,9 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.100.0" # Match rust-toolchain.toml.
           components: rustfmt, clippy
       - run: npm ci
       - run: npm run check
@@ -31,7 +32,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.100.0" # Match the root toolchain when building ui/.
       - name: Install native window build dependencies
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libgl1-mesa-dev pkg-config
       - name: Test native UI workspace independently

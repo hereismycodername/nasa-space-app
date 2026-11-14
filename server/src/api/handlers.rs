@@ -78,6 +78,7 @@ pub(crate) async fn ingest(
         storage::measurements::insert_or_get(&pool, &input, &device, &received_at.to_rfc3339())
             .await?;
     let matches = outcome.measurement.matches_payload(&input).map_err(|_| {
+        eprintln!("Storage error: saved measurement has invalid time; check database integrity");
         ApiError::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             "DATABASE_ERROR",
