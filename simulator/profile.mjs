@@ -14,3 +14,18 @@ export function bloodPressureValues(systolic, diastolic, profile, fluctuation) {
     diastolic: round(diastolic + (attention ? 6 + 3 * fluctuation : 0)),
   }
 }
+
+// Synthetic history ranges; no clinical interpretation is attached to them.
+const historyRanges = {
+  spo2: { normal: [96, 99], attention: [93, 95] },
+  glucose: { normal: [80, 95], attention: [105, 118] },
+  visionBlur: { normal: [0, 1], attention: [2, 4] },
+  exerciseMinutes: { normal: [90, 150], attention: [25, 50] },
+  headache: { normal: [0, 1], attention: [4, 6] },
+  backPain: { normal: [0, 2], attention: [3, 5] },
+}
+
+export function historyMetricValue(metric, profile, fluctuation) {
+  const [minimum, maximum] = historyRanges[metric][profile]
+  return Math.round((minimum + fluctuation * (maximum - minimum)) * 100) / 100
+}
