@@ -1,9 +1,10 @@
-import { bloodPressureValues, heartRateValue } from './profile.mjs'
+import { bloodPressureValues, heartRateValue, historyMetricValue } from './profile.mjs'
 
 const MINUTE = 60_000
 const DAY = 24 * 60 * MINUTE
 export const SCENARIOS = ['baseline', 'attention', 'stale', 'delayed']
-export const HISTORY_METRICS = ['heartRate', 'systolicPressure', 'diastolicPressure', 'temperature', 'sleepHours', 'mood']
+export const HISTORY_METRICS = ['heartRate', 'systolicPressure', 'diastolicPressure', 'temperature', 'sleepHours', 'mood',
+  'spo2', 'glucose', 'visionBlur', 'exerciseMinutes', 'headache', 'backPain']
 
 // Mulberry32: the state is local to each generation, including the buffer shuffle.
 function randomFor(seed) {
@@ -31,13 +32,14 @@ export function generateHistory({ scenario, seed, reference }) {
   }
   const random = randomFor(seed)
   const rows = []
+  let destination = rows
   const round = value => Math.round(value * 100) / 100
   const start = end - 7 * DAY
   const add = (time, metric, value, unit) => {
     if (scenario === 'stale' && (time >= end - 6 * 60 * MINUTE
       || (metric === 'sleepHours' && time > end - 2 * DAY))) return
     if (scenario === 'delayed' && metric !== 'heartRate' && time >= end - 30 * MINUTE) return
-    rows.push({ metric, value, unit, measuredAt: new Date(time).toISOString() })
+    destination.push({ metric, value, unit, measuredAt: new Date(time).toISOString() })
   }
   for (let time = start; time < end; time += 5 * MINUTE) {
     const date = new Date(time)
@@ -101,6 +103,35 @@ export function generateHistory({ scenario, seed, reference }) {
     if (buffered.at(-1) === latest) [buffered[0], buffered[buffered.length - 1]] = [buffered.at(-1), buffered[0]]
     ordered = [...ordered, ...buffered]
   }
+  // Consume new draws after ALL original draws, including the delayed shuffle.
+  // Keep the original buffer at the end; the new channels are never buffered.
+  const extra = []
+  destination = extra
+  const schedules = [
+    ['spo2', '%', Array.from({ length: 24 }, (_, hour) => hour * 60 + 15)],
+    ['glucose', 'mg/dL', [7 * 60 + 15]],
+    ['visionBlur', 'score', [9 * 60]],
+    ['exerciseMinutes', 'min', [21 * 60 + 30]],
+    ['headache', 'score', [10 * 60, 18 * 60]],
+    ['backPain', 'score', [18 * 60]],
+  ]
+  for (let day = Math.floor(start / DAY) * DAY; day < end; day += DAY) {
+    for (const [metric, unit, minutes] of schedules) {
+      for (const minute of minutes) {
+        const time = day + minute * MINUTE
+        if (time < start || time >= end) continue
+        const profile = scenario === 'attention' && time >= end - 3 * DAY ? 'attention' : 'normal'
+        add(time, metric, historyMetricValue(metric, profile, random()), unit)
+      }
+    }
+  }
+  const isBuffered = row => scenario === 'delayed' && row.metric === 'heartRate'
+    && Date.parse(row.measuredAt) >= end - 30 * MINUTE
+  ordered = [
+    ...[...ordered.filter(row => !isBuffered(row)), ...extra]
+      .sort((a, b) => a.measuredAt.localeCompare(b.measuredAt)),
+    ...ordered.filter(isBuffered),
+  ]
   const payloads = ordered.map((row, sequence) => ({
     deviceId: 'simulator-01', sessionId: `demo-${scenario}-${seed}`, sequence, ...row,
   }))
