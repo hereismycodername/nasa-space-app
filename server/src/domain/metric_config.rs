@@ -17,51 +17,126 @@ impl Aggregation {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum InputBounds {
+    Positive,
+    Inclusive(f64, f64),
+}
+
+impl InputBounds {
+    pub fn contains(self, value: f64) -> bool {
+        value.is_finite()
+            && match self {
+                Self::Positive => value > 0.0,
+                Self::Inclusive(min, max) => (min..=max).contains(&value),
+            }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct MetricDefinition {
     pub metric: &'static str,
     pub unit: &'static str,
+    pub bounds: InputBounds,
     pub aggregation: Aggregation,
     pub fresh_for_seconds: u32,
 }
 
-pub(crate) const METRICS: [MetricDefinition; 6] = [
+pub(crate) const METRICS: &[MetricDefinition] = &[
     MetricDefinition {
         metric: "heartRate",
         unit: "bpm",
+        bounds: InputBounds::Positive,
         aggregation: Aggregation::Mean,
         fresh_for_seconds: 15,
     },
     MetricDefinition {
         metric: "systolicPressure",
         unit: "mmHg",
+        bounds: InputBounds::Positive,
         aggregation: Aggregation::Mean,
         fresh_for_seconds: 3600,
     },
     MetricDefinition {
         metric: "diastolicPressure",
         unit: "mmHg",
+        bounds: InputBounds::Positive,
         aggregation: Aggregation::Mean,
         fresh_for_seconds: 3600,
     },
     MetricDefinition {
         metric: "temperature",
         unit: "°C",
+        bounds: InputBounds::Positive,
         aggregation: Aggregation::Mean,
         fresh_for_seconds: 3600,
     },
     MetricDefinition {
         metric: "sleepHours",
         unit: "h",
+        bounds: InputBounds::Inclusive(0.0, 24.0),
         aggregation: Aggregation::Last,
         fresh_for_seconds: 86_400,
     },
     MetricDefinition {
         metric: "mood",
         unit: "score",
+        bounds: InputBounds::Inclusive(1.0, 5.0),
         aggregation: Aggregation::Last,
         fresh_for_seconds: 86_400,
     },
+    MetricDefinition {
+        metric: "spo2",
+        unit: "%",
+        bounds: InputBounds::Inclusive(0.0, 100.0),
+        aggregation: Aggregation::Mean,
+        fresh_for_seconds: 60,
+    },
+    MetricDefinition {
+        metric: "glucose",
+        unit: "mg/dL",
+        bounds: InputBounds::Positive,
+        aggregation: Aggregation::Mean,
+        fresh_for_seconds: 3600,
+    },
+    MetricDefinition {
+        metric: "visionBlur",
+        unit: "score",
+        bounds: InputBounds::Inclusive(0.0, 10.0),
+        aggregation: Aggregation::Last,
+        fresh_for_seconds: 86400,
+    },
+    MetricDefinition {
+        metric: "exerciseMinutes",
+        unit: "min",
+        bounds: InputBounds::Inclusive(0.0, 1440.0),
+        aggregation: Aggregation::Last,
+        fresh_for_seconds: 86400,
+    },
+    MetricDefinition {
+        metric: "headache",
+        unit: "score",
+        bounds: InputBounds::Inclusive(0.0, 10.0),
+        aggregation: Aggregation::Last,
+        fresh_for_seconds: 3600,
+    },
+    MetricDefinition {
+        metric: "backPain",
+        unit: "score",
+        bounds: InputBounds::Inclusive(0.0, 10.0),
+        aggregation: Aggregation::Last,
+        fresh_for_seconds: 3600,
+    },
+];
+
+/// Only these original channels participate in the deprecated summary.
+pub(crate) const LEGACY_SUMMARY_METRICS: &[&str] = &[
+    "heartRate",
+    "systolicPressure",
+    "diastolicPressure",
+    "temperature",
+    "sleepHours",
+    "mood",
 ];
 
 pub(crate) fn definition_for(metric: &str) -> Option<&'static MetricDefinition> {
@@ -75,19 +150,31 @@ mod tests {
     #[test]
     fn every_supported_metric_has_one_explicit_freshness_policy() {
         assert_eq!(
-            METRICS.map(|policy| policy.metric),
+            METRICS
+                .iter()
+                .map(|policy| policy.metric)
+                .collect::<Vec<_>>(),
             [
                 "heartRate",
                 "systolicPressure",
                 "diastolicPressure",
                 "temperature",
                 "sleepHours",
-                "mood"
+                "mood",
+                "spo2",
+                "glucose",
+                "visionBlur",
+                "exerciseMinutes",
+                "headache",
+                "backPain"
             ]
         );
         assert_eq!(
-            METRICS.map(|policy| policy.fresh_for_seconds),
-            [15, 3600, 3600, 3600, 86_400, 86_400]
+            METRICS
+                .iter()
+                .map(|policy| policy.fresh_for_seconds)
+                .collect::<Vec<_>>(),
+            [15, 3600, 3600, 3600, 86_400, 86_400, 60, 3600, 86_400, 86_400, 3600, 3600]
         );
         assert_eq!(definition_for("not-a-metric"), None);
     }

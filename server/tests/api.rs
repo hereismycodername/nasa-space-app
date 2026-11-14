@@ -531,3 +531,135 @@ async fn accepted_rfc3339_variants_store_exact_utc_milliseconds() {
         assert_eq!(actual, expected_ms, "{time}");
     }
 }
+
+#[tokio::test]
+async fn new_metrics_accept_manual_input_validate_fields_and_expose_all_latest_entries() {
+    let app = setup().await;
+    let cases = [
+        ("spo2", "%", 0.0),
+        ("glucose", "mg/dL", 90.0),
+        ("visionBlur", "score", 1.25),
+        ("exerciseMinutes", "min", 1440.0),
+        ("headache", "score", 0.0),
+        ("backPain", "score", 10.0),
+    ];
+    let (_, empty) = call(&app, "GET", "/api/measurements/latest", Value::Null).await;
+    assert_eq!(empty["metrics"].as_array().unwrap().len(), 12);
+    for (index, (metric, unit, value)) in cases.iter().enumerate() {
+        let missing = empty["metrics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["metric"] == *metric)
+            .unwrap();
+        assert_eq!(missing["quality"]["status"], "missing");
+        let input = json!({"deviceId":"manual-01", "sessionId":"new-metrics", "sequence":index,
+            "metric":metric, "unit":unit, "value":value});
+        let (status, created) = call(&app, "POST", "/api/measurements", input.clone()).await;
+        assert_eq!(status, StatusCode::CREATED, "{created}");
+        assert_eq!(created["source"], "manual");
+        assert_eq!(created["measuredAt"], Value::Null);
+        let (status, retry) = call(&app, "POST", "/api/measurements", input).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(retry, created);
+    }
+    for (metric, unit, value, field) in [
+        ("headache", "score", 10.01, "value"),
+        ("spo2", "bpm", 97.0, "unit"),
+        ("glucose", "mg/dL", 0.0, "value"),
+    ] {
+        let input = json!({"deviceId":"manual-01", "sessionId":"invalid-new", "sequence":0,
+            "metric":metric, "unit":unit, "value":value});
+        let (status, error) = call(&app, "POST", "/api/measurements", input).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{error}");
+        assert_eq!(error["code"], "VALIDATION_ERROR");
+        assert_eq!(error["field"], field);
+    }
+    let (_, latest) = call(&app, "GET", "/api/measurements/latest", Value::Null).await;
+    assert_eq!(latest["metrics"].as_array().unwrap().len(), 12);
+    for (metric, unit, value) in cases {
+        let entry = latest["metrics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["metric"] == metric)
+            .unwrap();
+        assert_eq!(entry["latestMeasurement"]["unit"], unit);
+        assert_eq!(entry["latestMeasurement"]["value"], value);
+        assert_eq!(entry["quality"]["status"], "unknownTime");
+    }
+    let (_, history) = call(
+        &app,
+        "GET",
+        "/api/measurements?metric=headache",
+        Value::Null,
+    )
+    .await;
+    assert_eq!(history["items"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn new_series_aggregate_mean_and_last_without_changing_the_legacy_summary() {
+    let app = setup().await;
+    let measured = chrono::Utc::now().to_rfc3339();
+    for (sequence, (metric, unit, value)) in [
+        ("heartRate", "bpm", 72.0),
+        ("systolicPressure", "mmHg", 120.0),
+        ("diastolicPressure", "mmHg", 80.0),
+        ("temperature", "°C", 36.7),
+        ("sleepHours", "h", 7.5),
+        ("mood", "score", 4.0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let input = json!({"deviceId":"manual-01", "sessionId":"legacy", "sequence":sequence,
+            "metric":metric, "unit":unit, "value":value, "measuredAt":measured});
+        assert_eq!(
+            call(&app, "POST", "/api/measurements", input).await.0,
+            StatusCode::CREATED
+        );
+    }
+    let (_, before) = call(&app, "GET", "/api/assessments", Value::Null).await;
+    assert_eq!(before["status"], "not-evaluated");
+    assert_eq!(
+        before["metrics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["quality"]["status"] == "missing")
+            .count(),
+        6
+    );
+    for (metric, unit, values, expected, aggregation) in [
+        ("spo2", "%", [96.0, 98.0], 97.0, "mean"),
+        ("headache", "score", [1.5, 5.0], 5.0, "last"),
+    ] {
+        for (index, value) in values.into_iter().enumerate() {
+            let input = json!({"deviceId":"manual-01", "sessionId":metric, "sequence":index,
+                "metric":metric, "unit":unit, "value":value,
+                "measuredAt":format!("2020-01-01T00:00:0{}Z", index + 1)});
+            assert_eq!(
+                call(&app, "POST", "/api/measurements", input).await.0,
+                StatusCode::CREATED
+            );
+        }
+        let path = format!("/api/measurements/series?metric={metric}&from=2020-01-01T00:00:00Z&to=2020-01-02T00:00:00Z&maxPoints=1");
+        let (status, series) = call(&app, "GET", &path, Value::Null).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(series["aggregation"], aggregation);
+        assert_eq!(series["unit"], unit);
+        assert_eq!(series["points"][0]["value"], expected);
+        assert_eq!(series["points"][0]["count"], 2);
+        if aggregation == "mean" {
+            assert_eq!(series["points"][0]["min"], 96.0);
+            assert_eq!(series["points"][0]["max"], 98.0);
+        } else {
+            assert_eq!(series["points"][0]["min"], Value::Null);
+            assert_eq!(series["points"][0]["max"], Value::Null);
+        }
+    }
+    let (_, after) = call(&app, "GET", "/api/assessments", Value::Null).await;
+    assert_eq!(after["status"], before["status"]);
+    assert_eq!(after["explanation"], before["explanation"]);
+}

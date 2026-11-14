@@ -66,14 +66,20 @@
 Текущие регистрации: `simulator-01` → `demo-astronaut` / `simulator`,
 `manual-01` → `demo-astronaut` / `manual`.
 
-| metric | unit | Граница ввода |
-|---|---|---|
-| heartRate | bpm | > 0 |
-| systolicPressure | mmHg | > 0 |
-| diastolicPressure | mmHg | > 0 |
-| temperature | °C | > 0 |
-| sleepHours | h | 0…24 |
-| mood | score | 1…5 |
+| metric | unit | Граница ввода | series | demo freshForSeconds |
+|---|---|---|---|---:|
+| heartRate | bpm | > 0 | mean | 15 |
+| systolicPressure | mmHg | > 0 | mean | 3600 |
+| diastolicPressure | mmHg | > 0 | mean | 3600 |
+| temperature | °C | > 0 | mean | 3600 |
+| sleepHours | h | 0…24 | last | 86400 |
+| mood | score | 1…5 | last | 86400 |
+| spo2 | % | 0…100 | mean | 60 |
+| glucose | mg/dL | > 0 | mean | 3600 |
+| visionBlur | score | 0…10 | last | 86400 |
+| exerciseMinutes | min | 0…1440 | last | 86400 |
+| headache | score | 0…10 | last | 3600 |
+| backPain | score | 0…10 | last | 3600 |
 
 Все значения конечные; дробное значение допустимо, в том числе для mood.
 Границы являются валидацией ввода, а не медицинскими нормами.

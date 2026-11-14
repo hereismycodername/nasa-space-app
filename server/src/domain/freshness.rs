@@ -175,7 +175,7 @@ mod tests {
         for policy in METRICS {
             let measured_at = now() - Duration::seconds(i64::from(policy.fresh_for_seconds));
             let sample = row("boundary", policy.metric, Some(measured_at.to_rfc3339()));
-            let at_boundary = evaluate(Some(&sample), &policy, now()).unwrap();
+            let at_boundary = evaluate(Some(&sample), policy, now()).unwrap();
             assert_eq!(
                 at_boundary.status,
                 FreshnessStatus::Fresh,
@@ -187,7 +187,7 @@ mod tests {
                 Some(f64::from(policy.fresh_for_seconds))
             );
             let after_boundary =
-                evaluate(Some(&sample), &policy, now() + Duration::nanoseconds(1)).unwrap();
+                evaluate(Some(&sample), policy, now() + Duration::nanoseconds(1)).unwrap();
             assert_eq!(
                 after_boundary.status,
                 FreshnessStatus::Stale,
