@@ -1,10 +1,216 @@
 //! HTTP serialization stays separate from domain rules and SQLite rows.
 use crate::domain::{
     assessments::Assessment,
-    measurements::{Measurement, NewMeasurement},
+    history::{HistoryCursor, HistoryPage, HistoryQuery, LatestMetric},
+    measurements::{Measurement, NewMeasurement, ValidationError},
+    series::{self, BucketAggregate, InvalidSeriesData, SeriesPoint, SeriesQuery},
     tasks::Task,
 };
+use chrono::{DateTime, SecondsFormat};
 use serde::{Deserialize, Serialize};
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct SeriesRequest {
+    metric: Option<String>,
+    from: Option<String>,
+    to: Option<String>,
+    max_points: Option<String>,
+}
+
+impl TryFrom<SeriesRequest> for SeriesQuery {
+    type Error = ValidationError;
+    fn try_from(input: SeriesRequest) -> Result<Self, Self::Error> {
+        Self::parse(
+            input.metric,
+            input.from.as_deref(),
+            input.to.as_deref(),
+            input.max_points.as_deref(),
+        )
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SeriesResponse {
+    astronaut_id: &'static str,
+    metric: String,
+    unit: &'static str,
+    aggregation: &'static str,
+    from: String,
+    to: String,
+    interval_ms: i64,
+    time_basis: Option<&'static str>,
+    points: Vec<SeriesPointResponse>,
+}
+
+impl SeriesResponse {
+    pub fn from_data(
+        astronaut_id: &'static str,
+        query: SeriesQuery,
+        buckets: Vec<BucketAggregate>,
+    ) -> Result<Self, InvalidSeriesData> {
+        let points = series::fill_gaps(&query, buckets)?;
+        let time_basis = series::time_basis(
+            points.iter().any(|p| p.measured_count > 0),
+            points.iter().any(|p| p.received_count > 0),
+        );
+        Ok(Self {
+            astronaut_id,
+            metric: query.metric,
+            unit: query.unit,
+            aggregation: query.aggregation.as_str(),
+            from: utc_timestamp(query.from_ms)?,
+            to: utc_timestamp(query.to_ms)?,
+            interval_ms: query.interval_ms,
+            time_basis,
+            points: points
+                .into_iter()
+                .map(SeriesPointResponse::try_from)
+                .collect::<Result<_, _>>()?,
+        })
+    }
+}
+
+fn utc_timestamp(milliseconds: i64) -> Result<String, InvalidSeriesData> {
+    DateTime::from_timestamp_millis(milliseconds)
+        .map(|time| time.to_rfc3339_opts(SecondsFormat::Millis, true))
+        .ok_or(InvalidSeriesData)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SeriesPointResponse {
+    start_at: String,
+    end_at: String,
+    value: Option<f64>,
+    min: Option<f64>,
+    max: Option<f64>,
+    count: i64,
+    measured_count: i64,
+    received_count: i64,
+    time_basis: Option<&'static str>,
+}
+
+impl TryFrom<SeriesPoint> for SeriesPointResponse {
+    type Error = InvalidSeriesData;
+    fn try_from(point: SeriesPoint) -> Result<Self, Self::Error> {
+        Ok(Self {
+            start_at: utc_timestamp(point.start_ms)?,
+            end_at: utc_timestamp(point.end_ms)?,
+            value: point.value,
+            min: point.min,
+            max: point.max,
+            count: point.count,
+            measured_count: point.measured_count,
+            received_count: point.received_count,
+            time_basis: series::time_basis(point.measured_count > 0, point.received_count > 0),
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct HistoryRequest {
+    metric: Option<String>,
+    from: Option<String>,
+    to: Option<String>,
+    limit: Option<String>,
+    cursor: Option<String>,
+}
+
+impl TryFrom<HistoryRequest> for HistoryQuery {
+    type Error = ValidationError;
+
+    fn try_from(input: HistoryRequest) -> Result<Self, Self::Error> {
+        let cursor = input.cursor.as_deref().map(parse_cursor).transpose()?;
+        Self::parse(
+            input.metric,
+            input.from.as_deref(),
+            input.to.as_deref(),
+            input.limit.as_deref(),
+            cursor,
+        )
+    }
+}
+
+fn parse_cursor(value: &str) -> Result<HistoryCursor, ValidationError> {
+    let invalid = || ValidationError {
+        field: "cursor",
+        message: "Invalid history cursor",
+    };
+    if value.len() > 160 {
+        return Err(invalid());
+    }
+    let mut parts = value.splitn(3, '.');
+    if parts.next() != Some("v1") {
+        return Err(invalid());
+    }
+    let time_ms = parts
+        .next()
+        .ok_or_else(invalid)?
+        .parse::<i64>()
+        .map_err(|_| invalid())?;
+    let id = parts
+        .next()
+        .filter(|id| !id.is_empty() && id.len() <= 128)
+        .ok_or_else(invalid)?;
+    Ok(HistoryCursor {
+        time_ms,
+        id: id.to_owned(),
+    })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct HistoryResponse {
+    items: Vec<MeasurementResponse>,
+    has_more: bool,
+    next_cursor: Option<String>,
+}
+
+impl From<HistoryPage> for HistoryResponse {
+    fn from(page: HistoryPage) -> Self {
+        Self {
+            items: page.items.into_iter().map(Into::into).collect(),
+            has_more: page.has_more,
+            next_cursor: page
+                .next_cursor
+                .map(|cursor| format!("v1.{}.{}", cursor.time_ms, cursor.id)),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct LatestRequest {}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LatestResponse {
+    pub astronaut_id: &'static str,
+    pub metrics: Vec<LatestMetricResponse>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LatestMetricResponse {
+    metric: &'static str,
+    latest_measurement: Option<MeasurementResponse>,
+    latest_known_measurement: Option<MeasurementResponse>,
+    latest_received_measurement: Option<MeasurementResponse>,
+}
+
+impl From<LatestMetric> for LatestMetricResponse {
+    fn from(value: LatestMetric) -> Self {
+        Self {
+            metric: value.metric,
+            latest_measurement: value.latest_measurement.map(Into::into),
+            latest_known_measurement: value.latest_known_measurement.map(Into::into),
+            latest_received_measurement: value.latest_received_measurement.map(Into::into),
+        }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

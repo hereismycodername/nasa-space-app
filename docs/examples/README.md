@@ -1,4 +1,4 @@
-# JSON-примеры API v0.3.0
+# JSON-примеры API v0.5.0
 
 Файлы содержат чистые JSON payload, пригодные для UI fixtures и ручных запросов.
 UUID и timestamps в ответах иллюстративные, реальные значения генерирует сервер.
@@ -12,6 +12,13 @@ UUID и timestamps в ответах иллюстративные, реальн�
 | measurement.response.json | Ответ 201 или идентичный повтор 200 |
 | measurement.unknown-time.response.json | measuredAt: null, timeBasis: receivedAt |
 | measurements.response.json | GET /api/measurements |
+| measurements.empty.response.json | Пустая страница истории с hasMore=false |
+| measurements.page.response.json | Страница с продолжением hasMore/nextCursor |
+| measurements.latest.response.json | Latest с известным измерением и отдельной последней доставкой без времени |
+| measurements.latest.empty.response.json | Все шесть метрик без данных, явные null |
+| measurements.series.mean.response.json | Средний пульс, mixed timeBasis, пустой интервал и укороченный последний интервал |
+| measurements.series.last.response.json | Последнее значение сна; count и timeBasis учитывают все записи интервала |
+| measurements.series.empty.response.json | Пустая сетка mood за 5 ms: maxPoints=2, интервалы 3 ms и 2 ms |
 | health.response.json | GET /api/health |
 | assessment.empty.response.json | Пустая БД |
 | assessment.recent.response.json | Недавняя запись, правила не подключены |
@@ -38,3 +45,36 @@ curl -i http://127.0.0.1:8080/api/measurements \
 ключа сообщения возвращает 409. Перед другим демонстрационным измерением изменить
 sessionId/sequence. Фиксированная дата примера будет устаревшей для оценки свежести;
 для живого потока используйте симулятор.
+
+Фильтр истории с URL-кодированием часового пояса:
+
+```bash
+curl --get http://127.0.0.1:8080/api/measurements \
+  --data-urlencode 'metric=heartRate' \
+  --data-urlencode 'from=2026-11-13T13:00:00+05:00' \
+  --data-urlencode 'to=2026-11-13T13:01:00+05:00' \
+  --data-urlencode 'limit=60'
+```
+
+Для следующей страницы передать полученный `nextCursor` через `--data-urlencode`
+с теми же фильтрами. Курсор в JSON-примере иллюстративный; в запросах использовать
+реальный ответ сервера. `/api/measurements/latest` возвращает все шесть метрик
+независимо от этого диапазона и лимита истории.
+
+Ряд пульса за семь дней, максимум 168 точек:
+
+```bash
+curl --get http://127.0.0.1:8080/api/measurements/series \
+  --data-urlencode 'metric=heartRate' \
+  --data-urlencode 'from=2026-11-07T00:00:00Z' \
+  --data-urlencode 'to=2026-11-14T00:00:00Z' \
+  --data-urlencode 'maxPoints=168'
+```
+
+Сервер возвращает 168 часовых интервалов, включая пустые, и учитывает все
+подходящие записи, а не первую страницу истории. Для примера mean используется
+`from=2026-11-13T08:00:00Z`, `to=2026-11-13T08:00:05Z`, `maxPoints=3`:
+первые две записи пульса 70 и 74 дают mean=72, второй интервал пуст,
+последний содержит 78. В примере last первые две записи сна могли иметь значения
+6 и 7.5: ответ содержит последнее 7.5, count=2, min/max=null.
+Это иллюстративные fixtures; команда не создаёт эти измерения в БД.

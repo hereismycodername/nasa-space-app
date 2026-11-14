@@ -1,9 +1,12 @@
-# Backend после BE-03
+# Backend после BE-05
 
 BE-01 разделяет сервер и фиксирует контракт. BE-02 добавляет сравнимое время UTC,
 явное происхождение времени истории и схему ежедневных задач с переносом данных.
 BE-03 нормализует время при сравнении повторов и делает сохранение измерения транзакционным.
-Публичные фильтры истории и задачи по датам остаются следующими задачами [плана](backend-plan.md).
+BE-04 добавляет фильтры и страницы истории, а также независимые последние значения
+каждой метрики. BE-05 добавляет агрегированные ряды по всему диапазону с ограниченным
+числом точек и явными пробелами. Свежесть по метрикам и задачи по датам остаются
+следующими задачами [плана](backend-plan.md).
 
 ## Границы модулей
 
@@ -19,7 +22,7 @@ api/   DTO, handlers, extractors, Problem Details
 storage/  SQL-запросы и преобразование SQLite rows
        │
        ▼
-SQLite (исходная 0001 + новая миграция 0002)
+SQLite (миграции 0001, 0002 и индексы 0003)
 ```
 
 | Область | Обязанность | Владелец |
@@ -45,9 +48,11 @@ api преобразует wire DTO и решает, какой HTTP-ответ 
 |---|---|---|
 | storage::check_connection | `&SqlitePool` | `()` |
 | storage::measurements::device | `&SqlitePool`, `device_id: &str` | `Option<Device>` |
-| storage::measurements::history | `&SqlitePool` | `Vec<Measurement>` |
-| storage::measurements::latest_received | `&SqlitePool` | `Option<Measurement>` |
+| storage::measurements::history | `&SqlitePool`, `astronaut_id: &str`, `&HistoryQuery` | `HistoryPage {items, has_more, next_cursor}` |
+| storage::measurements::latest_by_metric | `&SqlitePool`, `astronaut_id: &str` | `Vec<LatestMetric>` с шестью метриками |
+| storage::measurements::latest_received | `&SqlitePool`, `astronaut_id: &str` | `Option<Measurement>` |
 | storage::measurements::insert_or_get | `&SqlitePool`, `&NewMeasurement`, `&Device`, `received_at: &str` | `InsertOutcome {measurement, created}` |
+| storage::series::aggregate | `&SqlitePool`, `astronaut_id: &str`, `&SeriesQuery` | `Vec<BucketAggregate>` только непустых интервалов по возрастанию индекса |
 | storage::tasks::list | `&SqlitePool` | `Vec<Task>` |
 | storage::tasks::set_completion | `&SqlitePool`, `id: &str`, `Option<DateTime<Utc>>` | `Option<Task>` |
 
@@ -59,6 +64,9 @@ api преобразует wire DTO и решает, какой HTTP-ответ 
 
 - `NewMeasurement::validate(now: DateTime<Utc>) -> Result<(), ValidationError>`;
 - `Measurement::matches_payload(&NewMeasurement) -> Result<bool, chrono::ParseError>`;
+- `HistoryQuery::parse(metric: Option<String>, from: Option<&str>, to: Option<&str>, limit: Option<&str>, cursor: Option<HistoryCursor>) -> Result<HistoryQuery, ValidationError>`;
+- `SeriesQuery::parse(metric: Option<String>, from: Option<&str>, to: Option<&str>, max_points: Option<&str>) -> Result<SeriesQuery, ValidationError>`;
+- `series::fill_gaps(&SeriesQuery, Vec<BucketAggregate>) -> Result<Vec<SeriesPoint>, InvalidSeriesData>`;
 - `assess(Option<&Measurement>, now: DateTime<Utc>) -> Result<Assessment, InvalidStoredTimestamp>`;
 - `completion_time(completed: bool, now: DateTime<Utc>) -> Option<DateTime<Utc>>`.
 
@@ -71,7 +79,8 @@ api преобразует wire DTO и решает, какой HTTP-ответ 
 - Один Rust-процесс, одна SQLite-база, существующие маршруты.
 - Привязка устройства, источника и астронавта определяется сервером.
 - POST новой записи — 201, повтор — 200, конфликт — 409.
-- История — массив до 500 записей без публичных фильтров.
+- История — envelope со страницей до 500 записей и явным продолжением; latest не зависит от размера страницы.
+- Series агрегирует весь диапазон в 1–500 интервалов; ограничение ответа не обрезает входные измерения.
 - Текущая оценка свежести — по одной последней принятой записи, с порогом 15 секунд для известного времени.
 - Публичный API задач пока недатированный; повтор true обновляет completedAt.
 - Исходная миграция не переписывается.
@@ -80,7 +89,7 @@ api преобразует wire DTO и решает, какой HTTP-ответ 
 
 Ошибки API, включая extraction, имеют единый Problem Details JSON с
 code/message/optional field и legacy error. HTTP-статусы существующих сценариев
-сохраняются. Эти изменения BE-01 продолжают действовать в BE-03.
+сохраняются. Эти изменения BE-01 продолжают действовать в BE-05.
 
 В BE-02 `Measurement` возвращает `timeBasis`: `measuredAt` для известного времени
 или `receivedAt` для неизвестного. `measuredAt` остаётся `null`, когда устройство
@@ -118,6 +127,69 @@ sequence для попытки доставки. Неожиданная ошиб
 Приём проверяется конкурентными HTTP-запросами к временной файловой SQLite в WAL
 с несколькими соединениями. Запоздавшее измерение сохраняет собственное время:
 порядок истории и текущая оценка свежести не заменяют его временем доставки.
+
+### История и последние значения BE-04
+
+`domain/history.rs` содержит валидированные `HistoryQuery`, `HistoryCursor`,
+`HistoryPage` и `LatestMetric`. `HistoryRequest` в api отклоняет неизвестные и
+повторяющиеся query-поля. Значения фильтров проверяются в domain; ошибки получают
+400 `VALIDATION_ERROR` и соответствующий `field`. Курсор декодируется в api,
+а storage получает числовое время и id, без зависимости от wire-формата.
+
+История использует параметры QueryBuilder с bind-значениями, всегда ограничена
+`astronaut_id` и при необходимости `metric`, `from_ms <= effective_time < to_ms`.
+Далее применяется keyset-условие ниже пары `time_ms/id` и чтение `limit + 1` строк.
+Лишняя строка определяет `has_more`, курсор берётся с последней возвращаемой записи.
+Внешний ответ — `{items, hasMore, nextCursor}`. Между страницами snapshot не удерживается.
+
+`latest_by_metric` читает все шесть метрик в одной read-транзакции. Для каждой
+независимо выбираются последние effective, known measured и received записи с
+детерминированным `id DESC`. Индексированные выборки LIMIT 1 не обрезают сначала
+общую историю до 500 строк. Поэтому редкие показатели остаются в обзоре, а
+unknown-time последняя доставка не скрывает последнее известное измерение.
+
+Профиль задаёт серверная константа `DEMO_ASTRONAUT_ID`; history, latest и assessment
+используют одинаковый scope. Внешнего выбора профиля и авторизации пока нет.
+Миграция [0003_measurement_queries.sql](../server/migrations/0003_measurement_queries.sql)
+добавляет индексы astronaut/effective time, astronaut/metric/known time,
+astronaut/metric/receipt time и astronaut/receipt time. Индекс metric/effective time
+из `0002` используется повторно; исходные миграции и данные не изменяются.
+
+### Агрегированные ряды BE-05
+
+Ресурс `MeasurementSeries` вычисляется из измерений одной метрики, содержит
+`SeriesPoint` для каждого интервала и отдельно в БД не сохраняется.
+`domain/series.rs` проверяет обязательные metric/from/to и maxPoints=1…500,
+выбирает единицу и агрегацию, рассчитывает сетку в числовом UTC-времени.
+Границы используют ту же проверку миллисекунд, что и история, дополнительно
+ограничивая нормализованный UTC-год диапазоном 0001…9999 для ответа RFC3339.
+Длительность запроса не ограничена фиксированным числом дней.
+
+Интервал равен `ceil((to_ms - from_ms) / max_points)`, минимум 1 ms.
+Индекс строки — `(effective_ms - from_ms) / interval_ms`, где effective_ms —
+`COALESCE(measured_at_ms, received_at_ms)`. Диапазон `[from_ms,to_ms)` и scope
+астронавта/метрики применяются до агрегации. Поэтому арифметика индекса работает
+и для дат до Unix epoch. Сетка привязана к началу запроса, последний интервал
+обрезается по to_ms; число точек может быть меньше max_points.
+
+`storage/series.rs` выполняет один SQL-запрос на весь диапазон в одном snapshot.
+Для непрерывных метрик считаются mean/min/max/count; среднее вычисляется с
+масштабированием, чтобы сумма конечных больших чисел не переполнила SQLite REAL.
+Для сна и самочувствия выбирается последняя строка по effective_ms DESC, id DESC;
+min/max остаются null. Количество и происхождение времени всегда учитывают
+все строки интервала, включая режим last. Слой Rust получает только непустые
+агрегаты, без загрузки всех raw rows и без предварительного LIMIT 500.
+
+`fill_gaps` проверяет агрегаты и материализует сетку максимум из 500 точек:
+у пустых интервалов значения null и нулевые счётчики. Нечисловой/бесконечный
+агрегат приводит к ошибке, а не маскируется под отсутствие данных. api преобразует
+числовые границы в UTC RFC3339 с миллисекундами, выводит timeBasis по счётчикам
+точек и всего ряда. Никаких новых таблиц или миграций BE-05 не требует;
+индексы и исходные измерения сохраняются.
+
+React получает семидневный heartRate-ряд с maxPoints=168 отдельно от latest.
+Пустые интервалы остаются null и разрывают линию. Доставка без времени измерения
+не превращается в подтверждение его свежести.
 
 ### Схема и миграция BE-02
 
@@ -169,7 +241,6 @@ offset. Дата миссии — календарно корректная `YYY
 
 ## Точки последующего расширения
 
-- **BE-04/05:** независимые последние значения, фильтры, пагинация и series.
 - **BE-06:** свежесть каждой метрики, единая модель качества, clockSkew.
 - **BE-07:** публичная дата миссии UTC, выбор ежедневного выполнения, идемпотентный PATCH.
 - **BE-08:** объяснимые демонстрационные правила.

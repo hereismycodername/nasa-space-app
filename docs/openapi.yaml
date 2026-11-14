@@ -1,16 +1,19 @@
 openapi: 3.1.0
 info:
   title: Space Health Local API
-  version: 0.3.0
-  description: 'Implemented BE-03 contract for a local hackathon prototype. Measurement retries compare
+  version: 0.5.0
+  description: 'Implemented BE-05 contract for a local hackathon prototype. /api/measurements/series adds bounded
+    UTC interval aggregation across a whole requested range with explicit gaps. History returns a paginated
+    envelope and supports metric/time filters; /api/measurements/latest returns all six metrics independently.
+    Reads are scoped to demo-astronaut by the server. Measurement retries compare
     normalized UTC instants with nanosecond parser precision and preserve the first stored record.
     Measurements include timeBasis;
     history is ordered by the measurement time, or receipt time when unknown, using numeric UTC milliseconds.
     Unknown measurement time produces an unknown-time assessment. Upgrade the bundled React client with
-    this server; these semantics differ from v0.1.1. API errors use application/problem+json with
+    this server; the history envelope is incompatible with the v0.3 array response. API errors use application/problem+json with
     code/message/optional field and legacy error. No authentication, authorization or rate limiting is implemented: use only
     synthetic data on a trusted local network. There are no 401/403/429 flows. Unknown /api routes return
-    NOT_FOUND. Data filtering, pagination, missionDate and per-metric assessments are future work, not
+    NOT_FOUND. Public missionDate and per-metric assessments are future work, not
     available through this specification. Requests above 2 MiB are rejected by JSON body extraction. Version
     is a contract revision; /api paths remain unchanged.'
 servers:
@@ -21,7 +24,7 @@ tags:
 - name: Health
   description: Server and database readiness.
 - name: Measurements
-  description: Single-record ingestion and current bounded history.
+  description: Single-record ingestion, filtered history, independent latest values and bounded aggregated series.
 - name: Assessments
   description: Prototype freshness status, not clinical assessment.
 - name: Tasks
@@ -50,32 +53,67 @@ paths:
           $ref: '#/components/responses/DatabaseError'
   /api/measurements:
     get:
-      summary: Read the latest stored history
+      summary: Read a filtered page of measurement history
       operationId: listMeasurements
       tags:
       - Measurements
-      description: Returns at most 500 rows across all metrics and the demo profile, ordered by effective
+      description: Returns a page for demo-astronaut, ordered by effective
         UTC milliseconds descending then id descending. Effective time is measuredAt when known, otherwise
         receivedAt; timeBasis identifies the selected field. Sub-millisecond fractions are truncated for
         ordering, while original timestamp strings are preserved. Receipt time does not establish measurement
-        freshness. No filtering or pagination is implemented in BE-03. Query parameters
-        are decoded but ignored; metric/from/to/limit are not effective options. Empty history returns
-        [].
+        freshness. Range is [from,to), with millisecond-aligned bounds and from less than to when both
+        are present. Default limit is 100, maximum 500. Pass nextCursor unchanged with the same filters
+        to continue below the last returned time/id pair. hasMore is determined by reading one extra row;
+        nextCursor is null on the last page. Pages read live data, not a shared snapshot. A late insert
+        can appear on a later page. Unknown or repeated query parameters are rejected. A plus sign in
+        an offset must be URL-encoded. This envelope replaces the v0.3 array response.
+      parameters:
+      - name: metric
+        in: query
+        description: Restrict the page to one supported metric; omit for all metrics.
+        schema:
+          $ref: '#/components/schemas/Metric'
+      - name: from
+        in: query
+        description: Inclusive effective UTC time, RFC3339 with timezone. Must align to whole milliseconds.
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        description: Exclusive effective UTC time, RFC3339 with timezone. Must align to whole milliseconds.
+        schema:
+          type: string
+          format: date-time
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 100
+      - name: cursor
+        in: query
+        description: Opaque nextCursor from the previous page. Reuse the same filters; do not parse or construct it.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 160
+          x-max-utf8-bytes: 160
       responses:
         '200':
-          description: Up to 500 measurement records.
+          description: A page of at most limit records, with explicit continuation metadata.
           content:
             application/json:
               schema:
-                type: array
-                maxItems: 500
-                items:
-                  $ref: '#/components/schemas/Measurement'
+                $ref: '#/components/schemas/HistoryPage'
               examples:
                 history:
                   externalValue: ./examples/measurements.response.json
                 empty:
-                  value: []
+                  externalValue: ./examples/measurements.empty.response.json
+                more:
+                  externalValue: ./examples/measurements.page.response.json
         '400':
           $ref: '#/components/responses/BadRequest'
         '405':
@@ -146,13 +184,116 @@ paths:
                 externalValue: ./examples/measurement.equivalent-retry.request.json
               unknownTime:
                 externalValue: ./examples/measurement.unknown-time.request.json
+  /api/measurements/latest:
+    get:
+      summary: Read independent latest values for all six metrics
+      operationId: getLatestMeasurements
+      tags:
+      - Measurements
+      description: Returns a consistent database snapshot for demo-astronaut, with all six metrics in
+        fixed order. latestMeasurement uses effective UTC milliseconds descending then id descending;
+        latestKnownMeasurement uses only known measuredAt values in the same order;
+        latestReceivedMeasurement uses receipt UTC milliseconds descending then id descending.
+        A late old packet does not replace a newer known measurement. An unknown-time latest received
+        packet remains visible separately from the latest known measurement. Missing values are null;
+        a metric without any rows has all three fields null. This is not a per-metric freshness or
+        clinical assessment. No query parameters are accepted.
+      responses:
+        '200':
+          description: Six metric entries, including explicit missing values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LatestMeasurements'
+              examples:
+                knownAndUnknown:
+                  externalValue: ./examples/measurements.latest.response.json
+                empty:
+                  externalValue: ./examples/measurements.latest.empty.response.json
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/DatabaseError'
+  /api/measurements/series:
+    get:
+      summary: Read a bounded aggregated series for one metric
+      operationId: getMeasurementSeries
+      tags:
+      - Measurements
+      description: >-
+        Aggregates every matching measurement for demo-astronaut in [from,to), using measuredAt
+        when known and receivedAt otherwise. This is independent of the history page limit.
+        Boundaries must be RFC3339 with a timezone, align to whole milliseconds and normalize
+        to UTC years 0001 through 9999. Every fractional digit beyond the first three must be zero.
+        from must be less than to. There is no fixed duration limit. A plus sign in a query
+        offset must be URL-encoded. Buckets are anchored at from in UTC, in ascending order,
+        with intervalMs = max(1, ceil((to - from) / maxPoints)). The last bucket ends at to.
+        The result has ceil((to - from) / intervalMs) points, at most maxPoints.
+        heartRate, systolicPressure, diastolicPressure and temperature use mean with min/max/count.
+        sleepHours and mood use the last value by effective UTC milliseconds descending then id
+        descending, with null min/max. count and timeBasis always include every row of the bucket,
+        even for last aggregation. Empty intervals have null values and timeBasis, with zero counts;
+        a wholly empty range still returns the same bucket grid. No interpolation, carry-forward
+        or raw-data changes occur. Unknown or duplicate query fields produce INVALID_QUERY.
+        Missing required fields or invalid values produce VALIDATION_ERROR with the relevant field;
+        reversed or equal bounds use field to. No cursor or further page is needed.
+      parameters:
+      - name: metric
+        in: query
+        required: true
+        schema:
+          $ref: '#/components/schemas/Metric'
+      - name: from
+        in: query
+        required: true
+        description: Inclusive effective time; RFC3339, millisecond-aligned, UTC year 0001–9999.
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        required: true
+        description: Exclusive effective time, greater than from; same timestamp rules.
+        schema:
+          type: string
+          format: date-time
+      - name: maxPoints
+        in: query
+        description: Maximum response buckets, including empty intervals; does not limit input rows.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 200
+      responses:
+        '200':
+          description: Whole-range aggregate with one to maxPoints contiguous buckets, including gaps.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeasurementSeries'
+              examples:
+                meanWithGap:
+                  externalValue: ./examples/measurements.series.mean.response.json
+                last:
+                  externalValue: ./examples/measurements.series.last.response.json
+                empty:
+                  externalValue: ./examples/measurements.series.empty.response.json
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/DatabaseError'
   /api/assessments:
     get:
       summary: Get the prototype data freshness status
       operationId: getAssessment
       tags:
       - Assessments
-      description: 'Selects one row by numeric receipt time descending, then id descending. no-data means
+      description: 'Selects one row for demo-astronaut by numeric receipt time descending, then id descending. no-data means
         no rows; unknown-time means the selected row has no measuredAt and no freshness conclusion is made.
         Known measuredAt is stale when whole elapsed seconds >15; other accepted known times produce
         not-evaluated. This is not a clinical assessment or per-metric freshness. Future accepted timestamps
@@ -221,7 +362,7 @@ paths:
       tags:
       - Tasks
       description: Sets completedAt to server UTC time when completed=true, or null when false. Repeating
-        true sets a new timestamp in BE-03; daily/idempotent task completion is planned for BE-07. Unknown
+        true sets a new timestamp in BE-05; daily/idempotent task completion is planned for BE-07. Unknown
         request fields, including date, are rejected. Body limit is 2 MiB.
       responses:
         '200':
@@ -466,7 +607,7 @@ components:
           type: string
           format: date-time
           readOnly: true
-          description: UTC time of first insertion. An equivalent retry preserves this value.
+          description: Server UTC receipt time of the request that created this record, not commit time. An equivalent retry preserves this value.
         timeBasis:
           type: string
           enum:
@@ -572,6 +713,328 @@ components:
             value:
               minimum: 1
               maximum: 5
+    HistoryPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - hasMore
+      - nextCursor
+      properties:
+        items:
+          type: array
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/Measurement'
+        hasMore:
+          type: boolean
+          description: More matching records existed below this page when it was read.
+        nextCursor:
+          type:
+          - string
+          - 'null'
+          description: Opaque continuation cursor, null when hasMore is false.
+      allOf:
+      - if:
+          properties:
+            hasMore:
+              const: true
+          required:
+          - hasMore
+        then:
+          properties:
+            nextCursor:
+              type: string
+              minLength: 1
+        else:
+          properties:
+            nextCursor:
+              type: 'null'
+    LatestMetric:
+      type: object
+      additionalProperties: false
+      required:
+      - metric
+      - latestMeasurement
+      - latestKnownMeasurement
+      - latestReceivedMeasurement
+      properties:
+        metric:
+          $ref: '#/components/schemas/Metric'
+        latestMeasurement:
+          description: Latest by effective UTC milliseconds/id; null if this metric has no rows.
+          anyOf:
+          - $ref: '#/components/schemas/Measurement'
+          - type: 'null'
+        latestKnownMeasurement:
+          description: Latest known measuredAt by UTC milliseconds/id, independently of arrival order; null if none.
+          anyOf:
+          - allOf:
+            - $ref: '#/components/schemas/Measurement'
+            - properties:
+                measuredAt:
+                  type: string
+                timeBasis:
+                  const: measuredAt
+          - type: 'null'
+        latestReceivedMeasurement:
+          description: Latest by receipt UTC milliseconds/id; may have unknown measurement time. Null if none.
+          anyOf:
+          - $ref: '#/components/schemas/Measurement'
+          - type: 'null'
+    LatestMeasurements:
+      type: object
+      additionalProperties: false
+      example:
+        astronautId: demo-astronaut
+        metrics:
+        - metric: heartRate
+          latestMeasurement: null
+          latestKnownMeasurement: null
+          latestReceivedMeasurement: null
+        - metric: systolicPressure
+          latestMeasurement: null
+          latestKnownMeasurement: null
+          latestReceivedMeasurement: null
+        - metric: diastolicPressure
+          latestMeasurement: null
+          latestKnownMeasurement: null
+          latestReceivedMeasurement: null
+        - metric: temperature
+          latestMeasurement: null
+          latestKnownMeasurement: null
+          latestReceivedMeasurement: null
+        - metric: sleepHours
+          latestMeasurement: null
+          latestKnownMeasurement: null
+          latestReceivedMeasurement: null
+        - metric: mood
+          latestMeasurement: null
+          latestKnownMeasurement: null
+          latestReceivedMeasurement: null
+      required:
+      - astronautId
+      - metrics
+      properties:
+        astronautId:
+          type: string
+          const: demo-astronaut
+          description: Server-selected demo profile. No astronautId query selector or authentication is provided.
+        metrics:
+          type: array
+          minItems: 6
+          maxItems: 6
+          description: Fixed order heartRate, systolicPressure, diastolicPressure, temperature, sleepHours, mood.
+          items:
+            $ref: '#/components/schemas/LatestMetric'
+    SeriesTimeBasis:
+      type: [string, 'null']
+      enum: [measuredAt, receivedAt, mixed, null]
+      description: All rows in the interval or range, not only the selected last row. measuredAt when
+        all times are known; receivedAt when all are unknown; mixed when both occur; null with no rows.
+        Receipt time does not establish measurement freshness.
+    SeriesPoint:
+      type: object
+      additionalProperties: false
+      required: [startAt, endAt, value, min, max, count, measuredCount, receivedCount, timeBasis]
+      properties:
+        startAt:
+          type: string
+          format: date-time
+          description: Inclusive UTC start, normalized with millisecond precision and Z suffix.
+        endAt:
+          type: string
+          format: date-time
+          description: Exclusive UTC end, normalized with millisecond precision and Z suffix; final bucket is clipped to to.
+        value:
+          type: [number, 'null']
+          description: Arithmetic mean or last value according to aggregation; null only for an empty bucket.
+        min:
+          type: [number, 'null']
+          description: Minimum for a nonempty mean bucket; null for last aggregation or an empty bucket.
+        max:
+          type: [number, 'null']
+          description: Maximum for a nonempty mean bucket; null for last aggregation or an empty bucket.
+        count:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Every matching row, including for last aggregation; measuredCount + receivedCount equals count.
+        measuredCount:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Rows positioned by known measuredAt.
+        receivedCount:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Rows with unknown measuredAt positioned by receivedAt.
+        timeBasis:
+          $ref: '#/components/schemas/SeriesTimeBasis'
+      allOf:
+      - if:
+          properties:
+            count: {const: 0}
+        then:
+          additionalProperties: true
+          properties:
+            value: {type: 'null'}
+            min: {type: 'null'}
+            max: {type: 'null'}
+            measuredCount: {const: 0}
+            receivedCount: {const: 0}
+            timeBasis: {type: 'null'}
+        else:
+          additionalProperties: true
+          properties:
+            value: {type: number}
+            timeBasis: {type: string}
+      - if:
+          properties:
+            timeBasis: {const: measuredAt}
+        then:
+          additionalProperties: true
+          properties:
+            measuredCount: {minimum: 1}
+            receivedCount: {const: 0}
+      - if:
+          properties:
+            timeBasis: {const: receivedAt}
+        then:
+          additionalProperties: true
+          properties:
+            measuredCount: {const: 0}
+            receivedCount: {minimum: 1}
+      - if:
+          properties:
+            timeBasis: {const: mixed}
+        then:
+          additionalProperties: true
+          properties:
+            measuredCount: {minimum: 1}
+            receivedCount: {minimum: 1}
+    MeasurementSeries:
+      type: object
+      additionalProperties: false
+      required: [astronautId, metric, unit, aggregation, from, to, intervalMs, timeBasis, points]
+      example:
+        astronautId: demo-astronaut
+        metric: heartRate
+        unit: bpm
+        aggregation: mean
+        from: '2026-11-13T08:00:00.000Z'
+        to: '2026-11-13T08:00:01.000Z'
+        intervalMs: 1000
+        timeBasis: null
+        points:
+        - startAt: '2026-11-13T08:00:00.000Z'
+          endAt: '2026-11-13T08:00:01.000Z'
+          value: null
+          min: null
+          max: null
+          count: 0
+          measuredCount: 0
+          receivedCount: 0
+          timeBasis: null
+      properties:
+        astronautId:
+          type: string
+          const: demo-astronaut
+        metric:
+          $ref: '#/components/schemas/Metric'
+        unit:
+          $ref: '#/components/schemas/Unit'
+        aggregation:
+          type: string
+          enum: [mean, last]
+          description: Mean for pulse, pressure and temperature; last for sleepHours and mood.
+        from:
+          type: string
+          format: date-time
+          description: Requested inclusive boundary normalized to UTC with milliseconds and Z suffix.
+        to:
+          type: string
+          format: date-time
+          description: Requested exclusive boundary normalized to UTC with milliseconds and Z suffix.
+        intervalMs:
+          type: integer
+          format: int64
+          minimum: 1
+          description: max(1, ceil((to - from) / maxPoints)), in whole UTC milliseconds.
+        timeBasis:
+          $ref: '#/components/schemas/SeriesTimeBasis'
+        points:
+          type: array
+          minItems: 1
+          maxItems: 500
+          description: Contiguous ascending UTC intervals covering [from,to), including empty buckets.
+            Length is ceil((to - from) / intervalMs), at most the requested maxPoints.
+          items:
+            $ref: '#/components/schemas/SeriesPoint'
+      allOf:
+      - if:
+          properties:
+            metric: {enum: [sleepHours, mood]}
+        then:
+          additionalProperties: true
+          properties:
+            aggregation: {const: last}
+            points:
+              items:
+                properties:
+                  min: {type: 'null'}
+                  max: {type: 'null'}
+        else:
+          additionalProperties: true
+          properties:
+            aggregation: {const: mean}
+            points:
+              items:
+                if:
+                  additionalProperties: true
+                  properties:
+                    count: {minimum: 1}
+                then:
+                  additionalProperties: true
+                  properties:
+                    min: {type: number}
+                    max: {type: number}
+      - if:
+          properties:
+            metric: {const: heartRate}
+        then:
+          additionalProperties: true
+          properties:
+            unit: {const: bpm}
+      - if:
+          properties:
+            metric: {enum: [systolicPressure, diastolicPressure]}
+        then:
+          additionalProperties: true
+          properties:
+            unit: {const: mmHg}
+      - if:
+          properties:
+            metric: {const: temperature}
+        then:
+          additionalProperties: true
+          properties:
+            unit: {const: °C}
+      - if:
+          properties:
+            metric: {const: sleepHours}
+        then:
+          additionalProperties: true
+          properties:
+            unit: {const: h}
+      - if:
+          properties:
+            metric: {const: mood}
+        then:
+          additionalProperties: true
+          properties:
+            unit: {const: score}
     Health:
       type: object
       additionalProperties: false
@@ -618,7 +1081,7 @@ components:
           - string
           - 'null'
           format: date-time
-          description: Server UTC timestamp, or null for incomplete. The BE-03 public API has no missionDate; repeated
+          description: Server UTC timestamp, or null for incomplete. The BE-05 public API has no missionDate; repeated
             completed=true updates this timestamp.
     TaskUpdate:
       type: object

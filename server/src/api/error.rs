@@ -1,4 +1,6 @@
-use crate::domain::{assessments::InvalidStoredTimestamp, measurements::ValidationError};
+use crate::domain::{
+    assessments::InvalidStoredTimestamp, measurements::ValidationError, series::InvalidSeriesData,
+};
 use axum::{
     http::{header, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
@@ -85,6 +87,16 @@ impl From<InvalidStoredTimestamp> for ApiError {
 impl From<sqlx::Error> for ApiError {
     fn from(error: sqlx::Error) -> Self {
         eprintln!("database error: {error}");
+        Self::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "DATABASE_ERROR",
+            "Database operation failed",
+        )
+    }
+}
+
+impl From<InvalidSeriesData> for ApiError {
+    fn from(_: InvalidSeriesData) -> Self {
         Self::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             "DATABASE_ERROR",

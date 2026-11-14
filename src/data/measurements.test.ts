@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { ApiError, getHistory, saveMeasurement, updateTask } from './measurements'
-import type { NewMeasurement } from '../shared/types'
+import { ApiError, getHistory, getLatestMeasurements, getMeasurementSeries, saveMeasurement, updateTask } from './measurements'
+import type { Measurement, NewMeasurement } from '../shared/types'
 
 const input: NewMeasurement = {
   deviceId: 'manual-01', sessionId: 'test', sequence: 0,
@@ -9,11 +9,91 @@ const input: NewMeasurement = {
 
 afterEach(() => vi.unstubAllGlobals())
 
-it('reads history from the relative server API', async () => {
-  const fetchMock = vi.fn().mockResolvedValue(new Response('[]', { status: 200 }))
+it('reads an empty history page from the relative server API', async () => {
+  const page = { items: [], hasMore: false, nextCursor: null }
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(page), { status: 200 }))
   vi.stubGlobal('fetch', fetchMock)
-  expect(await getHistory()).toEqual([])
+  expect(await getHistory()).toEqual(page)
   expect(fetchMock.mock.calls[0][0]).toBe('/api/measurements')
+})
+
+it('encodes time offsets and the opaque continuation cursor without losing pagination fields', async () => {
+  const record: Measurement = {
+    ...input, id: 'history-id', astronautId: 'demo-astronaut', source: 'manual',
+    measuredAt: null, receivedAt: '2026-11-14T08:00:00Z', timeBasis: 'receivedAt',
+  }
+  const page = { items: [record], hasMore: true, nextCursor: 'next:opaque/+=' }
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(page), { status: 200 }))
+  vi.stubGlobal('fetch', fetchMock)
+  const filters = {
+    metric: 'heartRate' as const,
+    from: '2026-11-13T13:00:00.123+05:00',
+    to: '2026-11-14T13:00:00+05:00',
+    limit: 60,
+    cursor: 'current:opaque/+&=',
+  }
+  expect(await getHistory(filters)).toEqual(page)
+  const url = new URL(fetchMock.mock.calls[0][0], 'http://localhost')
+  expect(url.pathname).toBe('/api/measurements')
+  expect(Object.fromEntries(url.searchParams)).toEqual({ ...filters, limit: '60' })
+})
+
+it('keeps known measurements, unknown-time receipts and missing metrics distinct', async () => {
+  const known = {
+    ...input, id: 'known', astronautId: 'demo-astronaut', source: 'manual',
+    measuredAt: '2026-11-13T08:00:00Z', receivedAt: '2026-11-13T08:00:01Z', timeBasis: 'measuredAt',
+  }
+  const unknown = { ...known, id: 'unknown', measuredAt: null, receivedAt: '2026-11-14T08:00:00Z', timeBasis: 'receivedAt' }
+  const overview = {
+    astronautId: 'demo-astronaut',
+    metrics: [
+      { metric: 'heartRate', latestMeasurement: unknown, latestKnownMeasurement: known, latestReceivedMeasurement: unknown },
+      { metric: 'sleepHours', latestMeasurement: null, latestKnownMeasurement: null, latestReceivedMeasurement: null },
+    ],
+  }
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(overview), { status: 200 }))
+  vi.stubGlobal('fetch', fetchMock)
+  expect(await getLatestMeasurements()).toEqual(overview)
+  expect(fetchMock.mock.calls[0][0]).toBe('/api/measurements/latest')
+})
+
+it('encodes the full series period and point budget while preserving missing buckets and provenance', async () => {
+  const filters = {
+    metric: 'heartRate' as const,
+    from: '2026-11-07T13:00:00.123+05:00',
+    to: '2026-11-14T13:00:00.123+05:00',
+    maxPoints: 168,
+  }
+  const series = {
+    astronautId: 'demo-astronaut', metric: 'heartRate', unit: 'bpm', aggregation: 'mean',
+    from: '2026-11-07T08:00:00.123Z', to: '2026-11-14T08:00:00.123Z', intervalMs: 3_600_000,
+    timeBasis: 'receivedAt', points: [
+      { startAt: '2026-11-07T08:00:00.123Z', endAt: '2026-11-07T09:00:00.123Z', value: null, min: null, max: null, count: 0, measuredCount: 0, receivedCount: 0, timeBasis: null },
+      { startAt: '2026-11-07T09:00:00.123Z', endAt: '2026-11-07T10:00:00.123Z', value: 70, min: 70, max: 70, count: 1, measuredCount: 0, receivedCount: 1, timeBasis: 'receivedAt' },
+    ],
+  }
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(series), { status: 200 }))
+  vi.stubGlobal('fetch', fetchMock)
+  expect(await getMeasurementSeries(filters)).toEqual(series)
+  const url = new URL(fetchMock.mock.calls[0][0], 'http://localhost')
+  expect(url.pathname).toBe('/api/measurements/series')
+  expect(Object.fromEntries(url.searchParams)).toEqual({ ...filters, maxPoints: '168' })
+})
+
+it('leaves the series point budget to the server default when omitted', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }))
+  vi.stubGlobal('fetch', fetchMock)
+  await getMeasurementSeries({ metric: 'sleepHours', from: '2026-11-13T00:00:00Z', to: '2026-11-14T00:00:00Z' })
+  const url = new URL(fetchMock.mock.calls[0][0], 'http://localhost')
+  expect(url.searchParams.has('maxPoints')).toBe(false)
+  expect(url.searchParams.get('metric')).toBe('sleepHours')
+})
+
+it('surfaces a latest-values API failure instead of returning an empty overview', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+    code: 'DATABASE_ERROR', message: 'Database operation failed',
+  }), { status: 500 })))
+  await expect(getLatestMeasurements()).rejects.toMatchObject({ status: 500, code: 'DATABASE_ERROR' })
 })
 
 it('preserves the caller’s message identity when saving', async () => {

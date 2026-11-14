@@ -1,0 +1,41 @@
+{
+  "astronautId": "demo-astronaut",
+  "metrics": [
+    {
+      "metric": "heartRate",
+      "latestMeasurement": null,
+      "latestKnownMeasurement": null,
+      "latestReceivedMeasurement": null
+    },
+    {
+      "metric": "systolicPressure",
+      "latestMeasurement": null,
+      "latestKnownMeasurement": null,
+      "latestReceivedMeasurement": null
+    },
+    {
+      "metric": "diastolicPressure",
+      "latestMeasurement": null,
+      "latestKnownMeasurement": null,
+      "latestReceivedMeasurement": null
+    },
+    {
+      "metric": "temperature",
+      "latestMeasurement": null,
+      "latestKnownMeasurement": null,
+      "latestReceivedMeasurement": null
+    },
+    {
+      "metric": "sleepHours",
+      "latestMeasurement": null,
+      "latestKnownMeasurement": null,
+      "latestReceivedMeasurement": null
+    },
+    {
+      "metric": "mood",
+      "latestMeasurement": null,
+      "latestKnownMeasurement": null,
+      "latestReceivedMeasurement": null
+    }
+  ]
+}

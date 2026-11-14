@@ -43,8 +43,34 @@ try {
     })
   })
   const history = await (await fetch(`${base}/api/measurements`)).json()
-  assert.equal(history.length, 3)
-  assert.ok(history.every(row => row.source === 'simulator'))
+  assert.equal(history.items.length, 3)
+  assert.equal(history.hasMore, false)
+  assert.equal(history.nextCursor, null)
+  assert.ok(history.items.every(row => row.source === 'simulator'))
+  const latest = await (await fetch(`${base}/api/measurements/latest`)).json()
+  assert.equal(latest.metrics.length, 6)
+  assert.equal(latest.metrics[0].latestKnownMeasurement.id, history.items[0].id)
+  assert.ok(latest.metrics.slice(1).every(row => row.latestMeasurement === null))
+  const timestamps = history.items.map(row => Date.parse(row.measuredAt))
+  const filters = new URLSearchParams({
+    metric: 'heartRate',
+    from: new Date(Math.min(...timestamps)).toISOString(),
+    to: new Date(Math.max(...timestamps) + 1).toISOString(),
+    maxPoints: '2',
+  })
+  const seriesResponse = await fetch(`${base}/api/measurements/series?${filters}`)
+  assert.equal(seriesResponse.status, 200)
+  const series = await seriesResponse.json()
+  assert.equal(series.aggregation, 'mean')
+  assert.equal(series.unit, 'bpm')
+  assert.equal(series.timeBasis, 'measuredAt')
+  assert.ok(series.points.length <= 2)
+  assert.equal(series.points.reduce((count, point) => count + point.count, 0), 3)
+  assert.equal(series.points[0].startAt, filters.get('from'))
+  assert.equal(series.points.at(-1).endAt, filters.get('to'))
+  assert.ok(series.points.every(point => point.count === 0
+    ? point.value === null
+    : Number.isFinite(point.value) && point.min <= point.value && point.value <= point.max))
   const page = await fetch(base)
   assert.equal(page.status, 200)
   assert.match(await page.text(), /Space Health/)
@@ -52,7 +78,9 @@ try {
   await start()
   const persisted = await (await fetch(`${base}/api/measurements`)).json()
   assert.deepEqual(persisted, history)
-  console.log('PASS: simulator → API → SQLite → history; static UI; persistence after restart')
+  const persistedSeries = await (await fetch(`${base}/api/measurements/series?${filters}`)).json()
+  assert.deepEqual(persistedSeries, series)
+  console.log('PASS: simulator → API → SQLite → paginated history/latest/series; static UI; persistence after restart')
 } finally {
   await stop()
   await rm(directory, { recursive: true, force: true })

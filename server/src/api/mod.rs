@@ -22,6 +22,8 @@ pub(crate) fn routes() -> Router<SqlitePool> {
             get(handlers::history).post(handlers::ingest),
         )
         .route("/assessments", get(handlers::assessments))
+        .route("/measurements/latest", get(handlers::latest_measurements))
+        .route("/measurements/series", get(handlers::measurement_series))
         .route("/tasks", get(handlers::tasks))
         .route("/tasks/{id}", patch(handlers::update_task))
         .fallback(handlers::not_found)
