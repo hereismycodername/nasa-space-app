@@ -1,6 +1,7 @@
 use crate::domain::{
     history::{HistoryCursor, HistoryPage, HistoryQuery, LatestMetric},
-    measurements::{Device, Measurement, NewMeasurement, METRICS},
+    measurements::{Device, Measurement, NewMeasurement},
+    metric_config::METRICS,
 };
 use sqlx::{sqlite::SqliteRow, QueryBuilder, Row, Sqlite, SqlitePool};
 use uuid::Uuid;
@@ -80,52 +81,68 @@ pub(crate) async fn history(
     })
 }
 
-/// Read all metrics from one SQLite snapshot, independently of history page limits.
+/// Read all three latest views in one SQLite statement and therefore one snapshot.
+/// Each correlated lookup uses the existing metric/time index, without scanning history.
 pub(crate) async fn latest_by_metric(
     pool: &SqlitePool,
     astronaut_id: &str,
 ) -> Result<Vec<LatestMetric>, sqlx::Error> {
-    let mut transaction = pool.begin().await?;
-    let mut metrics = Vec::with_capacity(METRICS.len());
-    for metric in METRICS {
-        let latest_measurement = sqlx::query(
-            "SELECT * FROM measurements WHERE astronaut_id = ? AND metric = ?
-             ORDER BY COALESCE(measured_at_ms, received_at_ms) DESC, id DESC LIMIT 1",
+    let mut query = QueryBuilder::<Sqlite>::new("WITH metrics(metric) AS (");
+    query.push_values(METRICS, |mut row, definition| {
+        row.push_bind(definition.metric);
+    });
+    query
+        .push(
+            "), latest(selection, id) AS (
+         SELECT 'effective', (SELECT id FROM measurements WHERE astronaut_id = ",
         )
-        .bind(astronaut_id)
-        .bind(metric)
-        .fetch_optional(&mut *transaction)
-        .await?
-        .map(decode)
-        .transpose()?;
-        let latest_known_measurement = sqlx::query(
-            "SELECT * FROM measurements WHERE astronaut_id = ? AND metric = ? AND measured_at IS NOT NULL
-             ORDER BY measured_at_ms DESC, id DESC LIMIT 1",
+        .push_bind(astronaut_id)
+        .push(
+            " AND metric = metrics.metric
+          ORDER BY COALESCE(measured_at_ms, received_at_ms) DESC, id DESC LIMIT 1)
+         FROM metrics
+         UNION ALL
+         SELECT 'known', (SELECT id FROM measurements WHERE astronaut_id = ",
         )
-        .bind(astronaut_id)
-        .bind(metric)
-        .fetch_optional(&mut *transaction)
-        .await?
-        .map(decode)
-        .transpose()?;
-        let latest_received_measurement = sqlx::query(
-            "SELECT * FROM measurements WHERE astronaut_id = ? AND metric = ?
-             ORDER BY received_at_ms DESC, id DESC LIMIT 1",
+        .push_bind(astronaut_id)
+        .push(
+            " AND metric = metrics.metric AND measured_at IS NOT NULL
+          ORDER BY measured_at_ms DESC, id DESC LIMIT 1)
+         FROM metrics
+         UNION ALL
+         SELECT 'received', (SELECT id FROM measurements WHERE astronaut_id = ",
         )
-        .bind(astronaut_id)
-        .bind(metric)
-        .fetch_optional(&mut *transaction)
-        .await?
-        .map(decode)
-        .transpose()?;
-        metrics.push(LatestMetric {
-            metric,
-            latest_measurement,
-            latest_known_measurement,
-            latest_received_measurement,
-        });
+        .push_bind(astronaut_id)
+        .push(
+            " AND metric = metrics.metric
+          ORDER BY received_at_ms DESC, id DESC LIMIT 1)
+         FROM metrics)
+         SELECT latest.selection, m.* FROM latest JOIN measurements m ON m.id = latest.id",
+        );
+    let rows = query.build().fetch_all(pool).await?;
+    let mut metrics: Vec<_> = METRICS
+        .into_iter()
+        .map(|definition| LatestMetric {
+            metric: definition.metric,
+            latest_measurement: None,
+            latest_known_measurement: None,
+            latest_received_measurement: None,
+        })
+        .collect();
+    for row in rows {
+        let selection: String = row.try_get("selection")?;
+        let measurement = decode(row)?;
+        let metric = metrics
+            .iter_mut()
+            .find(|entry| entry.metric == measurement.metric)
+            .ok_or_else(|| sqlx::Error::Decode("Unknown latest metric".into()))?;
+        match selection.as_str() {
+            "effective" => metric.latest_measurement = Some(measurement),
+            "known" => metric.latest_known_measurement = Some(measurement),
+            "received" => metric.latest_received_measurement = Some(measurement),
+            _ => return Err(sqlx::Error::Decode("Unknown latest selection".into())),
+        }
     }
-    transaction.commit().await?;
     Ok(metrics)
 }
 

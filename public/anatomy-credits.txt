@@ -1,0 +1,12 @@
+BodyParts3D, © The Database Center for Life Science licensed under CC Attribution 4.0 International.
+Source and licence: https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html
+Licence text: https://creativecommons.org/licenses/by/4.0/
+
+Adaptation: reduced adult male reference meshes projected into frontal SVG contours,
+scaled to a 240 × 500 drawing area. Geometry and anchors are exported together by
+scripts/export-anatomy.rs from the native UI data contributed by Asterisksy-zxc.
+This reference anatomy is not an individual astronaut's scan or a diagnostic image.
+
+The source mesh headers also retain CC Attribution-Share Alike 2.1 Japan notices;
+the native derived geometry preserves those notices and attribution.
+See ui/README.md for provenance and ui/tools/gen_anatomy.py for transformations.

@@ -1,14 +1,5 @@
-use super::metric_config::MAX_FUTURE_SKEW_SECONDS;
+use super::metric_config::{definition_for, MAX_FUTURE_SKEW_SECONDS};
 use chrono::{DateTime, Utc};
-
-pub(crate) const METRICS: [&str; 6] = [
-    "heartRate",
-    "systolicPressure",
-    "diastolicPressure",
-    "temperature",
-    "sleepHours",
-    "mood",
-];
 
 #[derive(Debug, thiserror::Error)]
 #[error("{message}")]
@@ -47,19 +38,12 @@ impl NewMeasurement {
                 message: "Invalid deviceId, sessionId or sequence",
             });
         }
-        let expected = match self.metric.as_str() {
-            "heartRate" => "bpm",
-            "systolicPressure" | "diastolicPressure" => "mmHg",
-            "temperature" => "°C",
-            "sleepHours" => "h",
-            "mood" => "score",
-            _ => {
-                return Err(ValidationError {
-                    field: "metric",
-                    message: "Unknown metric",
-                })
-            }
-        };
+        let expected = definition_for(&self.metric)
+            .ok_or(ValidationError {
+                field: "metric",
+                message: "Unknown metric",
+            })?
+            .unit;
         if self.unit != expected || !self.value.is_finite() {
             return Err(ValidationError {
                 field: if self.unit != expected {

@@ -69,7 +69,7 @@ api преобразует wire DTO и решает, какой HTTP-ответ 
 - `series::fill_gaps(&SeriesQuery, Vec<BucketAggregate>) -> Result<Vec<SeriesPoint>, InvalidSeriesData>`;
 - `assess(Option<&Measurement>, now: DateTime<Utc>) -> Result<Assessment, InvalidStoredTimestamp>`;
 - `assess_snapshot(&[LatestMetric], now: DateTime<Utc>) -> Result<Assessment, InvalidStoredTimestamp>`;
-- `freshness::evaluate(Option<&Measurement>, &MetricPolicy, now: DateTime<Utc>) -> Result<Quality, InvalidStoredTimestamp>`;
+- `freshness::evaluate(Option<&Measurement>, &MetricDefinition, now: DateTime<Utc>) -> Result<Quality, InvalidStoredTimestamp>`;
 - `freshness::evaluate_metrics(&[LatestMetric], now: DateTime<Utc>) -> Result<Vec<MetricQuality>, InvalidStoredTimestamp>`;
 - `completion_time(completed: bool, now: DateTime<Utc>) -> Option<DateTime<Utc>>`.
 
@@ -145,7 +145,7 @@ sequence для попытки доставки. Неожиданная ошиб
 Лишняя строка определяет `has_more`, курсор берётся с последней возвращаемой записи.
 Внешний ответ — `{items, hasMore, nextCursor}`. Между страницами snapshot не удерживается.
 
-`latest_by_metric` читает все шесть метрик в одной read-транзакции. Для каждой
+`latest_by_metric` читает все шесть метрик одним SQL-запросом и в одном снимке. Для каждой
 независимо выбираются последние effective, known measured и received записи с
 детерминированным `id DESC`. Индексированные выборки LIMIT 1 не обрезают сначала
 общую историю до 500 строк. Поэтому редкие показатели остаются в обзоре, а
@@ -160,9 +160,11 @@ astronaut/metric/receipt time и astronaut/receipt time. Индекс metric/eff
 
 ### Качество и свежесть BE-06
 
-`domain/metric_config.rs` содержит типизированную таблицу `METRIC_POLICIES` и
-`MAX_FUTURE_SKEW_SECONDS=300`: пульс 15 s, давление/температура 3600 s,
-сон/самочувствие 86400 s. Это демонстрационная политика сбора, не клинические пороги.
+`domain/metric_config.rs` содержит единый реестр `METRICS` (`MetricDefinition`):
+имя, единицу, способ агрегации и срок свежести. Валидация, latest, series и quality
+используют одни определения. Здесь же находится допуск будущего времени
+`MAX_FUTURE_SKEW_SECONDS=300`. Окна свежести: пульс 15 s, давление/температура
+3600 s, сон/самочувствие 86400 s. Это демонстрационная политика сбора, не клинические пороги.
 
 `domain/freshness.rs` предоставляет чистые `evaluate(row, policy, now)` и
 `evaluate_metrics(metrics, now)`. Последняя получает уже выбранные storage записи;

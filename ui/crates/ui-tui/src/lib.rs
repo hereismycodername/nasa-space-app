@@ -645,17 +645,15 @@ impl<B: Backend> App<B> {
     /// Stacked telemetry: one header line and one trend line per watched channel, limit status per sample.
     fn telemetry(&self, f: &mut Frame, a: Rect) {
         let o = self.b.overview();
-        let block = Block::bordered().title(format!(" TELEMETRY  {}  day {} ", self.crew_name(), o.mission_day)).border_style(Style::new().fg(Color::DarkGray));
+        let block = Block::bordered().title(format!(" TELEMETRY  {}  day {}  PgUp/PgDn ", self.crew_name(), o.mission_day)).border_style(Style::new().fg(Color::DarkGray));
         let inner = block.inner(a);
         f.render_widget(block, a);
         let mut lines: Vec<Line> = vec![];
-        let per = 3usize;
-        let max_ch = (inner.height as usize / per).max(1);
         if self.watch.is_empty() {
             lines.push(Line::from(Span::styled("No channels. Move to an indicator in OBJECTS and press Enter to plot it.", Style::new().fg(Color::DarkGray))));
         }
         let width = inner.width as usize;
-        for id in self.watch.iter().take(max_ch) {
+        for id in &self.watch {
             let Some(ind) = self.all_inds().into_iter().find(|i| i.id == *id) else { continue };
             let hist = self.b.history(id);
             let st = self.b.indicator_status(id);
@@ -670,7 +668,8 @@ impl<B: Backend> App<B> {
                 Span::styled(if st == Status::Normal { String::new() } else { word(st).to_string() }, Style::new().fg(sc(st)).bold()),
                 Span::styled(format!("   baseline {}", base), Style::new().fg(Color::DarkGray)),
             ]));
-            let pts: Vec<(f64, Status)> = hist.iter().rev().take(width.max(1).min(40)).rev().map(|r| (r.value, self.b.evaluate(id, r.value).status)).collect();
+            let visible = &hist[hist.len().saturating_sub(width.clamp(1, 40))..];
+            let pts: Vec<(f64, Status)> = visible.iter().map(|r| (r.value, self.b.evaluate(id, r.value).status)).collect();
             let vals: Vec<f64> = pts.iter().map(|p| p.0).collect();
             let sp: Vec<char> = spark(&vals).chars().collect();
             let rep_n = if pts.is_empty() { 1 } else { (width / pts.len()).max(1) };
@@ -679,10 +678,12 @@ impl<B: Backend> App<B> {
                 spans.push(Span::styled(ch.to_string().repeat(rep_n), Style::new().fg(sc(pts[i].1))));
             }
             lines.push(Line::from(spans));
-            let (d0, d1) = (hist.first().map(|r| r.day).unwrap_or(0), hist.last().map(|r| r.day).unwrap_or(0));
+            let (d0, d1) = (visible.first().map(|r| r.day).unwrap_or(0), visible.last().map(|r| r.day).unwrap_or(0));
             lines.push(Line::from(Span::styled(format!("day {:<w$}day {}", d0, d1, w = width.saturating_sub(10).max(1)), Style::new().fg(Color::DarkGray))));
         }
-        f.render_widget(Paragraph::new(lines), inner);
+        let max_scroll = lines.len().saturating_sub(usize::from(inner.height));
+        let scroll = usize::from(self.scroll).min(max_scroll) as u16;
+        f.render_widget(Paragraph::new(lines).scroll((scroll, 0)), inner);
     }
 
     fn event_log(&self, f: &mut Frame, a: Rect) {
@@ -1188,6 +1189,38 @@ mod ground_tests {
     use super::*;
     use ratatui::backend::TestBackend;
     use ui_model::DemoBackend;
+
+    fn telemetry_text(app: &App<DemoBackend>) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(80, 11)).unwrap();
+        terminal.draw(|frame| app.telemetry(frame, frame.area())).unwrap();
+        let buffer = terminal.backend().buffer();
+        (0..11).map(|y| (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>()).collect::<Vec<_>>().join("\n")
+    }
+
+    #[test]
+    fn telemetry_labels_the_displayed_samples_instead_of_the_full_history() {
+        let mut app = App::new(DemoBackend::new());
+        for _ in 0..50 {
+            app.b.demo_next_day();
+            app.b.log("hr", 72.0);
+        }
+        app.watch = vec!["hr".into()];
+        let text = telemetry_text(&app);
+        assert!(text.contains("day 26"), "first of the forty displayed samples: {text}");
+        assert!(text.contains("day 65"));
+    }
+
+    #[test]
+    fn telemetry_page_down_reaches_channels_beyond_the_first_screen() {
+        let mut app = App::new(DemoBackend::new());
+        app.role = Role::Ground;
+        app.watch = vec!["hr".into(), "spo2".into(), "temp".into(), "pvt".into(), "exercise".into()];
+        app.watch_touched = true;
+        assert!(!telemetry_text(&app).contains("Exercise"));
+        app.on_key(KeyEvent::new(KeyCode::PageDown, event::KeyModifiers::NONE));
+        app.on_key(KeyEvent::new(KeyCode::PageDown, event::KeyModifiers::NONE));
+        assert!(telemetry_text(&app).contains("Exercise"));
+    }
 
     #[test]
     fn tree_plots_and_unplots_an_indicator() {

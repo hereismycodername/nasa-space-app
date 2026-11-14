@@ -33,3 +33,7 @@ coverage/
 *.db
 *.db-shm
 *.db-wal
+*.db.lock
+__pycache__/
+*.pyc
+.venv/

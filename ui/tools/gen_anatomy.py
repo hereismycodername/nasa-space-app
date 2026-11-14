@@ -1,5 +1,5 @@
 ﻿#!/usr/bin/env python
-"""Generates crates/ui-model/src/anatomy_data.rs from BodyParts3D (frontal projection of real CT-based meshes).
+"""Generates crates/ui-model/src/anatomy_data.rs from BodyParts3D reference meshes (frontal projection).
 
 BodyParts3D, (c) The Database Center for Life Science, licensed under CC Attribution 4.0 International
 (the mesh files themselves state CC Attribution-Share Alike 2.1 Japan; this derived data is shared under the same terms).

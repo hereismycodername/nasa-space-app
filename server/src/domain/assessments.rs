@@ -2,7 +2,7 @@ use super::{
     freshness::{evaluate, FreshnessStatus},
     history::LatestMetric,
     measurements::Measurement,
-    metric_config::policy_for,
+    metric_config::definition_for,
 };
 use chrono::{DateTime, Utc};
 
@@ -27,7 +27,7 @@ pub(crate) fn assess(
             explanation: "Нет измерений. Запустите симулятор или введите показатель.",
         });
     };
-    let policy = policy_for(&row.metric).ok_or(InvalidStoredTimestamp)?;
+    let policy = definition_for(&row.metric).ok_or(InvalidStoredTimestamp)?;
     let quality = evaluate(Some(row), policy, now)?;
     Ok(match quality.status {
         FreshnessStatus::Missing => Assessment {

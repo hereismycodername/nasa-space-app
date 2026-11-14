@@ -14,9 +14,25 @@ jobs:
           components: rustfmt, clippy
       - run: npm ci
       - run: npm run check
+      - run: npm run test:tools
       - run: npm run check:api
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
       - run: cargo build --locked
       - run: node scripts/smoke.mjs
+      - run: npm run test:demo
+      - name: Verify generated anatomy and markers
+        run: |
+          rustc scripts/export-anatomy.rs -o /tmp/export-anatomy
+          /tmp/export-anatomy > /tmp/anatomyData.ts
+          diff -u src/features/anatomy/anatomyData.ts /tmp/anatomyData.ts
+  native-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native window build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libgl1-mesa-dev pkg-config
+      - name: Test native UI workspace independently
+        run: cargo test --locked --manifest-path ui/Cargo.toml --workspace

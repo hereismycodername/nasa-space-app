@@ -1,5 +1,8 @@
 //! Aggregate the full requested range in SQLite without loading raw rows into Rust.
-use crate::domain::series::{Aggregation, BucketAggregate, SeriesQuery};
+use crate::domain::{
+    metric_config::Aggregation,
+    series::{BucketAggregate, SeriesQuery},
+};
 use sqlx::{sqlite::SqliteRow, Row, SqlitePool};
 
 const MEAN_SQL: &str = "

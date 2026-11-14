@@ -3,7 +3,7 @@ use super::{
     assessments::InvalidStoredTimestamp,
     history::LatestMetric,
     measurements::Measurement,
-    metric_config::{policy_for, MetricPolicy},
+    metric_config::{definition_for, MetricDefinition},
 };
 use chrono::{DateTime, Duration, Utc};
 
@@ -47,7 +47,7 @@ pub(crate) struct MetricQuality {
 /// Receipt confirms delivery, never the age of the underlying observation.
 pub(crate) fn evaluate(
     row: Option<&Measurement>,
-    policy: &MetricPolicy,
+    policy: &MetricDefinition,
     now: DateTime<Utc>,
 ) -> Result<Quality, InvalidStoredTimestamp> {
     let mut quality = Quality {
@@ -98,7 +98,7 @@ pub(crate) fn evaluate_metrics(
     metrics
         .iter()
         .map(|entry| {
-            let policy = policy_for(entry.metric).ok_or(InvalidStoredTimestamp)?;
+            let policy = definition_for(entry.metric).ok_or(InvalidStoredTimestamp)?;
             Ok(MetricQuality {
                 metric: entry.metric,
                 quality: evaluate(
@@ -122,7 +122,7 @@ pub(crate) fn evaluate_metrics(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::metric_config::METRIC_POLICIES;
+    use crate::domain::metric_config::METRICS;
 
     fn instant(value: &str) -> DateTime<Utc> {
         DateTime::parse_from_rfc3339(value)
@@ -151,7 +151,7 @@ mod tests {
     }
 
     fn quality(row: Option<&Measurement>, metric: &str, at: DateTime<Utc>) -> Quality {
-        evaluate(row, policy_for(metric).unwrap(), at).unwrap()
+        evaluate(row, definition_for(metric).unwrap(), at).unwrap()
     }
 
     #[test]
@@ -172,7 +172,7 @@ mod tests {
 
     #[test]
     fn every_policy_is_fresh_at_its_exact_boundary_and_stale_one_nanosecond_later() {
-        for policy in METRIC_POLICIES {
+        for policy in METRICS {
             let measured_at = now() - Duration::seconds(i64::from(policy.fresh_for_seconds));
             let sample = row("boundary", policy.metric, Some(measured_at.to_rfc3339()));
             let at_boundary = evaluate(Some(&sample), &policy, now()).unwrap();
@@ -302,10 +302,10 @@ mod tests {
     #[test]
     fn corrupt_stored_measurement_or_receipt_time_is_an_error() {
         let invalid_measured = row("bad-measured", "heartRate", Some("invalid".into()));
-        assert!(evaluate(Some(&invalid_measured), &METRIC_POLICIES[0], now()).is_err());
+        assert!(evaluate(Some(&invalid_measured), &METRICS[0], now()).is_err());
         let mut invalid_received = row("bad-received", "heartRate", None);
         invalid_received.received_at = "invalid".into();
-        assert!(evaluate(Some(&invalid_received), &METRIC_POLICIES[0], now()).is_err());
+        assert!(evaluate(Some(&invalid_received), &METRICS[0], now()).is_err());
     }
 
     fn entry(
