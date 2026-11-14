@@ -1,6 +1,6 @@
-// Taken unchanged from the team backend (branch main, commit 8c53fce, server/src/domain/measurements.rs) unless noted below.
-// ADAPTED: `validate` also accepts the metrics of the AstroCheck interface (see `crate::metrics`);
-// the original six metrics and their rules are unchanged, all original unit tests still apply.
+// Taken from the team backend (branch codex/team-integration, commit 2c3d1db, server/src/domain/measurements.rs) unless noted below.
+// ADAPTED: `validate` also accepts the additional metrics of the AstroCheck interface (see `crate::metrics`).
+use super::metric_config::{definition_for, MAX_FUTURE_SKEW_SECONDS};
 use chrono::{DateTime, Utc};
 
 #[derive(Debug, thiserror::Error)]
@@ -40,22 +40,17 @@ impl NewMeasurement {
                 message: "Invalid deviceId, sessionId or sequence",
             });
         }
-        let ui = crate::metrics::spec(&self.metric);
-        let expected = match self.metric.as_str() {
-            "heartRate" => "bpm",
-            "systolicPressure" | "diastolicPressure" => "mmHg",
-            "temperature" => "\u{b0}C",
-            "sleepHours" => "h",
-            "mood" => "score",
-            _ => match ui {
-                Some(spec) => spec.unit,
-                None => {
-                    return Err(ValidationError {
-                        field: "metric",
-                        message: "Unknown metric",
-                    })
-                }
-            },
+        // ADAPTED: besides the team's metrics the interface's additional metrics are accepted (crate::metrics).
+        let extra = crate::metrics::spec(&self.metric);
+        let expected = match (definition_for(&self.metric), extra) {
+            (Some(def), _) => def.unit,
+            (None, Some(spec)) => spec.unit,
+            (None, None) => {
+                return Err(ValidationError {
+                    field: "metric",
+                    message: "Unknown metric",
+                })
+            }
         };
         if self.unit != expected || !self.value.is_finite() {
             return Err(ValidationError {
@@ -72,7 +67,7 @@ impl NewMeasurement {
                 field: "measuredAt",
                 message: "Invalid measuredAt timestamp",
             })?;
-            if parsed > now + chrono::Duration::minutes(5) {
+            if parsed > now + chrono::Duration::seconds(MAX_FUTURE_SKEW_SECONDS) {
                 return Err(ValidationError {
                     field: "measuredAt",
                     message: "measuredAt is in the future",
@@ -83,7 +78,7 @@ impl NewMeasurement {
             "sleepHours" => (0.0..=24.0).contains(&self.value),
             "mood" => (1.0..=5.0).contains(&self.value),
             "heartRate" | "systolicPressure" | "diastolicPressure" | "temperature" => self.value > 0.0,
-            _ => ui.map_or(false, |spec| (spec.lo..=spec.hi).contains(&self.value)),
+            _ => extra.map_or(false, |spec| (spec.lo..=spec.hi).contains(&self.value)),
         };
         if !valid {
             return Err(ValidationError {
