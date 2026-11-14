@@ -171,10 +171,12 @@ baseline/delayed используют `normal`. Это тестовые данн
 ## Выпуск и показ
 
 Один release-процесс Rust раздаёт UI и API на `http://127.0.0.1:8080`, без Vite.
-`npm run release` собирает `dist` и сервер через `cargo build --release --locked`,
+`npm run release` собирает `dist`, сервер и `space-health-admin` через
+`cargo build --release --locked --bins`,
 ожидает API и запускается **без симулятора**. Для живого потока добавьте
 `npm run release -- --simulator`. Ctrl+C останавливает дочерние процессы через
-stdin, в том числе на Windows; через 10 секунд используется принудительная остановка.
+stdin на Windows и сигналом группе процессов на Unix; через 10 секунд используется
+принудительная остановка.
 Сервер заканчивает текущие запросы и печатает `Server stopped gracefully.`.
 На Linux прямой запуск и systemd также принимают SIGINT/SIGTERM.
 
@@ -201,14 +203,45 @@ npm run release
 ```text
 npm ci
 npm run build
-cargo build --release --locked
+cargo build --release --locked --bins
 ```
 
-В стандартной конфигурации бинарник находится в `target/release/space-health-server`
-(Windows: `.exe`). При изменённом Cargo target лаунчер берёт путь из Cargo artifact
-и печатает его в строке `Ready`. Для готовой release-сборки без пересборки:
+В комплект выпуска входят `space-health-server`, `space-health-admin` и весь `dist/`.
+В стандартной конфигурации оба бинарника находятся в `target/release/`
+(Windows: `.exe`). При изменённом Cargo target лаунчер берёт пути из Cargo artifact:
+сервер — в строке `Ready`, admin — в строке `Admin (release)` после сборки.
+Для готовой release-сборки без пересборки:
 `npm run release -- --no-build`; при переносе можно задать `SERVER_BINARY`.
 Обычный `npm run start` по-прежнему запускает последнюю debug-сборку.
+
+Admin CLI не запускает HTTP-сервер. Используйте ту же `DATABASE_URL`, что у сервера.
+Из корня проекта перейдите в release-папку, PowerShell:
+
+```powershell
+$releaseRoot = (Get-Location).Path
+$env:DATABASE_URL = 'sqlite://' + $releaseRoot.Replace('\', '/') + '/space-health.db'
+Push-Location .\target\release
+& .\space-health-admin.exe --help
+& .\space-health-admin.exe register-device sensor-01
+& .\space-health-admin.exe list-devices
+Pop-Location
+```
+
+В bash:
+
+```bash
+release_root="$(pwd -P)"
+export DATABASE_URL="sqlite://${release_root}/space-health.db"
+(
+  cd target/release
+  ./space-health-admin --help
+  ./space-health-admin register-device sensor-01
+  ./space-health-admin list-devices
+)
+```
+
+При запуске admin из самой release-папки или другой директории задайте абсолютный
+`DATABASE_URL` по примеру ниже; относительный путь зависит от текущей папки.
 
 ### Готовый бинарник из другой папки
 
@@ -239,7 +272,8 @@ cd /tmp
 ```
 
 Ctrl+C завершает и прямой запуск. `SHUTDOWN_STDIN=1` нужен только супервизору:
-строка или EOF на stdin запрашивает штатную остановку. Лаунчеры задают его сами.
+строка или EOF на stdin запрашивает штатную остановку. Лаунчеры задают его сами
+на Windows, а на Unix посылают сигналы группе процессов.
 Подтверждённые API записи остаются в SQLite после остановки и перезапуска.
 Отсутствие `dist/index.html` даёт предупреждение, API продолжает работать.
 Неверный URL БД, недоступный каталог и ошибка bind завершают сервер с кодом 1
@@ -290,7 +324,8 @@ npm run demo:prepare -- --scenario baseline --force
 seed/reference из `demo/baseline.db.json`. Рабочую `space-health.db` сброс не меняет.
 
 Заранее, с интернетом, выполните `npm ci`, сборку и при необходимости
-`demo:prepare`. Готовому бинарнику нужны только `dist/` со всеми assets и доступная
+`demo:prepare`. Возьмите оба release-бинарника для совместимой ОС/архитектуры.
+Готовому серверу нужны `dist/` со всеми assets и доступная
 SQLite на совместимой ОС/архитектуре; Node, Cargo и интернет для его работы не нужны.
 Переносите весь `dist/`, а не один `index.html`. Шрифты и ресурсы UI локальные.
 Для переноса существующей БД сначала штатно остановите сервер; не копируйте один

@@ -90,6 +90,7 @@ try {
   if (await occupied(host, Number(port))) throw new Error(`${bind} is already in use. Stop the existing server or choose another BIND_ADDR; no process was killed.`)
   const cargo = args.has('--no-build') && process.env.SERVER_BINARY ? null : cargoPath()
   let compiledBinary
+  let compiledAdmin
   if (!args.has('--no-build')) {
     if (!serverOnly) {
       if (!existsSync(join(root, 'node_modules'))) throw new Error('Dependencies are missing. Run npm ci first.')
@@ -97,7 +98,7 @@ try {
       await command(npm, [...prefix, 'run', 'build'])
     }
     let pendingOutput = ''
-    await command(cargo, ['build', ...(release ? ['--release'] : []), '--locked', '--manifest-path', join(root, 'server/Cargo.toml'), '--bin', 'space-health-server', '--message-format=json'], chunk => {
+    await command(cargo, ['build', ...(release ? ['--release'] : []), '--locked', '--manifest-path', join(root, 'server/Cargo.toml'), '--bins', '--message-format=json'], chunk => {
       pendingOutput += chunk
       let newline
       while ((newline = pendingOutput.indexOf('\n')) >= 0) {
@@ -106,11 +107,16 @@ try {
         try {
           const message = JSON.parse(line)
           if (message.reason === 'compiler-artifact' && message.target?.name === 'space-health-server' && message.executable) compiledBinary = message.executable
+          if (message.reason === 'compiler-artifact' && message.target?.name === 'space-health-admin' && message.executable) compiledAdmin = message.executable
           if (message.reason === 'compiler-message' && message.message?.rendered) process.stderr.write(message.message.rendered)
         } catch { if (line.trim()) console.log(line) }
       }
     })
     if (!compiledBinary) throw new Error('Cargo build did not report the server executable.')
+    if (release) {
+      if (!compiledAdmin) throw new Error('Cargo build did not report the admin executable.')
+      console.log(`Admin (release): ${compiledAdmin}`)
+    }
   }
   if (shutdown.signal.aborted) throw new Error('Stopped')
   let binary
