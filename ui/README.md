@@ -5,7 +5,7 @@ Two interfaces, one contract, for two audiences:
 | Audience | What they get |
 |---|---|
 | **Crew** (the astronaut) | Self-assessment: readiness index, daily task list, status per body system, findings in plain language, metric tiles with sparklines and deviation from *their own* baseline, metric detail with chart + statistics, daily check-in, reaction-time test (PVT). No gamification: no levels, points or streaks. |
-| **Ground** (flight surgeon / NASA team) | Crew roster with score and *data age* (STALE during blackout), alert triage with acknowledge, clinical table (latest / baseline / delta / status / trend), metric detail per crew member, message composer (uplink) with one-way light-delay estimate. |
+| **Ground** (flight surgeon / NASA team) | Console laid out like [NASA Open MCT](https://nasa.github.io/openmct/): object tree (crew > body system > indicator, status dots, click to plot, double-click for detail), stacked telemetry plots with limit bands and a time conductor (7D / 14D / All), event log with acknowledge, crew status strip with data age (STALE during blackout), the selected crew member's body figure, and an uplink message composer with one-way light-delay estimate. |
 
 Both exist as a **window** (`astrocheck-gui`, egui) and a **terminal** program (`astrocheck-tui`, ratatui;
 works over SSH / serial console / on boards without a display). Switch role at runtime (GUI: Crew|Ground control
