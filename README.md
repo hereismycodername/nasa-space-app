@@ -45,9 +45,10 @@ Ground запрашивает выбранные метрики параллел
 ## Требования
 
 - Node.js из `.nvmrc`, npm.
-- Rust stable, Cargo, rustfmt и clippy (через rustup).
+- Rust 1.100.0, Cargo, rustfmt и clippy (через rustup, версия в `rust-toolchain.toml`).
 - Системный C compiler для сборки SQLite: Xcode Command Line Tools на macOS,
-  `build-essential` на Debian/Raspberry Pi OS.
+  `build-essential` на Debian/Raspberry Pi OS, MSVC Build Tools на Windows
+  (для проверки `doctor` используйте Developer PowerShell с `cl.exe` в PATH).
 - При первом скачивании зависимостей нужен интернет.
 
 ## Быстрый запуск с симулятором
@@ -167,22 +168,148 @@ baseline/delayed используют `normal`. Это тестовые данн
 и приостанавливает генерацию до его отправки. Постоянной очереди на всё время
 разрыва и восстановления очереди после рестарта нет.
 
-## Production / локальная сеть
+## Выпуск и показ
 
-```bash
-npm run build
-cargo build --release --locked
-BIND_ADDR=0.0.0.0:8080 ./target/release/space-health-server
+Один release-процесс Rust раздаёт UI и API на `http://127.0.0.1:8080`, без Vite.
+`npm run release` собирает `dist` и сервер через `cargo build --release --locked`,
+ожидает API и запускается **без симулятора**. Для живого потока добавьте
+`npm run release -- --simulator`. Ctrl+C останавливает дочерние процессы через
+stdin, в том числе на Windows; через 10 секунд используется принудительная остановка.
+Сервер заканчивает текущие запросы и печатает `Server stopped gracefully.`.
+На Linux прямой запуск и systemd также принимают SIGINT/SIGTERM.
+
+Подготовка и запуск из корня репозитория (PowerShell):
+
+```powershell
+$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH" # если Cargo отсутствует в PATH
+npm ci
+rustup show
+npm run release
 ```
 
-Открыть `http://<IP компьютера или Pi>:8080`. Один сервер раздаёт API и `dist/`.
-Запускать из корня репозитория либо явно указать `FRONTEND_DIST` и `DATABASE_URL`.
-Node нужен для сборки интерфейса и текущего симулятора, но не для работы готового
-Rust-сервера. В production Vite запускать не нужно.
+То же в bash:
 
-По умолчанию сервер слушает только localhost. Режим `0.0.0.0` предназначен для
-доверенной демосети: авторизация и TLS пока не реализованы. Использовать
-синтетические данные, не публиковать этот API в интернет.
+```bash
+source "$HOME/.cargo/env" # если Cargo отсутствует в PATH
+npm ci
+rustup show
+npm run release
+```
+
+Если нужен только готовый комплект без запуска, в обеих оболочках:
+
+```text
+npm ci
+npm run build
+cargo build --release --locked
+```
+
+В стандартной конфигурации бинарник находится в `target/release/space-health-server`
+(Windows: `.exe`). При изменённом Cargo target лаунчер берёт путь из Cargo artifact
+и печатает его в строке `Ready`. Для готовой release-сборки без пересборки:
+`npm run release -- --no-build`; при переносе можно задать `SERVER_BINARY`.
+Обычный `npm run start` по-прежнему запускает последнюю debug-сборку.
+
+### Готовый бинарник из другой папки
+
+По умолчанию пути БД и `dist` разрешаются относительно **текущей папки процесса**.
+`.env` автоматически не читается. Задайте абсолютные пути; родительская папка БД
+должна существовать и быть доступна для записи. В PowerShell, из корня проекта:
+
+```powershell
+$releaseRoot = (Get-Location).Path
+$env:DATABASE_URL = 'sqlite://' + ($releaseRoot.Replace('\', '/')) + '/space-health.db'
+$env:FRONTEND_DIST = Join-Path $releaseRoot 'dist'
+$env:BIND_ADDR = '127.0.0.1:8080'
+# Например: sqlite://C:/PROJECTS/NASA2026hackathon/nasa-space-app/space-health.db
+Set-Location $env:TEMP
+& (Join-Path $releaseRoot 'target/release/space-health-server.exe')
+```
+
+В bash, из корня проекта:
+
+```bash
+release_root="$(pwd -P)"
+export DATABASE_URL="sqlite://${release_root}/space-health.db"
+export FRONTEND_DIST="${release_root}/dist"
+export BIND_ADDR=127.0.0.1:8080
+# Например: sqlite:///opt/space-health/space-health.db
+cd /tmp
+"${release_root}/target/release/space-health-server"
+```
+
+Ctrl+C завершает и прямой запуск. `SHUTDOWN_STDIN=1` нужен только супервизору:
+строка или EOF на stdin запрашивает штатную остановку. Лаунчеры задают его сами.
+Подтверждённые API записи остаются в SQLite после остановки и перезапуска.
+Отсутствие `dist/index.html` даёт предупреждение, API продолжает работать.
+Неверный URL БД, недоступный каталог и ошибка bind завершают сервер с кодом 1
+и подсказкой в stderr. `REQUEST_LOG=0` отключает строки запросов; ошибки остаются
+в stderr. Логи `/api/*` содержат метод, путь без query, статус и миллисекунды,
+без тел и значений измерений; запросы статики не логируются.
+
+### Локальная сеть
+
+Для запуска лаунчера из корня проекта в PowerShell:
+
+```powershell
+$env:BIND_ADDR = '0.0.0.0:8080'
+npm run release
+ipconfig # выполнить в другом терминале; нужен IPv4 активного Wi-Fi/Ethernet
+```
+
+В bash:
+
+```bash
+BIND_ADDR=0.0.0.0:8080 npm run release
+hostname -I # выполнить в другом терминале; выбрать адрес локальной сети
+```
+
+Для прямого бинарника замените `BIND_ADDR` в примерах выше на `0.0.0.0:8080`.
+Откройте `http://<LAN-IP компьютера>:8080` с этой машины и второго устройства
+в той же сети. В Windows при необходимости вручную разрешите входящий TCP 8080
+для профиля **Частная сеть** в «Брандмауэр Защитника Windows → Дополнительные
+параметры → Правила для входящих подключений». Скрипты брандмауэр не меняют.
+
+**Без авторизации и TLS — только доверенная сеть и синтетические данные.**
+Не публикуйте API в интернет. Второе устройство, правила брандмауэра и изоляцию
+Wi-Fi нужно проверить на месте; успешный запрос по собственному LAN-IP этого
+не заменяет.
+
+### Восстановление и работа без интернета
+
+Остановите стенд Ctrl+C, затем из корня проекта восстановите только demo-БД:
+
+```text
+npm run demo:prepare -- --scenario baseline --force
+```
+
+Для release-показа подготовленной истории задайте `DATABASE_URL` на
+`sqlite://demo/baseline.db` (из корня) или абсолютный путь к ней и выполните
+`npm run release -- --no-build`. `demo:start` остаётся отдельным debug-стендом
+со сценарием и живым потоком. Для точного воспроизведения используйте сохранённые
+seed/reference из `demo/baseline.db.json`. Рабочую `space-health.db` сброс не меняет.
+
+Заранее, с интернетом, выполните `npm ci`, сборку и при необходимости
+`demo:prepare`. Готовому бинарнику нужны только `dist/` со всеми assets и доступная
+SQLite на совместимой ОС/архитектуре; Node, Cargo и интернет для его работы не нужны.
+Переносите весь `dist/`, а не один `index.html`. Шрифты и ресурсы UI локальные.
+Для переноса существующей БД сначала штатно остановите сервер; не копируйте один
+`.db` во время записи с активным WAL. Первый запуск создаёт новую БД автоматически.
+Сборка или восстановление истории без сети требуют уже подготовленных зависимостей;
+готовый прямой бинарник ничего не скачивает. Сохраните LAN при проверке offline.
+
+Перед показом:
+
+- Проверить Node по `.nvmrc`, `rustup show`, `npm ci` и `npm run doctor` на машине сборки.
+- Собрать release и весь `dist/`, подготовить нужный сценарий с seed/reference.
+- Проверить напечатанные абсолютные пути БД, статики и путь release-бинарника.
+- Открыть UI, `/api/health` и семидневный график без Vite.
+- Сохранить измерение, остановить Ctrl+C, увидеть штатное завершение и запись после рестарта.
+- Проверить UI со второго устройства по LAN-IP и доступность порта 8080.
+- Отключить внешний интернет, сохранив LAN, и повторить основной сценарий.
+- Держать копию остановленной demo-БД и команду её восстановления.
+
+### Raspberry Pi и датчики
 
 Raspberry Pi: целевая платформа — Linux-компьютер с Raspberry Pi OS, предпочтительно
 64-bit. Собирайте Rust на самой Pi либо настройте отдельную кросс-компиляцию.
@@ -227,6 +354,8 @@ Application → Service Workers → Unregister и перезагрузите с�
 | `BIND_ADDR` | `127.0.0.1:8080` | Адрес Rust-сервера |
 | `DATABASE_URL` | `sqlite://space-health.db` | SQLite-файл |
 | `FRONTEND_DIST` | `dist` | Собранный интерфейс |
+| `REQUEST_LOG` | включён | `0` отключает строки HTTP-запросов; ошибки остаются в stderr |
+| `SHUTDOWN_STDIN` | выключен | `1` — штатная остановка по строке/EOF stdin для лаунчеров |
 | `API_URL` | `http://127.0.0.1:8080` | Сервер для симулятора |
 | `SIM_INTERVAL_MS` | `2000` | Интервал симулятора, минимум 100 мс |
 | `SIM_COUNT` | `0` | Число сообщений; 0 — непрерывно |
