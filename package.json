@@ -17,7 +17,7 @@
     "doctor": "node scripts/doctor.mjs",
     "simulator": "node simulator/sensors.mjs",
     "test:tooling": "node --test simulator/*.node-test.mjs scripts/*.node-test.mjs",
-    "test:bridge": "python3 -B -m unittest discover -s tools -p 'test_*.py'",
+    "test:bridge": "python3 -B -m unittest discover -s tools -p \"test_*.py\"",
     "test:tools": "npm run test:tooling && npm run test:bridge",
     "test:demo": "node scripts/demo-smoke.mjs",
     "demo:prepare": "node scripts/demo.mjs prepare",
