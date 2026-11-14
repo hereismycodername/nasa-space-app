@@ -393,6 +393,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dated_completion_errors_roll_back_and_release_the_transaction() {
+        let pool = setup().await;
+        let now = utc("2026-11-14T00:00:00Z");
+        let date = now.date_naive();
+        let next_date = date.succ_opt().unwrap();
+        set_completion_for_date(&pool, "fail-crew", "daily-check", date, true, now)
+            .await
+            .unwrap()
+            .unwrap();
+        for statement in [
+            "CREATE TEMP TRIGGER reject_dated_insert BEFORE INSERT ON task_completions
+             WHEN NEW.astronaut_id = 'fail-crew'
+             BEGIN SELECT RAISE(ABORT, 'test dated write failure'); END",
+            "CREATE TEMP TRIGGER reject_dated_delete BEFORE DELETE ON task_completions
+             WHEN OLD.astronaut_id = 'fail-crew'
+             BEGIN SELECT RAISE(ABORT, 'test dated write failure'); END",
+        ] {
+            sqlx::query(statement).execute(&pool).await.unwrap();
+        }
+        let snapshot_sql =
+            "SELECT astronaut_id, task_id, mission_date, completed_at, completed_at_ms
+             FROM task_completions ORDER BY astronaut_id, task_id, mission_date";
+        let before: Vec<(String, String, String, String, i64)> =
+            sqlx::query_as(snapshot_sql).fetch_all(&pool).await.unwrap();
+        assert_eq!(before.len(), 1);
+        for (completed, day) in [(true, next_date), (false, date)] {
+            let error =
+                set_completion_for_date(&pool, "fail-crew", "daily-check", day, completed, now)
+                    .await
+                    .unwrap_err();
+            assert_eq!(
+                error.as_database_error().unwrap().message(),
+                "test dated write failure"
+            );
+            let after: Vec<(String, String, String, String, i64)> =
+                sqlx::query_as(snapshot_sql).fetch_all(&pool).await.unwrap();
+            assert_eq!(after, before);
+        }
+        let task =
+            set_completion_for_date(&pool, "other-crew", "daily-check", next_date, true, now)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(task.completed_at, Some(now.to_rfc3339()));
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM task_completions")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            2
+        );
+    }
+
+    #[tokio::test]
     async fn legacy_task_updates_keep_dated_history_and_clear_only_the_displayed_mark() {
         let pool = setup().await;
         let first = utc("2026-11-14T04:59:59.9999+05:00");
