@@ -1,0 +1,296 @@
+{
+  "status": "not-evaluated",
+  "explanation": "Последнее принятое измерение достаточно свежее по демонстрационной политике показателя. Это сводка свежести; результаты демонстрационных правил возвращаются отдельно в health.",
+  "astronautId": "demo-astronaut",
+  "evaluatedAt": "2026-11-14T21:46:28.491066Z",
+  "metrics": [
+    {
+      "metric": "heartRate",
+      "quality": {
+        "status": "fresh",
+        "measurementId": "f048a592-6306-418f-87f2-c55fbabd455b",
+        "freshForSeconds": 15,
+        "ageSeconds": 0.005066,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "fresh",
+        "measurementId": "f048a592-6306-418f-87f2-c55fbabd455b",
+        "freshForSeconds": 15,
+        "ageSeconds": 0.005066,
+        "clockSkew": false
+      }
+    },
+    {
+      "metric": "systolicPressure",
+      "quality": {
+        "status": "fresh",
+        "measurementId": "48ec348b-3e2c-44aa-84e3-87bcedcb532d",
+        "freshForSeconds": 3600,
+        "ageSeconds": 0.029066,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "fresh",
+        "measurementId": "48ec348b-3e2c-44aa-84e3-87bcedcb532d",
+        "freshForSeconds": 3600,
+        "ageSeconds": 0.029066,
+        "clockSkew": false
+      }
+    },
+    {
+      "metric": "diastolicPressure",
+      "quality": {
+        "status": "fresh",
+        "measurementId": "27b5cad4-a9ea-42fd-a6d4-fcd2c32aefa9",
+        "freshForSeconds": 3600,
+        "ageSeconds": 0.027066,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "fresh",
+        "measurementId": "27b5cad4-a9ea-42fd-a6d4-fcd2c32aefa9",
+        "freshForSeconds": 3600,
+        "ageSeconds": 0.027066,
+        "clockSkew": false
+      }
+    },
+    {
+      "metric": "temperature",
+      "quality": {
+        "status": "fresh",
+        "measurementId": "3f5f2378-ee8f-46ab-9a65-b68da75d382a",
+        "freshForSeconds": 3600,
+        "ageSeconds": 0.025066,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "fresh",
+        "measurementId": "3f5f2378-ee8f-46ab-9a65-b68da75d382a",
+        "freshForSeconds": 3600,
+        "ageSeconds": 0.025066,
+        "clockSkew": false
+      }
+    },
+    {
+      "metric": "sleepHours",
+      "quality": {
+        "status": "fresh",
+        "measurementId": "12317b56-d71b-4c17-92bc-f4dbee1f722a",
+        "freshForSeconds": 86400,
+        "ageSeconds": 0.011066,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "fresh",
+        "measurementId": "12317b56-d71b-4c17-92bc-f4dbee1f722a",
+        "freshForSeconds": 86400,
+        "ageSeconds": 0.011066,
+        "clockSkew": false
+      }
+    },
+    {
+      "metric": "mood",
+      "quality": {
+        "status": "fresh",
+        "measurementId": "5c8f5222-2b6a-4fec-a05d-dbff745f56c0",
+        "freshForSeconds": 86400,
+        "ageSeconds": 0.008066,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "fresh",
+        "measurementId": "5c8f5222-2b6a-4fec-a05d-dbff745f56c0",
+        "freshForSeconds": 86400,
+        "ageSeconds": 0.008066,
+        "clockSkew": false
+      }
+    }
+  ],
+  "health": {
+    "ruleSetVersion": "be08-demo-1",
+    "demonstrationOnly": true,
+    "status": "attention",
+    "explanation": "Есть показатели, требующие внимания и повторной проверки. См. причины и следующие действия. Оценено показателей: 6 из 6.",
+    "disclaimer": "Демонстрационная поддержка самонаблюдения, не диагноз и не медицинский протокол NASA. Земные ориентиры не учитывают индивидуальный план экипажа; указания полётного врача имеют приоритет. Причину изменения по этим данным установить нельзя. Приложение не назначает лекарства и само никому не отправляет сообщения.",
+    "emergencyGuidance": "При боли в груди, выраженной одышке, потере сознания, внезапной слабости или нарушении речи/зрения немедленно привлеките экипаж и действуйте по аварийному медицинскому протоколу миссии. Не ждите обновления приложения, повторного измерения или ответа с Земли.",
+    "evaluatedMetricCount": 6,
+    "totalMetricCount": 6,
+    "rules": [
+      {
+        "ruleId": "be08-heartRate",
+        "ruleVersion": "be08-demo-1",
+        "metric": "heartRate",
+        "title": "Пульс",
+        "status": "attention",
+        "explanation": "110 bpm. Сработал ориентир для пульса в покое: <60 или >100 bpm. Ориентир применим только в покое; нагрузка и тренированность меняют пульс. Контекст покоя приложению неизвестен.",
+        "measurementIds": [
+          "f048a592-6306-418f-87f2-c55fbabd455b"
+        ],
+        "validUntil": "2026-11-14T21:46:43.486Z",
+        "suggestedAction": "Повторите измерение в спокойном состоянии, отметьте недавнюю нагрузку и самочувствие. При повторении отклонения обсудите его с полётным врачом; при выраженных симптомах немедленно привлеките экипаж.",
+        "escalation": "ground",
+        "flightContext": "В изменённой гравитации кровообращение адаптируется. Сопоставляйте пульс с нагрузкой и индивидуальным планом; он не определяет причину изменения.",
+        "sourceUrls": [
+          "https://www.heart.org/en/health-topics/high-blood-pressure/the-facts-about-high-blood-pressure/all-about-heart-rate-pulse",
+          "https://www.nasa.gov/humans-in-space/the-human-body-in-space/"
+        ],
+        "demonstrationOnly": true
+      },
+      {
+        "ruleId": "be08-systolicPressure",
+        "ruleVersion": "be08-demo-1",
+        "metric": "systolicPressure",
+        "title": "Систолическое давление",
+        "status": "noAlert",
+        "explanation": "118 mmHg. Пороги <90 или >=120 mmHg не сработали. Это отдельная часть давления; диагноз и общая категория давления по ней не устанавливаются. Нужны обе части и условия измерения.",
+        "measurementIds": [
+          "48ec348b-3e2c-44aa-84e3-87bcedcb532d"
+        ],
+        "validUntil": "2026-11-14T22:46:28.462Z",
+        "suggestedAction": "Измеряйте обе части давления вместе по плану миссии. При симптомах обращайтесь за помощью независимо от результата.",
+        "escalation": "none",
+        "flightContext": "Изменённая гравитация влияет на кровообращение. Давление помогает наблюдать изменения, но не объясняет их причину и не измеряет состояние всех органов.",
+        "sourceUrls": [
+          "https://www.heart.org/en/health-topics/high-blood-pressure/understanding-blood-pressure-readings",
+          "https://www.heart.org/en/health-topics/high-blood-pressure/understanding-blood-pressure-readings/when-to-call-911-for-high-blood-pressure",
+          "https://www.heart.org/en/health-topics/high-blood-pressure/the-facts-about-high-blood-pressure/low-blood-pressure-when-blood-pressure-is-too-low",
+          "https://www.heart.org/en/health-topics/high-blood-pressure/understanding-blood-pressure-readings/monitoring-your-blood-pressure-at-home",
+          "https://www.nasa.gov/humans-in-space/the-human-body-in-space/"
+        ],
+        "demonstrationOnly": true
+      },
+      {
+        "ruleId": "be08-diastolicPressure",
+        "ruleVersion": "be08-demo-1",
+        "metric": "diastolicPressure",
+        "title": "Диастолическое давление",
+        "status": "noAlert",
+        "explanation": "76 mmHg. Пороги <60 или >=80 mmHg не сработали. Это отдельная часть давления; диагноз и общая категория давления по ней не устанавливаются. Нужны обе части и условия измерения.",
+        "measurementIds": [
+          "27b5cad4-a9ea-42fd-a6d4-fcd2c32aefa9"
+        ],
+        "validUntil": "2026-11-14T22:46:28.464Z",
+        "suggestedAction": "Измеряйте обе части давления вместе по плану миссии. При симптомах обращайтесь за помощью независимо от результата.",
+        "escalation": "none",
+        "flightContext": "Изменённая гравитация влияет на кровообращение. Давление помогает наблюдать изменения, но не объясняет их причину и не измеряет состояние всех органов.",
+        "sourceUrls": [
+          "https://www.heart.org/en/health-topics/high-blood-pressure/understanding-blood-pressure-readings",
+          "https://www.heart.org/en/health-topics/high-blood-pressure/understanding-blood-pressure-readings/when-to-call-911-for-high-blood-pressure",
+          "https://www.heart.org/en/health-topics/high-blood-pressure/the-facts-about-high-blood-pressure/low-blood-pressure-when-blood-pressure-is-too-low",
+          "https://www.heart.org/en/health-topics/high-blood-pressure/understanding-blood-pressure-readings/monitoring-your-blood-pressure-at-home",
+          "https://www.nasa.gov/humans-in-space/the-human-body-in-space/"
+        ],
+        "demonstrationOnly": true
+      },
+      {
+        "ruleId": "be08-temperature",
+        "ruleVersion": "be08-demo-1",
+        "metric": "temperature",
+        "title": "Температура",
+        "status": "noAlert",
+        "explanation": "36.7 °C. Пороги <35 и >=38 °C не сработали. Результат зависит от способа и места измерения; причина изменения по одному значению неизвестна.",
+        "measurementIds": [
+          "3f5f2378-ee8f-46ab-9a65-b68da75d382a"
+        ],
+        "validUntil": "2026-11-14T22:46:28.466Z",
+        "suggestedAction": "Продолжайте наблюдение и назначенный план миссии. При новых симптомах обращайтесь за помощью независимо от этого результата.",
+        "escalation": "none",
+        "flightContext": "В замкнутой среде важны гигиена и контроль окружающих условий. По одной температуре нельзя установить инфекцию или её причину.",
+        "sourceUrls": [
+          "https://www.nhs.uk/symptoms/fever-in-adults/",
+          "https://www.nhs.uk/conditions/hypothermia/",
+          "https://www.nasa.gov/hrp/hazards/"
+        ],
+        "demonstrationOnly": true
+      },
+      {
+        "ruleId": "be08-sleepHours",
+        "ruleVersion": "be08-demo-1",
+        "metric": "sleepHours",
+        "title": "Сон",
+        "status": "attention",
+        "explanation": "4.5 h. Продолжительность сна <7 часов — ниже выбранного ориентира для взрослых. Земной ориентир для взрослых не заменяет план миссии. Часы сна не показывают его качество.",
+        "measurementIds": [
+          "12317b56-d71b-4c17-92bc-f4dbee1f722a"
+        ],
+        "validUntil": "2026-11-15T21:46:28.480Z",
+        "suggestedAction": "Запланируйте защищённое время для сна и обсудите нагрузку с экипажем. При повторении трудностей обратитесь к полётному врачу или специалисту поддержки.",
+        "escalation": "crew",
+        "flightContext": "Изоляция и нарушение привычного ритма могут влиять на сон и работоспособность. Защищённое время отдыха — часть профилактики.",
+        "sourceUrls": [
+          "https://www.cdc.gov/sleep/about/",
+          "https://www.nasa.gov/hrp/hazard-isolation-and-confinement/"
+        ],
+        "demonstrationOnly": true
+      },
+      {
+        "ruleId": "be08-mood",
+        "ruleVersion": "be08-demo-1",
+        "metric": "mood",
+        "title": "Самооценка настроения",
+        "status": "attention",
+        "explanation": "2 score. Сработал условный порог команды: настроение <3 из 5. Это приглашение к поддержке, не диагностическая шкала. NASA не задаёт этот числовой порог; самооценка не устанавливает психиатрический диагноз.",
+        "measurementIds": [
+          "5c8f5222-2b6a-4fec-a05d-dbff745f56c0"
+        ],
+        "validUntil": "2026-11-15T21:46:28.483Z",
+        "suggestedAction": "Предложите себе отдых и приватный разговор с доверенным членом экипажа. Если трудности сохраняются, запросите помощь специалиста поддержки или полётного врача.",
+        "escalation": "crew",
+        "flightContext": "Изоляция и ограниченное пространство могут осложнять самочувствие и отношения в экипаже. Регулярная поддержка доступна без диагностического ярлыка.",
+        "sourceUrls": [
+          "https://www.nasa.gov/hrp/hazard-isolation-and-confinement/"
+        ],
+        "demonstrationOnly": true
+      }
+    ],
+    "education": [
+      {
+        "id": "gravity",
+        "title": "Изменённая гравитация",
+        "explanation": "Меняются кровообращение и нагрузка на кости и мышцы. Эти измерения не показывают потерю костной ткани и не заменяют профильные исследования.",
+        "suggestedAction": "Следуйте назначенному плану упражнений и обследований; согласовывайте изменения нагрузки с медиком.",
+        "sourceUrls": [
+          "https://www.nasa.gov/humans-in-space/the-human-body-in-space/"
+        ]
+      },
+      {
+        "id": "isolation",
+        "title": "Изоляция и ограниченное пространство",
+        "explanation": "Стресс и нарушения сна могут влиять на самочувствие и работоспособность. Самооценка настроения не является диагнозом.",
+        "suggestedAction": "Выделяйте время для сна, отдыха и общения; при трудностях запрашивайте поддержку.",
+        "sourceUrls": [
+          "https://www.nasa.gov/hrp/hazard-isolation-and-confinement/"
+        ]
+      },
+      {
+        "id": "radiation",
+        "title": "Космическая радиация",
+        "explanation": "Радиационные риски требуют отдельного контроля. Пульс, температура и настроение не измеряют дозу и не диагностируют лучевое поражение.",
+        "suggestedAction": "Используйте дозиметрию и процедуры радиационной защиты миссии.",
+        "sourceUrls": [
+          "https://www.nasa.gov/hrp/hazards/",
+          "https://www.nasa.gov/hrp/risks/"
+        ]
+      },
+      {
+        "id": "distance",
+        "title": "Удалённость от Земли",
+        "explanation": "Консультация и доставка помощи могут задерживаться. Ожидание связи не должно откладывать действия экипажа при срочном состоянии.",
+        "suggestedAction": "При срочных симптомах привлеките экипаж и примените утверждённые бортовые процедуры; свяжитесь с наземной медицинской командой, когда это возможно.",
+        "sourceUrls": [
+          "https://www.nasa.gov/hrp/hazards/"
+        ]
+      },
+      {
+        "id": "environment",
+        "title": "Замкнутая среда",
+        "explanation": "Воздух, шум и микроорганизмы требуют контроля. Эти показатели не заменяют мониторинг среды и не устанавливают причину изменения температуры.",
+        "suggestedAction": "Соблюдайте процедуры контроля среды и гигиены, сообщайте экипажу об отклонениях.",
+        "sourceUrls": [
+          "https://www.nasa.gov/hrp/hazards/"
+        ]
+      }
+    ]
+  }
+}

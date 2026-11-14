@@ -4,6 +4,8 @@ import { AnatomyViewer } from './AnatomyViewer'
 import { anatomySystems } from './anatomySystems'
 import type { AnatomyMode } from './anatomySystems'
 import type { SystemId } from './types'
+import type { RuleStatus } from '../../shared/types'
+import { healthLabels } from '../dashboard/health'
 import './anatomy.css'
 
 export type { SystemId } from './types'
@@ -12,6 +14,7 @@ interface Props {
   selected: SystemId | null
   onSelect: (id: SystemId | null) => void
   availableSystems?: SystemId[]
+  healthStatuses?: Partial<Record<SystemId, RuleStatus>>
 }
 
 const modes: { id: AnatomyMode; label: string }[] = [
@@ -21,11 +24,11 @@ const modes: { id: AnatomyMode; label: string }[] = [
 ]
 const emptySystems: SystemId[] = []
 
-export const AnatomyPanel = memo(function AnatomyPanel({ selected, onSelect, availableSystems = emptySystems }: Props) {
+export const AnatomyPanel = memo(function AnatomyPanel({ selected, onSelect, availableSystems = emptySystems, healthStatuses }: Props) {
   const [mode, setMode] = useState<AnatomyMode>('organs')
   const [view, setView] = useState<'3d' | '2d'>('3d')
   const [hovered, setHovered] = useState<SystemId | null>(null)
-  const diagram = <AnatomyDiagram mode={mode} selected={selected} hovered={hovered} onHover={setHovered} onSelect={onSelect} availableSystems={availableSystems} />
+  const diagram = <AnatomyDiagram mode={mode} selected={selected} hovered={hovered} onHover={setHovered} onSelect={onSelect} availableSystems={availableSystems} healthStatuses={healthStatuses} />
 
   return <div className="anatomy-panel">
     <div className="anatomy-heading">
@@ -53,12 +56,13 @@ export const AnatomyPanel = memo(function AnatomyPanel({ selected, onSelect, ava
           onFocus={() => setHovered(system)} onBlur={() => setHovered(null)}
           onClick={() => onSelect(selected === system ? null : system)}>
           <i className={available ? 'has-data' : ''} aria-hidden="true" />
-          <span>{label}<small>{available ? 'Есть данные' : 'Нет данных'}</small></span>
+          <span>{label}<small>{available ? 'Есть данные' : 'Нет данных'}</small>{healthStatuses?.[system] ? <span className={`anatomy-health-status health-${healthStatuses[system]}`}>{healthLabels[healthStatuses[system]!]}</span> : null}</span>
         </button>
       })}
     </div> : null}
     <div className="anatomy-caption">
       <span><i className="anatomy-legend-dot" aria-hidden="true" /> Наличие данных, не оценка здоровья</span>
+      {healthStatuses ? <p>Цветные подписи — оценка доступных показателей по демо-правилам, не диагноз органа. Цвет модели обозначает анатомию.</p> : null}
       {selected ? <button type="button" onClick={() => onSelect(null)}>Все системы</button> : <p>Выберите орган или подпись</p>}
       <a className="anatomy-credits" href="/anatomy-credits.txt" target="_blank" rel="noreferrer">Анатомия: BodyParts3D · условия использования</a>
     </div>

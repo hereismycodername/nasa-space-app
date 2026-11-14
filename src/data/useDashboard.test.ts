@@ -3,6 +3,7 @@ import { getAssessment, getLatestMeasurements, getTasks } from './measurements'
 import { startDashboardPolling } from './useDashboard'
 import type { DashboardState } from './useDashboard'
 import type { DailyTask, HealthAssessment, LatestMeasurements } from '../shared/types'
+import { healthFixture } from '../features/dashboard/health.fixture'
 
 vi.mock('./measurements', () => ({
   getLatestMeasurements: vi.fn(), getAssessment: vi.fn(), getTasks: vi.fn(),
@@ -73,7 +74,7 @@ it('starts reads in parallel, publishes one complete snapshot and polls only aft
   assessmentRequest.resolve(assessment)
   tasksRequest.resolve(tasks)
   await vi.advanceTimersByTimeAsync(0)
-  expect(onChange.mock.lastCall?.[0]).toEqual({ latest, assessment, tasks, connected: true, loading: false, error: '', lastUpdated: new Date(), qualityObservedAt: requestStartedAt, qualityReceivedAt: performance.now() })
+  expect(onChange.mock.lastCall?.[0]).toEqual({ latest, assessment, tasks, connected: true, loading: false, error: '', lastUpdated: new Date(), qualityObservedAt: requestStartedAt, qualityReceivedAt: performance.now(), assessmentObservedAt: requestStartedAt, assessmentReceivedAt: performance.now(), previousHealthAlerts: {} })
   // Slow requests must not reset the age of the server's freshness decision on arrival.
   expect(performance.now() - onChange.mock.lastCall![0].qualityObservedAt!).toBe(10000)
 
@@ -83,6 +84,43 @@ it('starts reads in parallel, publishes one complete snapshot and polls only aft
   expect(getLatestMeasurements).toHaveBeenCalledTimes(2)
   expect(onChange.mock.lastCall![0].qualityObservedAt).toBe(requestStartedAt)
   expect(onChange.mock.lastCall![0].qualityReceivedAt).toBe(performance.now())
+  expect(onChange.mock.lastCall![0].assessmentObservedAt).toBe(requestStartedAt)
+})
+
+it('ages assessments independently when latest advances and an older cached assessment returns', async () => {
+  const onChange = vi.fn<(state: DashboardState) => void>()
+  lifecycle = startDashboardPolling(onChange)
+  await vi.advanceTimersByTimeAsync(0)
+  const original = onChange.mock.lastCall![0]
+  vi.mocked(getLatestMeasurements).mockResolvedValueOnce({ ...latest, evaluatedAt: '2026-11-14T08:00:05Z' })
+  await vi.advanceTimersByTimeAsync(5000)
+  const updated = onChange.mock.lastCall![0]
+  expect(updated.qualityObservedAt).toBeGreaterThan(original.qualityObservedAt!)
+  expect(updated.assessmentObservedAt).toBe(original.assessmentObservedAt)
+  vi.mocked(getAssessment).mockResolvedValueOnce({ ...assessment, evaluatedAt: '2026-11-14T07:59:55Z' })
+  await vi.advanceTimersByTimeAsync(5000)
+  expect(onChange.mock.lastCall![0].assessmentObservedAt).toBe(original.assessmentObservedAt! - 5000)
+})
+
+it('retains an expired alert as historical until a later evaluated result replaces it', async () => {
+  const fixture = healthFixture()
+  fixture.assessment.health!.rules[0].status = 'critical'
+  vi.mocked(getAssessment).mockResolvedValue(fixture.assessment)
+  const onChange = vi.fn<(state: DashboardState) => void>()
+  lifecycle = startDashboardPolling(onChange)
+  await vi.advanceTimersByTimeAsync(0)
+  const expired = structuredClone(fixture.assessment)
+  Object.assign(expired.health!.rules[0], { status: 'insufficientData', measurementIds: [], validUntil: null })
+  expired.evaluatedAt = '2026-11-15T08:00:20Z'
+  vi.mocked(getAssessment).mockResolvedValue(expired)
+  await vi.advanceTimersByTimeAsync(5000)
+  expect(onChange.mock.lastCall![0].previousHealthAlerts?.heartRate).toMatchObject({ rule: { status: 'critical' }, evaluatedAt: fixture.assessment.evaluatedAt })
+  const recovered = structuredClone(fixture.assessment)
+  recovered.health!.rules[0].status = 'noAlert'
+  recovered.evaluatedAt = '2026-11-15T08:00:25Z'
+  vi.mocked(getAssessment).mockResolvedValue(recovered)
+  await vi.advanceTimersByTimeAsync(5000)
+  expect(onChange.mock.lastCall![0].previousHealthAlerts?.heartRate).toBeUndefined()
 })
 
 it('keeps the last complete snapshot on failure and refreshes immediately after a mutation', async () => {

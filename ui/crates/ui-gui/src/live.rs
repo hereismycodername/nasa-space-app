@@ -2,11 +2,17 @@
 
 use crate::{figure, theme::*, Opts};
 use chrono::{DateTime, Utc};
-use eframe::egui::{self, pos2, vec2, Align, Align2, CornerRadius, Frame, Layout, Margin, Rect, RichText, Sense, Shape, StrokeKind, Ui};
+use eframe::egui::{
+    self, pos2, vec2, Align, Align2, CornerRadius, Frame, Layout, Margin, Rect, RichText, Sense,
+    Shape, StrokeKind, Ui,
+};
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 use ui_http::HttpBackend;
-use ui_model::{fmt_num, Backend, IndicatorInfo, Role, TimedSeries};
+use ui_model::{
+    fmt_num, Backend, HealthReport, HealthRule, HealthStatus, IndicatorInfo, Role, Status,
+    TimedSeries,
+};
 
 pub(crate) struct LiveApp {
     backend: HttpBackend,
@@ -27,7 +33,7 @@ impl LiveApp {
     pub(crate) fn new(backend: HttpBackend, options: Opts) -> Self {
         Self {
             backend,
-            figure: figure::Figure::new(),
+            figure: figure::Figure::new().with_live_labels(),
             mode: match options.mode.as_deref() {
                 Some("skeleton") => figure::Mode::Skeleton,
                 Some("xray") => figure::Mode::XRay,
@@ -64,7 +70,11 @@ impl LiveApp {
 
     fn header(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("live-header")
-            .frame(Frame::new().fill(SURFACE).inner_margin(Margin::symmetric(18, 12)))
+            .frame(
+                Frame::new()
+                    .fill(SURFACE)
+                    .inner_margin(Margin::symmetric(18, 12)),
+            )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("ASTROCHECK").font(display(23.0)).strong());
@@ -76,12 +86,29 @@ impl LiveApp {
                     });
                 });
                 ui.add_space(5.0);
-                ui.label(RichText::new(self.backend.connection_label()).color(if self.backend.overview().link_up { TXT } else { WARN }));
+                ui.label(RichText::new(self.backend.connection_label()).color(
+                    if self.backend.overview().link_up {
+                        TXT
+                    } else {
+                        WARN
+                    },
+                ));
             });
         egui::TopBottomPanel::bottom("live-status")
-            .frame(Frame::new().fill(SURFACE).inner_margin(Margin::symmetric(18, 9)))
+            .frame(
+                Frame::new()
+                    .fill(SURFACE)
+                    .inner_margin(Margin::symmetric(18, 9)),
+            )
             .show(ctx, |ui| {
-                ui.label(RichText::new("Shared measurements · Clinical assessment is not connected").color(MUT));
+                let report = self.backend.health_report();
+                ui.label(
+                    RichText::new(format!(
+                        "Health guidance: {} · prototype rules, not a diagnosis",
+                        report.status.label()
+                    ))
+                    .color(health_color(report.status)),
+                );
                 if self.backend.pending_writes() > 0 {
                     ui.horizontal(|ui| {
                         ui.spinner();
@@ -127,14 +154,14 @@ impl LiveApp {
                         };
                         self.metric = None;
                     }
-                    ui.small("Select an organ to filter. Status labels describe data availability; no diagnosis is calculated.");
+                    ui.small("Select an organ to filter. Rule alerts and data freshness are shown separately. This is not a diagnosis.");
                     if ui.selectable_label(self.system.is_none(), "All measurements").clicked() {
                         self.system = None;
                         self.metric = None;
                     }
                     for system in self.backend.systems() {
                         if ui
-                            .selectable_label(self.system.as_ref() == Some(&system.id), &system.name)
+                            .selectable_label(self.system.as_ref() == Some(&system.id), RichText::new(&system.name).color(match self.backend.system_status(&system.id) { Status::Normal => health_color(HealthStatus::NoAlert), Status::Watch => WARN, Status::Act => CRIT, _ => MUT }))
                             .clicked()
                         {
                             self.system = Some(system.id);
@@ -167,15 +194,24 @@ impl LiveApp {
     fn metric_card(&mut self, ui: &mut Ui, indicator: &IndicatorInfo, expanded: bool) {
         let latest = self.backend.latest(&indicator.id);
         let details = self.backend.measurement_detail(&indicator.id);
+        let rule = self.backend.health_rule(&indicator.id);
         Frame::new()
             .fill(SURFACE)
-            .stroke(stroke(1.0, LINE))
+            .stroke(stroke(
+                1.0,
+                rule.as_ref()
+                    .map(|r| health_color(r.current_status()))
+                    .unwrap_or(LINE),
+            ))
             .inner_margin(Margin::same(14))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
                     if ui
-                        .selectable_label(self.metric.as_ref() == Some(&indicator.id), RichText::new(&indicator.name).strong())
+                        .selectable_label(
+                            self.metric.as_ref() == Some(&indicator.id),
+                            RichText::new(&indicator.name).strong(),
+                        )
                         .clicked()
                     {
                         self.metric = Some(indicator.id.clone());
@@ -183,18 +219,32 @@ impl LiveApp {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.label(RichText::new(&indicator.unit).color(MUT));
                         ui.label(
-                            RichText::new(latest.map(|reading| fmt_num(reading.value)).unwrap_or_else(|| "—".into())).font(mono(23.0)),
+                            RichText::new(
+                                latest
+                                    .map(|reading| fmt_num(reading.value))
+                                    .unwrap_or_else(|| "—".into()),
+                            )
+                            .font(mono(23.0)),
                         );
                     });
                 });
                 ui.label(RichText::new(details).size(12.0).color(MUT));
+                if let Some(rule) = &rule {
+                    health_rule(ui, rule, expanded);
+                } else {
+                    ui.label(RichText::new("Health rule is not available yet").color(MUT));
+                }
                 if expanded {
                     ui.add_space(8.0);
                     telemetry_chart(
                         ui,
                         &self.backend.data_series(&indicator.id),
                         &indicator.unit,
-                        if self.role == Role::Ground { 150.0 } else { 210.0 },
+                        if self.role == Role::Ground {
+                            150.0
+                        } else {
+                            210.0
+                        },
                     );
                     ui.add_space(8.0);
                     self.entry(ui, indicator);
@@ -211,18 +261,35 @@ impl LiveApp {
         ui.horizontal(|ui| {
             ui.label("New measurement");
             let text = self.inputs.entry(indicator.id.clone()).or_default();
-            let input = ui.add_enabled(enabled, egui::TextEdit::singleline(text).desired_width(130.0).hint_text("Value"));
+            let input = ui.add_enabled(
+                enabled,
+                egui::TextEdit::singleline(text)
+                    .desired_width(130.0)
+                    .hint_text("Value"),
+            );
             ui.label(&indicator.unit);
             submit = ui
-                .add_enabled(enabled && !text.trim().is_empty(), egui::Button::new("Save to server"))
+                .add_enabled(
+                    enabled && !text.trim().is_empty(),
+                    egui::Button::new("Save to server"),
+                )
                 .clicked()
-                || (enabled && input.lost_focus() && ui.input(|state| state.key_pressed(egui::Key::Enter)));
+                || (enabled
+                    && input.lost_focus()
+                    && ui.input(|state| state.key_pressed(egui::Key::Enter)));
         });
         if submit {
-            let text = self.inputs.get(&indicator.id).map(String::as_str).unwrap_or("");
+            let text = self
+                .inputs
+                .get(&indicator.id)
+                .map(String::as_str)
+                .unwrap_or("");
             match parse_value(text) {
                 Ok(value) => match self.backend.submit_measurement(&indicator.id, value) {
-                    Ok(()) => self.notice(format!("Sending {} — waiting for server confirmation.", indicator.name)),
+                    Ok(()) => self.notice(format!(
+                        "Sending {} — waiting for server confirmation.",
+                        indicator.name
+                    )),
                     Err(error) => self.notice(error),
                 },
                 Err(error) => self.notice(error.into()),
@@ -241,18 +308,29 @@ impl LiveApp {
                     } else {
                         "Your measurements"
                     });
-                    ui.label(RichText::new("The browser, window and terminal use the same server records.").color(MUT));
+                    ui.label(
+                        RichText::new(
+                            "The browser, window and terminal use the same server records.",
+                        )
+                        .color(MUT),
+                    );
                     ui.add_space(12.0);
+                    health_summary(ui, &self.backend.health_report());
                     let indicators = self.indicators();
                     let filtered: Vec<_> = indicators
                         .iter()
-                        .filter(|indicator| self.system.as_ref().is_none_or(|system| &indicator.system == system))
+                        .filter(|indicator| {
+                            self.system
+                                .as_ref()
+                                .is_none_or(|system| &indicator.system == system)
+                        })
                         .cloned()
                         .collect();
                     if filtered.is_empty() {
                         ui.label("No measurements are connected for this body system.");
                     }
-                    if self.metric.is_some() && ui.button("Show all metrics in this view").clicked() {
+                    if self.metric.is_some() && ui.button("Show all metrics in this view").clicked()
+                    {
                         self.metric = None;
                     }
                     for indicator in filtered {
@@ -262,30 +340,41 @@ impl LiveApp {
                         self.metric_card(
                             ui,
                             &indicator,
-                            self.role == Role::Ground || self.metric.as_ref() == Some(&indicator.id),
+                            self.role == Role::Ground
+                                || self.metric.as_ref() == Some(&indicator.id),
                         );
                     }
                     if self.notices.len() > 1 {
-                        egui::CollapsingHeader::new("Recent connection and save messages").show(ui, |ui| {
-                            for notice in &self.notices {
-                                ui.label(notice);
-                            }
-                        });
+                        egui::CollapsingHeader::new("Recent connection and save messages").show(
+                            ui,
+                            |ui| {
+                                for notice in &self.notices {
+                                    ui.label(notice);
+                                }
+                            },
+                        );
                     }
                 });
             });
     }
 
     fn capture(&mut self, ctx: &egui::Context) {
-        let Some(path) = self.screenshot.as_ref() else { return };
+        let Some(path) = self.screenshot.as_ref() else {
+            return;
+        };
         let elapsed = self.started.elapsed();
         let series_ready = !(self.role == Role::Ground || self.metric.is_some())
             || self
                 .indicators()
                 .iter()
                 .filter(|indicator| {
-                    self.system.as_ref().is_none_or(|system| &indicator.system == system)
-                        && self.metric.as_ref().is_none_or(|metric| &indicator.id == metric)
+                    self.system
+                        .as_ref()
+                        .is_none_or(|system| &indicator.system == system)
+                        && self
+                            .metric
+                            .as_ref()
+                            .is_none_or(|metric| &indicator.id == metric)
                 })
                 .all(|indicator| {
                     let series = self.backend.data_series(&indicator.id);
@@ -293,7 +382,9 @@ impl LiveApp {
                 });
         // Allow the first asynchronous HTTP snapshot to arrive before capturing the window.
         if !self.screenshot_requested
-            && ((self.backend.overview().link_up && series_ready && elapsed >= Duration::from_secs(3))
+            && ((self.backend.overview().link_up
+                && series_ready
+                && elapsed >= Duration::from_secs(3))
                 || elapsed >= Duration::from_secs(12))
         {
             self.screenshot_requested = true;
@@ -306,7 +397,13 @@ impl LiveApp {
             })
         }) {
             let [width, height] = image.size;
-            match image::save_buffer(path, image.as_raw(), width as u32, height as u32, image::ColorType::Rgba8) {
+            match image::save_buffer(
+                path,
+                image.as_raw(),
+                width as u32,
+                height as u32,
+                image::ColorType::Rgba8,
+            ) {
                 Ok(()) => println!("screenshot saved: {path} ({width}x{height})"),
                 Err(error) => eprintln!("screenshot failed: {error}"),
             }
@@ -341,8 +438,104 @@ impl eframe::App for LiveApp {
     }
 }
 
+fn health_color(status: HealthStatus) -> egui::Color32 {
+    match status {
+        HealthStatus::NoAlert => egui::Color32::from_rgb(89, 199, 139),
+        HealthStatus::Attention => WARN,
+        HealthStatus::Critical => CRIT,
+        HealthStatus::InsufficientData | HealthStatus::NotEvaluated => MUT,
+    }
+}
+
+fn source_links(ui: &mut Ui, urls: &[String]) {
+    for url in urls {
+        if url.starts_with("https://") || url.starts_with("http://") {
+            ui.hyperlink_to(url, url);
+        } else {
+            ui.label(url);
+        }
+    }
+}
+
+fn health_rule(ui: &mut Ui, rule: &HealthRule, expanded: bool) {
+    ui.horizontal_wrapped(|ui| {
+        ui.label(
+            RichText::new(rule.current_status().label())
+                .strong()
+                .color(health_color(rule.current_status())),
+        );
+        if !rule.current {
+            ui.label(RichText::new(format!("Previous result: {}", rule.status.label())).color(MUT));
+        }
+    });
+    if let Some(reason) = &rule.unavailable_reason {
+        ui.label(RichText::new(reason).color(MUT));
+    }
+    ui.label(&rule.explanation);
+    let urgent = rule.current && rule.status == HealthStatus::Critical;
+    if urgent || expanded {
+        ui.label(
+            RichText::new(rule.escalation.label())
+                .strong()
+                .color(if urgent { CRIT } else { TXT }),
+        );
+        ui.label(&rule.suggested_action);
+    }
+    egui::CollapsingHeader::new(format!(
+        "Actions, flight context and sources — {}",
+        rule.title
+    ))
+    .id_salt(&rule.rule_id)
+    .default_open(expanded || urgent)
+    .show(ui, |ui| {
+        if !(urgent || expanded) {
+            ui.label(RichText::new(rule.escalation.label()).strong());
+            ui.label(&rule.suggested_action);
+        }
+        ui.label(&rule.flight_context);
+        ui.small(format!(
+            "Rule {} / {} · valid until {}",
+            rule.rule_id,
+            rule.rule_version,
+            rule.valid_until.as_deref().unwrap_or("not evaluated")
+        ));
+        source_links(ui, &rule.source_urls);
+    });
+}
+
+fn health_summary(ui: &mut Ui, report: &HealthReport) {
+    Frame::new().fill(SURFACE).stroke(stroke(1.0, health_color(report.status))).inner_margin(Margin::same(14)).show(ui, |ui| {
+        ui.heading(RichText::new(format!("Health guidance: {}", report.status.label())).color(health_color(report.status)));
+        ui.label(&report.message);
+        if let Some(at) = &report.evaluated_at { ui.small(format!("Server evaluation: {at}")); }
+        let Some(health) = &report.evaluation else { return };
+        if report.status == health.status && health.rules.iter().all(|rule| !rule.status.is_evaluated() || rule.current) { ui.label(&health.explanation); }
+        egui::CollapsingHeader::new("When to get urgent help").default_open(report.status == HealthStatus::Critical).show(ui, |ui| {
+            ui.label(RichText::new(&health.emergency_guidance).color(CRIT));
+            ui.small("The application does not send messages to the crew or ground automatically.");
+        });
+        egui::CollapsingHeader::new("Spaceflight hazards and prevention").show(ui, |ui| {
+            for topic in &health.education {
+                ui.separator();
+                ui.label(RichText::new(&topic.title).strong());
+                ui.label(&topic.explanation);
+                ui.label(&topic.suggested_action);
+                source_links(ui, &topic.source_urls);
+            }
+        });
+        egui::CollapsingHeader::new("Scope and limitations").show(ui, |ui| {
+            ui.label(&health.disclaimer);
+            ui.small(format!("Rule set {} · demonstration guidance", health.rule_set_version));
+        });
+    });
+    ui.add_space(12.0);
+}
+
 fn parse_value(text: &str) -> Result<f64, &'static str> {
-    let value: f64 = text.trim().parse().map_err(|_| "Enter a number using a decimal point.")?;
+    let value: f64 = text
+        .trim()
+        .parse()
+        .map_err(|_| "Enter a number using a decimal point.")?;
     if !value.is_finite() {
         return Err("Enter a finite number.");
     }
@@ -375,13 +568,20 @@ fn chart_segments(series: &TimedSeries) -> Vec<Vec<(i64, f64)>> {
 }
 
 fn telemetry_chart(ui: &mut Ui, series: &TimedSeries, unit: &str, height: f32) {
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, CornerRadius::ZERO, DEEP);
     let segments = chart_segments(series);
     let values: Vec<_> = segments.iter().flatten().map(|(_, value)| *value).collect();
     if values.is_empty() || series.to_ms <= series.from_ms {
-        painter.text(rect.center(), Align2::CENTER_CENTER, "No samples in this interval", mono(12.0), MUT);
+        painter.text(
+            rect.center(),
+            Align2::CENTER_CENTER,
+            "No samples in this interval",
+            mono(12.0),
+            MUT,
+        );
     } else {
         let low = values.iter().copied().fold(f64::INFINITY, f64::min);
         let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
@@ -395,12 +595,20 @@ fn telemetry_chart(ui: &mut Ui, series: &TimedSeries, unit: &str, height: f32) {
             pos2(rect.left() + 60.0, rect.top() + 12.0),
             pos2(rect.right() - 12.0, rect.bottom() - 28.0),
         );
-        let x = |time: i64| plot.left() + ((time - series.from_ms) as f64 / (series.to_ms - series.from_ms) as f64) as f32 * plot.width();
-        let normalized_y = |value: f64| plot.bottom() - ((value - low) / (high - low)) as f32 * plot.height();
+        let x = |time: i64| {
+            plot.left()
+                + ((time - series.from_ms) as f64 / (series.to_ms - series.from_ms) as f64) as f32
+                    * plot.width()
+        };
+        let normalized_y =
+            |value: f64| plot.bottom() - ((value - low) / (high - low)) as f32 * plot.height();
         let y = |value: f64| normalized_y(value / scale);
         for value in [low, (low + high) / 2.0, high] {
             painter.line_segment(
-                [pos2(plot.left(), normalized_y(value)), pos2(plot.right(), normalized_y(value))],
+                [
+                    pos2(plot.left(), normalized_y(value)),
+                    pos2(plot.right(), normalized_y(value)),
+                ],
                 stroke(1.0, LINE),
             );
             let raw_value = value * scale;
@@ -436,7 +644,10 @@ fn telemetry_chart(ui: &mut Ui, series: &TimedSeries, unit: &str, height: f32) {
             MUT,
         );
         for segment in &segments {
-            let points: Vec<_> = segment.iter().map(|(time, value)| pos2(x(*time), y(*value))).collect();
+            let points: Vec<_> = segment
+                .iter()
+                .map(|(time, value)| pos2(x(*time), y(*value)))
+                .collect();
             if points.len() > 1 {
                 painter.add(Shape::line(points.clone(), stroke(1.5, ACCENT)));
             }
@@ -445,17 +656,30 @@ fn telemetry_chart(ui: &mut Ui, series: &TimedSeries, unit: &str, height: f32) {
             }
         }
         if let Some(pointer) = response.hover_pos() {
-            if let Some((time, value)) = segments
-                .iter()
-                .flatten()
-                .min_by(|a, b| (x(a.0) - pointer.x).abs().total_cmp(&(x(b.0) - pointer.x).abs()))
-            {
-                painter.line_segment([pos2(x(*time), plot.top()), pos2(x(*time), plot.bottom())], stroke(1.0, MUT));
-                response.on_hover_text(format!("{}\n{} {}", utc_label(*time), fmt_num(*value), unit));
+            if let Some((time, value)) = segments.iter().flatten().min_by(|a, b| {
+                (x(a.0) - pointer.x)
+                    .abs()
+                    .total_cmp(&(x(b.0) - pointer.x).abs())
+            }) {
+                painter.line_segment(
+                    [pos2(x(*time), plot.top()), pos2(x(*time), plot.bottom())],
+                    stroke(1.0, MUT),
+                );
+                response.on_hover_text(format!(
+                    "{}\n{} {}",
+                    utc_label(*time),
+                    fmt_num(*value),
+                    unit
+                ));
             }
         }
     }
-    painter.rect_stroke(rect, CornerRadius::ZERO, stroke(1.0, LINE), StrokeKind::Inside);
+    painter.rect_stroke(
+        rect,
+        CornerRadius::ZERO,
+        stroke(1.0, LINE),
+        StrokeKind::Inside,
+    );
     ui.label(RichText::new(&series.note).size(11.0).color(MUT));
 }
 
@@ -478,7 +702,10 @@ mod tests {
                     at_ms: 2_000,
                     value: Some(72.0),
                 },
-                TimePoint { at_ms: 3_000, value: None },
+                TimePoint {
+                    at_ms: 3_000,
+                    value: None,
+                },
                 TimePoint {
                     at_ms: 4_000,
                     value: Some(71.0),

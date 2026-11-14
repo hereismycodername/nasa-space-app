@@ -1,8 +1,11 @@
-use crate::{catalog::METRICS, dto, lock, Command, State};
+use crate::{
+    catalog::{self, Metric, METRICS},
+    dto, lock, Command, State,
+};
 use chrono::{DateTime, SecondsFormat, Utc};
 use reqwest::blocking::{Client, RequestBuilder};
 use serde::de::DeserializeOwned;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -64,16 +67,27 @@ fn response<T: DeserializeOwned>(request: RequestBuilder) -> Result<T, Failure> 
 }
 
 fn validate_latest(latest: &dto::Latest) -> Result<(), Failure> {
-    if latest.astronaut_id.is_empty() || latest.metrics.len() != METRICS.len() {
+    if latest.astronaut_id.is_empty() {
         return Err(Failure::protocol("Unexpected latest-measurements schema"));
     }
     dto::timestamp_ms(&latest.evaluated_at).map_err(Failure::protocol)?;
+    let mut seen = HashSet::new();
+    if latest
+        .metrics
+        .iter()
+        .any(|entry| !seen.insert(&entry.metric))
+    {
+        return Err(Failure::protocol("Repeated metric in latest response"));
+    }
     for metric in &METRICS {
         let entries: Vec<_> = latest
             .metrics
             .iter()
             .filter(|m| m.metric == metric.api)
             .collect();
+        if entries.is_empty() && !metric.required {
+            continue;
+        }
         if entries.len() != 1 {
             return Err(Failure::protocol(
                 "Missing or repeated metric in latest response",
@@ -244,6 +258,7 @@ fn perform_write(
 }
 
 struct SeriesCycle {
+    metrics: Vec<&'static Metric>,
     from: String,
     to: String,
     next: usize,
@@ -251,13 +266,14 @@ struct SeriesCycle {
 }
 
 impl SeriesCycle {
-    fn new(evaluated_at: &str) -> Result<Self, String> {
-        let to_ms = dto::timestamp_ms(evaluated_at)?;
+    fn new(latest: &dto::Latest) -> Result<Self, String> {
+        let to_ms = dto::timestamp_ms(&latest.evaluated_at)?;
         let to = DateTime::<Utc>::from_timestamp_millis(to_ms).ok_or("Invalid server timestamp")?;
         let from = to
             .checked_sub_signed(chrono::Duration::days(7))
             .ok_or("Invalid history range")?;
         Ok(Self {
+            metrics: catalog::available(Some(latest)),
             from: from.to_rfc3339_opts(SecondsFormat::Millis, true),
             to: to.to_rfc3339_opts(SecondsFormat::Millis, true),
             next: 0,
@@ -266,7 +282,7 @@ impl SeriesCycle {
     }
 
     fn fetch_next(&mut self, client: &Client, base: &str) -> Result<bool, Failure> {
-        let metric = &METRICS[self.next];
+        let metric = self.metrics[self.next];
         let series: dto::Series = response(
             client
                 .get(format!("{base}/api/measurements/series"))
@@ -291,7 +307,7 @@ impl SeriesCycle {
             series.into_timed().map_err(Failure::protocol)?,
         );
         self.next += 1;
-        Ok(self.next == METRICS.len())
+        Ok(self.next == self.metrics.len())
     }
 }
 
@@ -320,7 +336,7 @@ pub(crate) fn run(
     let mut next_history = Instant::now();
     let mut cycle: Option<SeriesCycle> = None;
     while !stop.load(Ordering::Relaxed) {
-        // Prioritise edits between requests, including during a six-metric refresh.
+        // Prioritise edits between requests, including during a multi-metric refresh.
         let wait = if cycle.is_some() || Instant::now() >= next_poll {
             Duration::ZERO
         } else {
@@ -344,6 +360,19 @@ pub(crate) fn run(
         if Instant::now() >= next_poll {
             let requested_at = Instant::now();
             let result = poll(&client, &base, &stop);
+            let assessment_at = Instant::now();
+            // Assessment failures must not turn a working telemetry connection into an outage.
+            let assessment = if result.is_ok() && !stop.load(Ordering::Relaxed) {
+                Some(
+                    response::<dto::Assessment>(client.get(format!("{base}/api/assessments")))
+                        .and_then(|value| {
+                            crate::health::validate(&value).map_err(Failure::protocol)?;
+                            Ok(value)
+                        }),
+                )
+            } else {
+                None
+            };
             next_poll = Instant::now() + POLL_INTERVAL;
             let mut state = lock(&state);
             match result {
@@ -354,12 +383,21 @@ pub(crate) fn run(
                     state.online = true;
                     state.error = None;
                     if Instant::now() >= next_history && cycle.is_none() {
-                        cycle = SeriesCycle::new(&latest.evaluated_at).ok();
+                        cycle = SeriesCycle::new(&latest).ok();
                         next_history = Instant::now() + HISTORY_INTERVAL;
                     }
                     state.latest = Some(latest);
                     state.snapshot_at = Some(requested_at);
                     state.tasks = tasks;
+                    match assessment {
+                        Some(Ok(assessment)) => {
+                            state.assessment = Some(assessment);
+                            state.assessment_at = Some(assessment_at);
+                            state.assessment_error = None;
+                        }
+                        Some(Err(error)) => state.assessment_error = Some(error.message),
+                        None => {}
+                    }
                 }
                 Err(error) => {
                     if state.online {

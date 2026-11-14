@@ -1,15 +1,15 @@
 openapi: 3.1.0
 info:
   title: Space Health Local API
-  version: 0.6.0
-  description: 'Implemented BE-06 contract for a local hackathon prototype. Latest and assessments return independent
+  version: 0.8.0
+  description: 'BE-08 adds explainable demonstration rules while preserving the BE-06 contract. Latest and assessments return independent
     quality for all six metrics with one server evaluatedAt per response. Explicit demo freshness policies
     are not medical thresholds. History, series, raw measurements and ingestion identity remain unchanged.
     Reads use demo-astronaut. Assessment status/explanation are a deprecated summary of one latest received
-    record; new consumers use metrics. No authentication, authorization or rate limiting is implemented: synthetic
-    data on a trusted local network only, with no 401/403/429 flows. Public missionDate and clinical rules
-    are future work. JSON bodies above 2 MiB are rejected. This revision keeps /api paths; update strict clients
-    for added fields and the clock-skew legacy summary status.'
+    record; new consumers use metrics for quality and health for rule results. Rules are not a validated medical
+    device, diagnosis or NASA medical protocol. No authentication, authorization or rate limiting is implemented:
+    synthetic data on a trusted local network only, with no 401/403/429 flows. Public missionDate remains future work.
+    JSON bodies above 2 MiB are rejected. This revision keeps /api paths and adds health without changing ingestion.'
 servers:
 - url: http://127.0.0.1:8080
   description: Local Rust server (also serves the built React UI)
@@ -20,7 +20,7 @@ tags:
 - name: Measurements
   description: Single-record ingestion, filtered history, independent latest values and bounded aggregated series.
 - name: Assessments
-  description: Independent per-metric data quality and a deprecated legacy summary; not clinical assessment.
+  description: Independent data quality, explainable demonstration rules, flight context and suggested actions.
 - name: Tasks
   description: Undated persistent checklist.
 paths:
@@ -285,7 +285,7 @@ paths:
           $ref: '#/components/responses/DatabaseError'
   /api/assessments:
     get:
-      summary: Read independent data quality for all six metrics
+      summary: Read data quality and explainable demonstration health rules
       operationId: getAssessment
       tags:
       - Assessments
@@ -293,11 +293,14 @@ paths:
         using the same domain evaluation as latest. Separate requests can observe different snapshots and times.
         Deprecated status/explanation summarize only the single most recently received record (receipt UTC milliseconds
         descending, then id descending), with that metric''s window: no-data, unknown-time, clock-skew, stale
-        or not-evaluated. This is not an overall crew or clinical status. New clients use metrics. No query parameters
+        or not-evaluated. This is not an overall crew or clinical status. health uses the same snapshot and evaluatedAt,
+        with versioned rules, evidence IDs, expiry, actions, escalation and source links. Missing, stale, unknown-time
+        or future observations never produce a noAlert result. noAlert means no configured rule fired, not healthy.
+        No query parameters
         are accepted; unknown or duplicate keys return 400 INVALID_QUERY.'
       responses:
         '200':
-          description: Per-metric data quality plus a deprecated single-record summary.
+          description: Data quality, demonstration rules and a deprecated single-record summary.
           content:
             application/json:
               schema:
@@ -315,6 +318,12 @@ paths:
                   externalValue: ./examples/assessment.clock-skew.response.json
                 independentMetrics:
                   externalValue: ./examples/assessment.quality.response.json
+                rulesNoAlert:
+                  externalValue: ./examples/assessment.rules-normal.response.json
+                rulesAttention:
+                  externalValue: ./examples/assessment.rules-attention.response.json
+                rulesCritical:
+                  externalValue: ./examples/assessment.rules-critical.response.json
         '400':
           $ref: '#/components/responses/BadRequest'
         '405':
@@ -1233,6 +1242,120 @@ components:
           additionalProperties: true
           properties:
             unit: {const: score}
+    RuleStatus:
+      type: string
+      enum: [notEvaluated, insufficientData, noAlert, attention, critical]
+      description: Rule result independent of freshness. noAlert is not a declaration of health;
+        critical asks for urgent verification/crew medical help, not an automatic diagnosis.
+    HealthRule:
+      type: object
+      additionalProperties: false
+      required: [ruleId, ruleVersion, metric, title, status, explanation, measurementIds, validUntil,
+        suggestedAction, escalation, flightContext, sourceUrls, demonstrationOnly]
+      properties:
+        ruleId:
+          type: string
+          minLength: 1
+        ruleVersion:
+          type: string
+          minLength: 1
+        metric:
+          $ref: '#/components/schemas/Metric'
+        title:
+          type: string
+        status:
+          $ref: '#/components/schemas/RuleStatus'
+        explanation:
+          type: string
+          description: Observed value, criterion and interpretation limits; no diagnosis.
+        measurementIds:
+          type: array
+          maxItems: 1
+          uniqueItems: true
+          items:
+            type: string
+          description: Exactly one latest-known fresh observation for an evaluated rule; empty otherwise.
+        validUntil:
+          type: [string, 'null']
+          format: date-time
+          description: Inclusive measuredAt plus metric freshness window. Null for unevaluated results.
+        suggestedAction:
+          type: string
+        escalation:
+          type: string
+          enum: [none, self, crew, ground, urgent]
+          description: Guidance for the user. No message or medical consultation is sent automatically.
+        flightContext:
+          type: string
+          description: Educational link to flight hazards, not a causal conclusion about this astronaut.
+        sourceUrls:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: Sources for configured rules; may be empty when no rule is configured.
+        demonstrationOnly:
+          type: boolean
+          const: true
+    FlightEducation:
+      type: object
+      additionalProperties: false
+      required: [id, title, explanation, suggestedAction, sourceUrls]
+      properties:
+        id:
+          type: string
+          enum: [gravity, isolation, radiation, distance, environment]
+        title:
+          type: string
+        explanation:
+          type: string
+        suggestedAction:
+          type: string
+        sourceUrls:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uri
+    HealthEvaluation:
+      type: object
+      additionalProperties: false
+      required: [ruleSetVersion, demonstrationOnly, status, explanation, disclaimer, emergencyGuidance,
+        evaluatedMetricCount, totalMetricCount, rules, education]
+      properties:
+        ruleSetVersion:
+          type: string
+          example: be08-demo-1
+        demonstrationOnly:
+          type: boolean
+          const: true
+        status:
+          $ref: '#/components/schemas/RuleStatus'
+        explanation:
+          type: string
+        disclaimer:
+          type: string
+        emergencyGuidance:
+          type: string
+          description: Symptoms needing crew assistance independently of readings or connectivity.
+        evaluatedMetricCount:
+          type: integer
+          minimum: 0
+        totalMetricCount:
+          type: integer
+          minimum: 1
+        rules:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/HealthRule'
+          description: One result per registered metric, in registry order; unsupported rules are notEvaluated.
+        education:
+          type: array
+          minItems: 5
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/FlightEducation'
     Health:
       type: object
       additionalProperties: false
@@ -1265,8 +1388,8 @@ components:
           - not-evaluated
           - clock-skew
           deprecated: true
-          description: Single most recently received record only. not-evaluated means that record is fresh; medical
-            rules are not connected. Never an overall health status.
+          description: Single most recently received record only. not-evaluated means that record is fresh.
+            Preserved compatibility field; use health for BE-08 rules. Never an overall health status.
         explanation:
           type: string
           deprecated: true
@@ -1285,6 +1408,10 @@ components:
           description: Fixed order heartRate, systolicPressure, diastolicPressure, temperature, sleepHours, mood.
           items:
             $ref: '#/components/schemas/MetricQuality'
+        health:
+          description: Always returned by BE-08. Optional here only to describe legacy BE-06 responses/examples;
+            clients must show notEvaluated when connecting to an older server without this field.
+          $ref: '#/components/schemas/HealthEvaluation'
       example:
         astronautId: demo-astronaut
         evaluatedAt: '2026-11-13T08:00:03Z'

@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 use ui_http::HttpBackend;
-use ui_model::{Backend, Status};
+use ui_model::{Backend, HealthStatus, Status};
 
 fn wait_for(
     gui: &mut HttpBackend,
@@ -77,7 +77,30 @@ fn main() -> Result<(), Box<dyn Error>> {
         .ok_or("Missing heart rate")?;
     assert_eq!(heart["latestKnownMeasurement"]["value"], 72.25);
     assert_eq!(heart["latestKnownMeasurement"]["source"], "manual");
-    assert_eq!(gui.indicator_status("hr"), Status::Unassessed);
+    wait_for(
+        &mut gui,
+        &mut tui,
+        "shared fresh health guidance",
+        |a, b| {
+            [a, b].iter().all(|client| {
+                client.health_rule("hr").is_some_and(|rule| {
+                    rule.current_status() == HealthStatus::NoAlert
+                        && rule.measurement_ids
+                            == [heart["latestKnownMeasurement"]["id"]
+                                .as_str()
+                                .unwrap_or_default()]
+                })
+            })
+        },
+    )?;
+    assert_eq!(gui.indicator_status("hr"), Status::Normal);
+    assert_eq!(
+        gui.health_report()
+            .evaluation
+            .as_ref()
+            .map(|value| value.education.len()),
+        Some(5)
+    );
 
     let session = format!("native-smoke-{}", uuid::Uuid::new_v4());
     let mut sequence = 0;
@@ -194,6 +217,80 @@ fn main() -> Result<(), Box<dyn Error>> {
             })
         },
     )?;
+    // Optional capabilities are advertised by the server; old six-metric APIs remain supported.
+    let optional = [
+        ("spo2", 98.5, "%"),
+        ("glucose", 94.25, "mg/dL"),
+        ("visionBlur", 0.0, "score"),
+        ("exerciseMinutes", 15.5, "min"),
+        ("headache", 2.5, "score"),
+        ("backPain", 0.0, "score"),
+    ];
+    let supported: Vec<_> = optional
+        .into_iter()
+        .filter(|(metric, _, _)| {
+            latest["metrics"]
+                .as_array()
+                .is_some_and(|items| items.iter().any(|item| item["metric"] == *metric))
+        })
+        .collect();
+    for (metric, value, unit) in &supported {
+        post(metric, *value, unit, Some(Utc::now().to_rfc3339()))?;
+    }
+    if !supported.is_empty() {
+        wait_for(
+            &mut gui,
+            &mut tui,
+            "optional metrics shared without invented health rules",
+            |a, b| {
+                supported
+                    .iter()
+                    .all(|(metric, value, _)| same_value(a, b, metric, *value))
+                    && [a, b].iter().all(|client| {
+                        supported.iter().all(|(metric, _, _)| {
+                            client.health_rule(metric).is_some_and(|rule| {
+                                rule.current_status() == HealthStatus::NotEvaluated
+                            })
+                        })
+                    })
+            },
+        )?;
+        tui.submit_measurement("exerciseMinutes", 20.25)?;
+        wait_for(
+            &mut gui,
+            &mut tui,
+            "fractional optional TUI write",
+            |a, b| b.pending_writes() == 0 && same_value(a, b, "exerciseMinutes", 20.25),
+        )?;
+        assert_eq!(gui.indicator_status("spo2"), Status::Unassessed);
+        assert_eq!(gui.overview().total_indicators, 6 + supported.len());
+    } else {
+        assert!(tui.submit_measurement("spo2", 98.0).is_err());
+    }
+    let critical = post(
+        "systolicPressure",
+        181.0,
+        "mmHg",
+        Some(Utc::now().to_rfc3339()),
+    )?;
+    wait_for(
+        &mut gui,
+        &mut tui,
+        "shared critical rule with matching measurement and actions",
+        |a, b| {
+            [a, b].iter().all(|client| {
+                client.health_rule("sbp").is_some_and(|rule| {
+                    rule.current_status() == HealthStatus::Critical
+                        && rule.measurement_ids == [critical["id"].as_str().unwrap_or_default()]
+                        && !rule.suggested_action.is_empty()
+                        && !rule.flight_context.is_empty()
+                        && !rule.source_urls.is_empty()
+                })
+            })
+        },
+    )?;
+    assert_eq!(gui.system_status("heart"), Status::Act);
+    assert_eq!(tui.health_report().status, HealthStatus::Critical);
     post(
         "heartRate",
         88.5,
@@ -213,9 +310,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         },
     )?;
     assert!(gui.submit_measurement("mood", 6.0).is_err());
-    assert!(tui.submit_measurement("spo2", 98.0).is_err());
+    assert_eq!(gui.indicator_status("hr"), Status::Unassessed);
+    assert!(!gui
+        .health_rule("hr")
+        .is_some_and(|rule| rule.current_status() == HealthStatus::NoAlert));
     assert_eq!(gui.overview().score, None);
     assert!(gui.alerts().is_empty());
-    println!("PASS: two native HTTP clients and browser API share measurements, fractional values, tasks, provenance, quality, UTC history and idempotent storage.");
+    println!("PASS: two native HTTP clients and browser API share measurements, fractional values, tasks, provenance, quality, UTC history, idempotent storage and shared server health guidance.");
     Ok(())
 }

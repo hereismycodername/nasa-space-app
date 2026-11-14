@@ -50,7 +50,7 @@ fn main() -> std::io::Result<()> {
   --ground       start in the ground console\n\
   --demo         isolated in-memory demo; does not access the API\n\
   Live keys: arrows select, Enter edits a metric, Tab selects tasks, Space toggles\n\
-  a task, r switches role, ? shows help, q quits. Use an 80x24 UTF-8 terminal."
+  a task, i shows details, h health guidance, f flight hazards, r role, ? help, q quits. Use an 80x24 UTF-8 terminal."
         );
         return Ok(());
     }
