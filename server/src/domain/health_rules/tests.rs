@@ -51,6 +51,21 @@ fn find_rule<'a>(health: &'a HealthEvaluation, metric: &str) -> &'a HealthRule {
 }
 
 #[test]
+fn explanations_use_russian_units_and_compact_decimal_values() {
+    for (metric, value, expected) in [
+        ("mood", 2.0, "2 из 5."),
+        ("sleepHours", 4.14, "4,14 ч."),
+        ("heartRate", 72.0, "72 уд/мин."),
+        ("systolicPressure", 115.0, "115 мм рт. ст."),
+    ] {
+        let result = assess(&[entry(metric, value, Some(now()))], now());
+        let explanation = &find_rule(&result, metric).explanation;
+        assert!(explanation.starts_with(expected), "{explanation}");
+        assert!(!explanation.contains("score"));
+    }
+}
+
+#[test]
 fn every_numeric_boundary_has_the_documented_inclusive_or_strict_behavior() {
     use RuleStatus::{Attention, Critical, NoAlert};
     let cases = [
@@ -149,7 +164,7 @@ fn systolic_attention_uses_self_follow_up_below_130_and_ground_for_other_alerts(
 fn stale_unknown_and_future_severe_values_never_produce_a_current_alert() {
     for at in [
         None,
-        Some(now() - Duration::hours(2)),
+        Some(now() - Duration::hours(14)),
         Some(now() + Duration::nanoseconds(1)),
     ] {
         let result = assess(&[entry("systolicPressure", 200.0, at)], now());
@@ -173,7 +188,7 @@ fn newest_unknown_delivery_does_not_override_known_fresh_observation() {
     let rule = find_rule(&result, "systolicPressure");
     assert_eq!(rule.status, RuleStatus::NoAlert);
     assert_eq!(rule.measurement_ids, ["observed"]);
-    assert!(rule.explanation.starts_with("115 mmHg."));
+    assert!(rule.explanation.starts_with("115 мм рт. ст."));
 }
 
 #[test]

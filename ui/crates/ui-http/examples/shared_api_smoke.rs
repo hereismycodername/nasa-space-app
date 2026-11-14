@@ -181,7 +181,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         "systolicPressure",
         118.5,
         "mmHg",
-        Some((Utc::now() - ChronoDuration::hours(2)).to_rfc3339()),
+        Some((Utc::now() - ChronoDuration::hours(14)).to_rfc3339()),
     )?;
     post(
         "diastolicPressure",

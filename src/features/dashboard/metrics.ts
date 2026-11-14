@@ -20,7 +20,7 @@ export const METRICS: readonly MetricConfig[] = [
   { id: 'sleepHours', label: 'Сон', unit: 'h', system: 'brain', description: 'Продолжительность сна', input: { min: 0, max: 24, step: 0.1 } },
   { id: 'mood', label: 'Самочувствие', unit: 'score', system: 'brain', description: 'Субъективная оценка от 1 до 5', input: { min: 1, max: 5, step: 1 } },
   { id: 'spo2', label: 'Насыщение крови кислородом', unit: '%', system: 'lungs', description: 'SpO₂ по показанию пульсоксиметра, от 0 до 100%.', input: { min: 0, max: 100, step: 0.1 } },
-  { id: 'glucose', label: 'Глюкоза крови', unit: 'mg/dL', system: 'gut', description: 'Значение глюкометра в mg/dL; время измерения сохраняется отдельно.', input: { min: 0, step: 0.1, exclusiveMin: true } },
+  { id: 'glucose', label: 'Глюкоза крови', unit: 'mg/dL', system: 'gut', description: 'Значение глюкометра в мг/дл; время измерения сохраняется отдельно.', input: { min: 0, step: 0.1, exclusiveMin: true } },
   { id: 'visionBlur', label: 'Нечёткость зрения', unit: 'score', system: 'eyes', description: 'Личная оценка от 0 (нет) до 10 (максимальная выраженность). Это не проверка остроты зрения.', input: { min: 0, max: 10, step: 0.1 }, quickInputLabel: 'Отметить нечёткость зрения' },
   { id: 'exerciseMinutes', label: 'Активность за 24 часа', unit: 'min', system: 'msk', description: 'Суммарное время упражнений за последние 24 часа, от 0 до 1440 минут. Укажите время отчёта.', input: { min: 0, max: 1440, step: 0.1 } },
   { id: 'headache', label: 'Головная боль', unit: 'score', system: 'brain', description: 'Личная оценка от 0 (боли нет) до 10 (максимальная выраженность). По шкале нельзя установить причину.', input: { min: 0, max: 10, step: 0.1 }, quickInputLabel: 'Отметить головную боль' },
@@ -52,6 +52,17 @@ const timeFormatter = new Intl.DateTimeFormat('ru-RU', {
 
 export function formatValue(value: number) {
   return valueFormatter.format(value)
+}
+
+const unitLabels: Record<Unit, string> = {
+  bpm: 'уд/мин', mmHg: 'мм рт. ст.', '°C': '°C', h: 'ч', score: 'балла',
+  '%': '%', 'mg/dL': 'мг/дл', min: 'мин',
+}
+
+/** Presentation only: API units remain unchanged in requests and responses. */
+export function formatUnit(unit: Unit, metric?: Metric) {
+  if (unit === 'score' && metric) return metric === 'mood' ? 'из 5' : 'из 10'
+  return unitLabels[unit]
 }
 
 export function formatTime(timestamp: string) {

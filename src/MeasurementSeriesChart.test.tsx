@@ -41,7 +41,7 @@ it('shows response period, aggregation, interval, unit and unknown measurement t
   expect(html).toContain('13.11.2026, 05:00')
   expect(html).toContain('UTC')
   expect(html).toContain('Среднее за интервал')
-  expect(html).toContain('Интервал: 1 ч · Единица: bpm')
+  expect(html).toContain('Интервал: 1 ч · Единица: уд/мин')
   expect(html).toContain('неизвестным временем измерения')
   expect(html).toContain('сгруппированы по времени получения')
   expect(html).toContain('Их свежесть не подтверждена')
@@ -54,7 +54,7 @@ it('describes a discrete series as last values instead of an average', () => {
     points: [{ ...bucket(1, 7.5), min: null, max: null }],
   }} />)
   expect(html).toContain('Последнее значение за интервал')
-  expect(html).toContain('Единица: h')
+  expect(html).toContain('Единица: ч')
   expect(html).not.toContain('Среднее')
   expect(html).not.toContain('неизвестным временем измерения')
 })

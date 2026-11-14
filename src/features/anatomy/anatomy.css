@@ -63,3 +63,5 @@
 }
 @media (max-width: 650px) { .anatomy-systems { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (prefers-reduced-motion: reduce) { .anatomy-part { transition: none; } }
+
+.anatomy-health-status { min-height: 2.8em; }
