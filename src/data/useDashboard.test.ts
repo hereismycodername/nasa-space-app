@@ -8,8 +8,8 @@ vi.mock('./measurements', () => ({
   getLatestMeasurements: vi.fn(), getAssessment: vi.fn(), getTasks: vi.fn(),
 }))
 
-const latest: LatestMeasurements = { astronautId: 'demo-astronaut', metrics: [] }
-const assessment: HealthAssessment = { status: 'no-data', explanation: 'Нет измерений' }
+const latest: LatestMeasurements = { astronautId: 'demo-astronaut', evaluatedAt: '2026-11-14T08:00:00Z', metrics: [] }
+const assessment: HealthAssessment = { status: 'no-data', explanation: 'Нет измерений', astronautId: 'demo-astronaut', evaluatedAt: latest.evaluatedAt, metrics: [] }
 const tasks: DailyTask[] = [{ id: 'daily-check', title: 'Заполнить измерения', completedAt: null }]
 let page: EventTarget & { hidden: boolean }
 let lifecycle: ReturnType<typeof startDashboardPolling> | undefined
@@ -59,6 +59,7 @@ it('starts reads in parallel, publishes one complete snapshot and polls only aft
   vi.mocked(getAssessment).mockReturnValueOnce(assessmentRequest.promise)
   vi.mocked(getTasks).mockReturnValueOnce(tasksRequest.promise)
   const onChange = vi.fn<(state: DashboardState) => void>()
+  const requestStartedAt = performance.now()
   lifecycle = startDashboardPolling(onChange)
 
   expect(getLatestMeasurements).toHaveBeenCalledTimes(1)
@@ -72,12 +73,16 @@ it('starts reads in parallel, publishes one complete snapshot and polls only aft
   assessmentRequest.resolve(assessment)
   tasksRequest.resolve(tasks)
   await vi.advanceTimersByTimeAsync(0)
-  expect(onChange.mock.lastCall?.[0]).toEqual({ latest, assessment, tasks, connected: true, loading: false, error: '', lastUpdated: new Date() })
+  expect(onChange.mock.lastCall?.[0]).toEqual({ latest, assessment, tasks, connected: true, loading: false, error: '', lastUpdated: new Date(), qualityObservedAt: requestStartedAt, qualityReceivedAt: performance.now() })
+  // Slow requests must not reset the age of the server's freshness decision on arrival.
+  expect(performance.now() - onChange.mock.lastCall![0].qualityObservedAt!).toBe(10000)
 
   await vi.advanceTimersByTimeAsync(4999)
   expect(getLatestMeasurements).toHaveBeenCalledTimes(1)
   await vi.advanceTimersByTimeAsync(1)
   expect(getLatestMeasurements).toHaveBeenCalledTimes(2)
+  expect(onChange.mock.lastCall![0].qualityObservedAt).toBe(requestStartedAt)
+  expect(onChange.mock.lastCall![0].qualityReceivedAt).toBe(performance.now())
 })
 
 it('keeps the last complete snapshot on failure and refreshes immediately after a mutation', async () => {
@@ -88,7 +93,7 @@ it('keeps the last complete snapshot on failure and refreshes immediately after 
   vi.mocked(getTasks).mockRejectedValueOnce(new Error('Database operation failed'))
   await vi.advanceTimersByTimeAsync(5000)
   const failed = onChange.mock.lastCall![0]
-  expect(failed).toMatchObject({ latest, assessment, tasks, connected: false, loading: false, lastUpdated: saved.lastUpdated })
+  expect(failed).toMatchObject({ latest, assessment, tasks, connected: false, loading: false, lastUpdated: saved.lastUpdated, qualityObservedAt: saved.qualityObservedAt })
   expect(failed.latest).toBe(saved.latest)
   expect(failed.error).toContain('Database operation failed')
 

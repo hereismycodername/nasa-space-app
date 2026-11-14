@@ -1,21 +1,15 @@
 openapi: 3.1.0
 info:
   title: Space Health Local API
-  version: 0.5.0
-  description: 'Implemented BE-05 contract for a local hackathon prototype. /api/measurements/series adds bounded
-    UTC interval aggregation across a whole requested range with explicit gaps. History returns a paginated
-    envelope and supports metric/time filters; /api/measurements/latest returns all six metrics independently.
-    Reads are scoped to demo-astronaut by the server. Measurement retries compare
-    normalized UTC instants with nanosecond parser precision and preserve the first stored record.
-    Measurements include timeBasis;
-    history is ordered by the measurement time, or receipt time when unknown, using numeric UTC milliseconds.
-    Unknown measurement time produces an unknown-time assessment. Upgrade the bundled React client with
-    this server; the history envelope is incompatible with the v0.3 array response. API errors use application/problem+json with
-    code/message/optional field and legacy error. No authentication, authorization or rate limiting is implemented: use only
-    synthetic data on a trusted local network. There are no 401/403/429 flows. Unknown /api routes return
-    NOT_FOUND. Public missionDate and per-metric assessments are future work, not
-    available through this specification. Requests above 2 MiB are rejected by JSON body extraction. Version
-    is a contract revision; /api paths remain unchanged.'
+  version: 0.6.0
+  description: 'Implemented BE-06 contract for a local hackathon prototype. Latest and assessments return independent
+    quality for all six metrics with one server evaluatedAt per response. Explicit demo freshness policies
+    are not medical thresholds. History, series, raw measurements and ingestion identity remain unchanged.
+    Reads use demo-astronaut. Assessment status/explanation are a deprecated summary of one latest received
+    record; new consumers use metrics. No authentication, authorization or rate limiting is implemented: synthetic
+    data on a trusted local network only, with no 401/403/429 flows. Public missionDate and clinical rules
+    are future work. JSON bodies above 2 MiB are rejected. This revision keeps /api paths; update strict clients
+    for added fields and the clock-skew legacy summary status.'
 servers:
 - url: http://127.0.0.1:8080
   description: Local Rust server (also serves the built React UI)
@@ -26,7 +20,7 @@ tags:
 - name: Measurements
   description: Single-record ingestion, filtered history, independent latest values and bounded aggregated series.
 - name: Assessments
-  description: Prototype freshness status, not clinical assessment.
+  description: Independent per-metric data quality and a deprecated legacy summary; not clinical assessment.
 - name: Tasks
   description: Undated persistent checklist.
 paths:
@@ -190,17 +184,17 @@ paths:
       operationId: getLatestMeasurements
       tags:
       - Measurements
-      description: Returns a consistent database snapshot for demo-astronaut, with all six metrics in
-        fixed order. latestMeasurement uses effective UTC milliseconds descending then id descending;
-        latestKnownMeasurement uses only known measuredAt values in the same order;
-        latestReceivedMeasurement uses receipt UTC milliseconds descending then id descending.
-        A late old packet does not replace a newer known measurement. An unknown-time latest received
-        packet remains visible separately from the latest known measurement. Missing values are null;
-        a metric without any rows has all three fields null. This is not a per-metric freshness or
-        clinical assessment. No query parameters are accepted.
+      description: Returns one consistent database snapshot for demo-astronaut with all six metrics in fixed
+        order and one UTC evaluatedAt instant. latestMeasurement uses effective UTC milliseconds descending then
+        id descending; latestKnownMeasurement uses known measuredAt in the same order; latestReceivedMeasurement
+        uses receipt UTC milliseconds descending then id descending. A late old packet does not replace a newer
+        known measurement. All three fields are null when missing. quality evaluates latestKnownMeasurement,
+        otherwise latestReceivedMeasurement; latestReceivedQuality independently evaluates latestReceivedMeasurement.
+        Future measuredAt is clockSkew, missing measuredAt is unknownTime; receivedAt never replaces measuredAt
+        for freshness. Raw measurements remain unchanged. No query parameters are accepted.
       responses:
         '200':
-          description: Six metric entries, including explicit missing values.
+          description: Six metric entries, explicit missing values and independent data quality.
           content:
             application/json:
               schema:
@@ -210,6 +204,8 @@ paths:
                   externalValue: ./examples/measurements.latest.response.json
                 empty:
                   externalValue: ./examples/measurements.latest.empty.response.json
+                qualityStates:
+                  externalValue: ./examples/measurements.latest.quality.response.json
         '400':
           $ref: '#/components/responses/BadRequest'
         '405':
@@ -289,18 +285,19 @@ paths:
           $ref: '#/components/responses/DatabaseError'
   /api/assessments:
     get:
-      summary: Get the prototype data freshness status
+      summary: Read independent data quality for all six metrics
       operationId: getAssessment
       tags:
       - Assessments
-      description: 'Selects one row for demo-astronaut by numeric receipt time descending, then id descending. no-data means
-        no rows; unknown-time means the selected row has no measuredAt and no freshness conclusion is made.
-        Known measuredAt is stale when whole elapsed seconds >15; other accepted known times produce
-        not-evaluated. This is not a clinical assessment or per-metric freshness. Future accepted timestamps
-        are not separately marked clockSkew yet; that and per-metric status remain BE-06 work.'
+      description: 'Returns astronautId, one UTC evaluatedAt and quality/latestReceivedQuality for all six metrics
+        using the same domain evaluation as latest. Separate requests can observe different snapshots and times.
+        Deprecated status/explanation summarize only the single most recently received record (receipt UTC milliseconds
+        descending, then id descending), with that metric''s window: no-data, unknown-time, clock-skew, stale
+        or not-evaluated. This is not an overall crew or clinical status. New clients use metrics. No query parameters
+        are accepted; unknown or duplicate keys return 400 INVALID_QUERY.'
       responses:
         '200':
-          description: Prototype freshness status.
+          description: Per-metric data quality plus a deprecated single-record summary.
           content:
             application/json:
               schema:
@@ -314,6 +311,10 @@ paths:
                   externalValue: ./examples/assessment.stale.response.json
                 unknownTime:
                   externalValue: ./examples/assessment.unknown-time.response.json
+                clockSkew:
+                  externalValue: ./examples/assessment.clock-skew.response.json
+                independentMetrics:
+                  externalValue: ./examples/assessment.quality.response.json
         '400':
           $ref: '#/components/responses/BadRequest'
         '405':
@@ -362,7 +363,7 @@ paths:
       tags:
       - Tasks
       description: Sets completedAt to server UTC time when completed=true, or null when false. Repeating
-        true sets a new timestamp in BE-05; daily/idempotent task completion is planned for BE-07. Unknown
+        true sets a new timestamp in BE-06; daily/idempotent task completion is planned for BE-07. Unknown
         request fields, including date, are rejected. Body limit is 2 MiB.
       responses:
         '200':
@@ -758,6 +759,8 @@ components:
       - latestMeasurement
       - latestKnownMeasurement
       - latestReceivedMeasurement
+      - quality
+      - latestReceivedQuality
       properties:
         metric:
           $ref: '#/components/schemas/Metric'
@@ -767,7 +770,8 @@ components:
           - $ref: '#/components/schemas/Measurement'
           - type: 'null'
         latestKnownMeasurement:
-          description: Latest known measuredAt by UTC milliseconds/id, independently of arrival order; null if none.
+          description: Latest known measuredAt by UTC milliseconds/id, independently of arrival order; null if
+            none.
           anyOf:
           - allOf:
             - $ref: '#/components/schemas/Measurement'
@@ -782,6 +786,12 @@ components:
           anyOf:
           - $ref: '#/components/schemas/Measurement'
           - type: 'null'
+        quality:
+          $ref: '#/components/schemas/MeasurementQuality'
+          description: Latest known measurement, or latest received only when none known.
+        latestReceivedQuality:
+          $ref: '#/components/schemas/MeasurementQuality'
+          description: Most recently received measurement, independently.
     LatestMeasurements:
       type: object
       additionalProperties: false
@@ -792,29 +802,103 @@ components:
           latestMeasurement: null
           latestKnownMeasurement: null
           latestReceivedMeasurement: null
+          quality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 15
+            ageSeconds: null
+            clockSkew: false
+          latestReceivedQuality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 15
+            ageSeconds: null
+            clockSkew: false
         - metric: systolicPressure
           latestMeasurement: null
           latestKnownMeasurement: null
           latestReceivedMeasurement: null
+          quality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 3600
+            ageSeconds: null
+            clockSkew: false
+          latestReceivedQuality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 3600
+            ageSeconds: null
+            clockSkew: false
         - metric: diastolicPressure
           latestMeasurement: null
           latestKnownMeasurement: null
           latestReceivedMeasurement: null
+          quality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 3600
+            ageSeconds: null
+            clockSkew: false
+          latestReceivedQuality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 3600
+            ageSeconds: null
+            clockSkew: false
         - metric: temperature
           latestMeasurement: null
           latestKnownMeasurement: null
           latestReceivedMeasurement: null
+          quality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 3600
+            ageSeconds: null
+            clockSkew: false
+          latestReceivedQuality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 3600
+            ageSeconds: null
+            clockSkew: false
         - metric: sleepHours
           latestMeasurement: null
           latestKnownMeasurement: null
           latestReceivedMeasurement: null
+          quality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 86400
+            ageSeconds: null
+            clockSkew: false
+          latestReceivedQuality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 86400
+            ageSeconds: null
+            clockSkew: false
         - metric: mood
           latestMeasurement: null
           latestKnownMeasurement: null
           latestReceivedMeasurement: null
+          quality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 86400
+            ageSeconds: null
+            clockSkew: false
+          latestReceivedQuality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 86400
+            ageSeconds: null
+            clockSkew: false
+        evaluatedAt: '2026-11-13T08:00:03Z'
       required:
       - astronautId
       - metrics
+      - evaluatedAt
       properties:
         astronautId:
           type: string
@@ -827,6 +911,120 @@ components:
           description: Fixed order heartRate, systolicPressure, diastolicPressure, temperature, sleepHours, mood.
           items:
             $ref: '#/components/schemas/LatestMetric'
+        evaluatedAt:
+          type: string
+          format: date-time
+          description: One server UTC RFC3339 instant for every quality calculation in this response.
+    MeasurementQuality:
+      type: object
+      additionalProperties: false
+      description: Operational demo quality, not a medical threshold. Exact age through the window inclusive is
+        fresh; +1 ns is stale. Any future parsed instant, including +1 ns, is clockSkew. Raw timestamps are never
+        replaced. After server-clock rollback, previously accepted data remains clockSkew even when more than 300
+        seconds ahead.
+      required:
+      - status
+      - measurementId
+      - freshForSeconds
+      - ageSeconds
+      - clockSkew
+      properties:
+        status:
+          type: string
+          enum:
+          - missing
+          - fresh
+          - stale
+          - unknownTime
+          - clockSkew
+        measurementId:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          description: Selected measurement id; null only for missing.
+        freshForSeconds:
+          type: integer
+          enum:
+          - 15
+          - 3600
+          - 86400
+          description: 'Demo policy: heartRate 15; both pressures and temperature 3600; sleepHours and mood 86400
+            seconds.'
+        ageSeconds:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+          description: Fractional age for known nonfuture times; null for missing, unknownTime and clockSkew. Exact
+            duration determines status before floating-point serialization.
+        clockSkew:
+          type: boolean
+          description: True exactly when status is clockSkew.
+      allOf:
+      - if:
+          properties:
+            status:
+              const: missing
+          additionalProperties: true
+        then:
+          properties:
+            measurementId:
+              type: 'null'
+          additionalProperties: true
+        else:
+          properties:
+            measurementId:
+              type: string
+          additionalProperties: true
+      - if:
+          properties:
+            status:
+              enum:
+              - fresh
+              - stale
+          additionalProperties: true
+        then:
+          properties:
+            ageSeconds:
+              type: number
+          additionalProperties: true
+        else:
+          properties:
+            ageSeconds:
+              type: 'null'
+          additionalProperties: true
+      - if:
+          properties:
+            status:
+              const: clockSkew
+          additionalProperties: true
+        then:
+          properties:
+            clockSkew:
+              const: true
+          additionalProperties: true
+        else:
+          properties:
+            clockSkew:
+              const: false
+          additionalProperties: true
+    MetricQuality:
+      type: object
+      additionalProperties: false
+      required:
+      - metric
+      - quality
+      - latestReceivedQuality
+      properties:
+        metric:
+          $ref: '#/components/schemas/Metric'
+        quality:
+          $ref: '#/components/schemas/MeasurementQuality'
+          description: Latest known measurement, or latest received when none known.
+        latestReceivedQuality:
+          $ref: '#/components/schemas/MeasurementQuality'
+          description: Most recently received measurement independently.
     SeriesTimeBasis:
       type: [string, 'null']
       enum: [measuredAt, receivedAt, mixed, null]
@@ -1054,6 +1252,9 @@ components:
       required:
       - status
       - explanation
+      - astronautId
+      - evaluatedAt
+      - metrics
       properties:
         status:
           type: string
@@ -1062,8 +1263,112 @@ components:
           - unknown-time
           - stale
           - not-evaluated
+          - clock-skew
+          deprecated: true
+          description: Single most recently received record only. not-evaluated means that record is fresh; medical
+            rules are not connected. Never an overall health status.
         explanation:
           type: string
+          deprecated: true
+          description: Explanation of the same single-record compatibility status.
+        astronautId:
+          type: string
+          const: demo-astronaut
+        evaluatedAt:
+          type: string
+          format: date-time
+          description: One server UTC RFC3339 instant for every quality calculation in this response.
+        metrics:
+          type: array
+          minItems: 6
+          maxItems: 6
+          description: Fixed order heartRate, systolicPressure, diastolicPressure, temperature, sleepHours, mood.
+          items:
+            $ref: '#/components/schemas/MetricQuality'
+      example:
+        astronautId: demo-astronaut
+        evaluatedAt: '2026-11-13T08:00:03Z'
+        status: no-data
+        explanation: Нет измерений. Запустите симулятор или введите показатель.
+        metrics:
+        - metric: heartRate
+          quality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 15
+            ageSeconds: null
+            clockSkew: false
+          latestReceivedQuality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 15
+            ageSeconds: null
+            clockSkew: false
+        - metric: systolicPressure
+          quality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 3600
+            ageSeconds: null
+            clockSkew: false
+          latestReceivedQuality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 3600
+            ageSeconds: null
+            clockSkew: false
+        - metric: diastolicPressure
+          quality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 3600
+            ageSeconds: null
+            clockSkew: false
+          latestReceivedQuality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 3600
+            ageSeconds: null
+            clockSkew: false
+        - metric: temperature
+          quality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 3600
+            ageSeconds: null
+            clockSkew: false
+          latestReceivedQuality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 3600
+            ageSeconds: null
+            clockSkew: false
+        - metric: sleepHours
+          quality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 86400
+            ageSeconds: null
+            clockSkew: false
+          latestReceivedQuality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 86400
+            ageSeconds: null
+            clockSkew: false
+        - metric: mood
+          quality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 86400
+            ageSeconds: null
+            clockSkew: false
+          latestReceivedQuality:
+            status: missing
+            measurementId: null
+            freshForSeconds: 86400
+            ageSeconds: null
+            clockSkew: false
     Task:
       type: object
       additionalProperties: false
@@ -1081,7 +1386,7 @@ components:
           - string
           - 'null'
           format: date-time
-          description: Server UTC timestamp, or null for incomplete. The BE-05 public API has no missionDate; repeated
+          description: Server UTC timestamp, or null for incomplete. The BE-06 public API has no missionDate; repeated
             completed=true updates this timestamp.
     TaskUpdate:
       type: object
@@ -1136,7 +1441,6 @@ components:
           - NOT_FOUND
           - METHOD_NOT_ALLOWED
           - DATABASE_ERROR
-          - INVALID_STORED_TIMESTAMP
         message:
           type: string
         field:
@@ -1158,7 +1462,7 @@ components:
   responses:
     BadRequest:
       description: 'Malformed JSON/query/path or invalid input. Codes depend on the operation: INVALID_JSON,
-        INVALID_QUERY, INVALID_PATH, VALIDATION_ERROR, UNKNOWN_DEVICE, INVALID_STORED_TIMESTAMP.'
+        INVALID_QUERY, INVALID_PATH, VALIDATION_ERROR, UNKNOWN_DEVICE.'
       content:
         application/problem+json:
           schema:
@@ -1209,7 +1513,7 @@ components:
           schema:
             type: string
     DatabaseError:
-      description: '500 DATABASE_ERROR: database operation failed; internal details are not returned.'
+      description: '500 DATABASE_ERROR: database operation failed or a stored timestamp is invalid; internal details are not returned.'
       content:
         application/problem+json:
           schema:

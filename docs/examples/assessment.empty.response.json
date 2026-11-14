@@ -1,4 +1,110 @@
 {
   "status": "no-data",
-  "explanation": "Нет измерений. Запустите симулятор или введите показатель."
+  "explanation": "Нет измерений. Запустите симулятор или введите показатель.",
+  "astronautId": "demo-astronaut",
+  "evaluatedAt": "2026-11-13T08:00:03Z",
+  "metrics": [
+    {
+      "metric": "heartRate",
+      "quality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 15,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 15,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
+    },
+    {
+      "metric": "systolicPressure",
+      "quality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
+    },
+    {
+      "metric": "diastolicPressure",
+      "quality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
+    },
+    {
+      "metric": "temperature",
+      "quality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
+    },
+    {
+      "metric": "sleepHours",
+      "quality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 86400,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 86400,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
+    },
+    {
+      "metric": "mood",
+      "quality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 86400,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 86400,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
+    }
+  ]
 }

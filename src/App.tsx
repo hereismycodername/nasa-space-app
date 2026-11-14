@@ -5,6 +5,9 @@ import { AnatomyPanel } from './features/anatomy/AnatomyPanel'
 import { CheckInPanel } from './features/check-in/CheckInPanel'
 import { TaskPanel } from './features/tasks/TaskPanel'
 import { METRICS, SYSTEMS, formatTime, formatValue } from './features/dashboard/metrics'
+import { QualityBadge } from './features/dashboard/QualityBadge'
+import { formatFreshnessWindow } from './features/dashboard/freshness'
+import { useFreshnessElapsed } from './features/dashboard/useFreshnessElapsed'
 import type { BodySystem } from './features/dashboard/metrics'
 import type { LatestMeasurements, Metric } from './shared/types'
 
@@ -13,10 +16,12 @@ type Tab = 'overview' | 'trends' | 'system'
 type Role = 'crew' | 'ground'
 const sourceNames = { manual: 'Ручной ввод', simulator: 'Симулятор', sensor: 'Датчик' }
 
-export function MetricOverview({ latest, selectedSystem = null, onSelect }: {
+export function MetricOverview({ latest, selectedSystem = null, onSelect, connected = false, elapsedSeconds = 0 }: {
   latest?: LatestMeasurements
   selectedSystem?: BodySystem | null
   onSelect?: (metric: Metric) => void
+  connected?: boolean
+  elapsedSeconds?: number
 }) {
   const metrics = METRICS.filter(metric => !selectedSystem || metric.system === selectedSystem)
   if (!metrics.length) return <div className="empty-state">
@@ -37,10 +42,17 @@ export function MetricOverview({ latest, selectedSystem = null, onSelect }: {
           <p className="note" title={known.measuredAt}>Измерено {formatTime(known.measuredAt)}</p>
           <p className="metric-source">{sourceNames[known.source]}</p>
         </> : <><p className="metric-value missing-value">— <small>{config.unit}</small></p><p className="note">{latest ? (unknown ? 'Нет измерения с известным временем' : 'Нет данных') : 'Загрузка…'}</p></>}
-        {unknown ? <p className="unknown-time">
+        <div className="metric-quality"><QualityBadge quality={entry?.quality} connected={connected} elapsedSeconds={elapsedSeconds} />
+          {entry?.quality ? <span className="note">Демо-срок: {formatFreshnessWindow(entry.quality.freshForSeconds)}</span> : null}
+        </div>
+        {unknown ? <div className="unknown-time"><p>
           Получено {formatTime(unknown.receivedAt)}: {formatValue(unknown.value)} {unknown.unit}.
           {' '}Время измерения неизвестно; свежесть не подтверждена.
-        </p> : null}
+        </p>{known ? <QualityBadge quality={entry?.latestReceivedQuality} connected={connected} elapsedSeconds={elapsedSeconds} /> : null}</div> : null}
+        {received && known && received.id !== known.id && !unknown ? <div className="received-quality">
+          <p>Последняя доставка: {formatValue(received.value)} {received.unit}, получено {formatTime(received.receivedAt)}.</p>
+          <QualityBadge quality={entry?.latestReceivedQuality} connected={connected} elapsedSeconds={elapsedSeconds} />
+        </div> : null}
         {onSelect ? <button className="metric-link" onClick={() => onSelect(config.id)} aria-label={`Динамика: ${config.label}`}>
           Динамика <ArrowUpRight size={15} aria-hidden="true" />
         </button> : null}
@@ -62,7 +74,8 @@ function CoverageRing({ count, total, small = false }: { count: number; total: n
 }
 
 export default function App() {
-  const { latest, assessment, tasks, connected, loading: polling, lastUpdated, refresh } = useDashboard()
+  const { latest, assessment, tasks, connected, loading: polling, lastUpdated, qualityObservedAt, qualityReceivedAt, refresh } = useDashboard()
+  const freshnessElapsed = useFreshnessElapsed(latest, qualityObservedAt, qualityReceivedAt)
   const loading = polling && !lastUpdated
   const [role, setRole] = useState<Role>('crew')
   const [tab, setTab] = useState<Tab>('overview')
@@ -128,7 +141,7 @@ export default function App() {
               <dl className="system-facts"><div><dt>Сервер</dt><dd>{loading ? 'Проверка…' : connected ? 'Доступен' : 'Недоступен'}</dd></div><div><dt>Последнее обновление</dt><dd>{lastUpdated ? formatTime(lastUpdated.toISOString()) : 'Ещё не получено'}</dd></div><div><dt>Хранение измерений</dt><dd>Локальная база данных</dd></div><div><dt>Источники</dt><dd>{sourceSet.join(', ') || 'Измерения пока не получены'}</dd></div></dl>
               <p className="note">Обновление каждые 5 секунд при открытой вкладке. После потери связи предыдущие данные остаются на экране.</p>
             </div>
-            <div className="panel"><h2>Оценка последнего сообщения</h2><p>{assessment?.explanation ?? 'Оценка ещё не получена.'}</p><p className="note">Относится к одному последнему принятому сообщению. Клиническая оценка и свежесть каждого показателя ещё не подключены.</p></div>
+            <div className="panel"><h2>Оценка последнего сообщения</h2><p>{assessment?.explanation ?? 'Оценка ещё не получена.'}</p><p className="note">Совместимая сводка одного последнего принятого сообщения. Свежесть каждого показателя отображается отдельно в обзоре; клинические правила пока не подключены.</p>{assessment ? <p className="note">Оценено сервером {formatTime(assessment.evaluatedAt)}.{!connected ? ' Это предыдущая оценка; актуальность не подтверждена.' : ''}</p> : null}</div>
             <div className="panel"><h2>Возможности прототипа</h2><p>Доступны один профиль, шесть показателей, история измерений и задачи. Поддержка нескольких членов экипажа, наземная передача сообщений и медицинские рекомендации находятся в разработке.</p></div>
           </> : <>
             {role === 'ground' ? <div className="crew-strip panel"><div className="crew-avatar">01</div><div><h2>Демо-астронавт</h2><p className="note">Единственный подключённый профиль</p></div><div className="crew-summary"><span>{knownCount} из 6</span><small>показателей с известным временем</small></div><CoverageRing count={knownCount} total={6} small /></div> : null}
@@ -145,12 +158,14 @@ export default function App() {
               })}</div><p className="note">Выберите область на схеме, чтобы отфильтровать показатели.</p></section>
               <section className="panel attention-panel"><h2>О данных</h2>{unknownEntries.length ? <div className="data-notice"><strong>Время измерения неизвестно</strong><p>{unknownEntries.map(entry => METRICS.find(config => config.id === entry.metric)?.label).join(', ')}: последнее сообщение не содержит времени измерения. Оно не подтверждает свежесть.</p></div> : <div className="data-notice neutral"><strong>{loading ? 'Ожидание измерений' : knownCount ? 'Время измерений сохранено' : 'Начните с первого измерения'}</strong><p>{knownCount ? 'На карточках показаны последние значения с известным временем. В динамике можно посмотреть весь период.' : 'Запустите симулятор или внесите показания вручную.'}</p></div>}<p className="note">Клиническая оценка пока не подключена. Наличие данных не означает, что показатель в норме.</p></section>
             </div>
-            {role === 'ground' ? <section className="panel ground-table-panel"><h2>Сводка измерений</h2><div className="table-scroll"><table><thead><tr><th>Показатель</th><th>Значение</th><th>Измерено</th><th>Источник</th><th>Оценка</th></tr></thead><tbody>{METRICS.map(config => {
-              const reading = entries.find(entry => entry.metric === config.id)?.latestKnownMeasurement
-              return <tr key={config.id}><th scope="row"><button onClick={() => openMetric(config.id)}>{config.label}</button></th><td>{reading ? `${formatValue(reading.value)} ${reading.unit}` : '—'}</td><td>{reading ? formatTime(reading.measuredAt) : 'Нет данных'}</td><td>{reading ? sourceNames[reading.source] : '—'}</td><td><span className="neutral-tag">Не оценено</span></td></tr>
+            {role === 'ground' ? <section className="panel ground-table-panel"><h2>Сводка измерений</h2><div className="table-scroll"><table><thead><tr><th>Показатель</th><th>Значение</th><th>Измерено</th><th>Источник</th><th>Свежесть данных</th></tr></thead><tbody>{METRICS.map(config => {
+              const entry = entries.find(entry => entry.metric === config.id)
+              const reading = entry?.latestKnownMeasurement ?? entry?.latestReceivedMeasurement
+              return <tr key={config.id}><th scope="row"><button onClick={() => openMetric(config.id)}>{config.label}</button></th><td>{reading ? `${formatValue(reading.value)} ${reading.unit}` : '—'}</td><td>{reading?.measuredAt ? formatTime(reading.measuredAt) : reading ? 'Время неизвестно' : 'Нет данных'}</td><td>{reading ? sourceNames[reading.source] : '—'}</td><td><QualityBadge quality={entry?.quality} connected={connected} elapsedSeconds={freshnessElapsed} />{entry?.latestReceivedMeasurement && reading?.id !== entry.latestReceivedMeasurement.id ? <div className="ground-received-quality"><small>Последняя доставка:</small><QualityBadge quality={entry.latestReceivedQuality} connected={connected} elapsedSeconds={freshnessElapsed} /></div> : null}</td></tr>
             })}</tbody></table></div></section> : null}
             <div className="section-heading metrics-heading"><div><h2>{selected?.label ?? 'Все показатели'}</h2>{selected ? <p className="note">{selected.description}</p> : null}</div>{selectedSystem ? <button className="text-button" onClick={() => setSelectedSystem(null)}>Показать все</button> : <span className="note">6 показателей</span>}</div>
-            <MetricOverview latest={latest} selectedSystem={selectedSystem} onSelect={openMetric} />
+            {latest ? <p className="quality-context note">Оценка сервера: {formatTime(latest.evaluatedAt)}. Сроки различаются по показателям; время доставки не подтверждает свежесть.{!connected ? ' Показан предыдущий ответ; свежесть не подтверждена.' : ''}</p> : null}
+            <MetricOverview latest={latest} selectedSystem={selectedSystem} onSelect={openMetric} connected={connected} elapsedSeconds={freshnessElapsed} />
             <TaskPanel tasks={tasks} connected={connected} onChanged={refresh} />
           </>}
         </> : null}

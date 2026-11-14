@@ -5,37 +5,122 @@
       "metric": "heartRate",
       "latestMeasurement": null,
       "latestKnownMeasurement": null,
-      "latestReceivedMeasurement": null
+      "latestReceivedMeasurement": null,
+      "quality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 15,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 15,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
     },
     {
       "metric": "systolicPressure",
       "latestMeasurement": null,
       "latestKnownMeasurement": null,
-      "latestReceivedMeasurement": null
+      "latestReceivedMeasurement": null,
+      "quality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
     },
     {
       "metric": "diastolicPressure",
       "latestMeasurement": null,
       "latestKnownMeasurement": null,
-      "latestReceivedMeasurement": null
+      "latestReceivedMeasurement": null,
+      "quality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
     },
     {
       "metric": "temperature",
       "latestMeasurement": null,
       "latestKnownMeasurement": null,
-      "latestReceivedMeasurement": null
+      "latestReceivedMeasurement": null,
+      "quality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
     },
     {
       "metric": "sleepHours",
       "latestMeasurement": null,
       "latestKnownMeasurement": null,
-      "latestReceivedMeasurement": null
+      "latestReceivedMeasurement": null,
+      "quality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 86400,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 86400,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
     },
     {
       "metric": "mood",
       "latestMeasurement": null,
       "latestKnownMeasurement": null,
-      "latestReceivedMeasurement": null
+      "latestReceivedMeasurement": null,
+      "quality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 86400,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 86400,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
     }
-  ]
+  ],
+  "evaluatedAt": "2026-11-13T08:00:03Z"
 }

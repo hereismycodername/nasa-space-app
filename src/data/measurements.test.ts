@@ -46,9 +46,14 @@ it('keeps known measurements, unknown-time receipts and missing metrics distinct
   const unknown = { ...known, id: 'unknown', measuredAt: null, receivedAt: '2026-11-14T08:00:00Z', timeBasis: 'receivedAt' }
   const overview = {
     astronautId: 'demo-astronaut',
+    evaluatedAt: '2026-11-14T08:00:00Z',
     metrics: [
-      { metric: 'heartRate', latestMeasurement: unknown, latestKnownMeasurement: known, latestReceivedMeasurement: unknown },
-      { metric: 'sleepHours', latestMeasurement: null, latestKnownMeasurement: null, latestReceivedMeasurement: null },
+      { metric: 'heartRate', latestMeasurement: unknown, latestKnownMeasurement: known, latestReceivedMeasurement: unknown,
+        quality: { status: 'stale', measurementId: known.id, freshForSeconds: 15, ageSeconds: 86400, clockSkew: false },
+        latestReceivedQuality: { status: 'unknownTime', measurementId: unknown.id, freshForSeconds: 15, ageSeconds: null, clockSkew: false } },
+      { metric: 'sleepHours', latestMeasurement: null, latestKnownMeasurement: null, latestReceivedMeasurement: null,
+        quality: { status: 'missing', measurementId: null, freshForSeconds: 86400, ageSeconds: null, clockSkew: false },
+        latestReceivedQuality: { status: 'missing', measurementId: null, freshForSeconds: 86400, ageSeconds: null, clockSkew: false } },
     ],
   }
   const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(overview), { status: 200 }))

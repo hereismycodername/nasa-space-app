@@ -51,6 +51,15 @@ try {
   assert.equal(latest.metrics.length, 6)
   assert.equal(latest.metrics[0].latestKnownMeasurement.id, history.items[0].id)
   assert.ok(latest.metrics.slice(1).every(row => row.latestMeasurement === null))
+  assert.ok(Number.isFinite(Date.parse(latest.evaluatedAt)))
+  assert.equal(latest.metrics[0].quality.measurementId, history.items[0].id)
+  assert.equal(latest.metrics[0].quality.status, 'fresh')
+  assert.equal(latest.metrics[0].quality.freshForSeconds, 15)
+  assert.ok(latest.metrics.slice(1).every(row => row.quality.status === 'missing'))
+  const assessment = await (await fetch(`${base}/api/assessments`)).json()
+  assert.equal(assessment.metrics.length, 6)
+  assert.equal(assessment.metrics[0].quality.measurementId, latest.metrics[0].quality.measurementId)
+  assert.equal(assessment.metrics[0].quality.status, latest.metrics[0].quality.status)
   const timestamps = history.items.map(row => Date.parse(row.measuredAt))
   const filters = new URLSearchParams({
     metric: 'heartRate',
@@ -80,7 +89,10 @@ try {
   assert.deepEqual(persisted, history)
   const persistedSeries = await (await fetch(`${base}/api/measurements/series?${filters}`)).json()
   assert.deepEqual(persistedSeries, series)
-  console.log('PASS: simulator → API → SQLite → paginated history/latest/series; static UI; persistence after restart')
+  const persistedLatest = await (await fetch(`${base}/api/measurements/latest`)).json()
+  assert.equal(persistedLatest.metrics[0].quality.measurementId, latest.metrics[0].quality.measurementId)
+  assert.ok(persistedLatest.metrics[0].quality.ageSeconds >= latest.metrics[0].quality.ageSeconds)
+  console.log('PASS: simulator → API → SQLite → history/latest/series + per-metric quality; static UI; persistence after restart')
 } finally {
   await stop()
   await rm(directory, { recursive: true, force: true })

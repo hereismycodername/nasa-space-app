@@ -10,6 +10,8 @@ export interface DashboardState {
   loading: boolean
   error: string
   lastUpdated?: Date
+  qualityObservedAt?: number
+  qualityReceivedAt?: number
 }
 
 const initialState: DashboardState = { connected: false, loading: true, error: '' }
@@ -46,6 +48,7 @@ export function startDashboardPolling(onChange: (state: DashboardState) => void)
     if (disposed || document.hidden || running) return
     clearTimer()
     running = true
+    const requestStartedAt = performance.now()
     const requestController = new AbortController()
     controller = requestController
     publish({ loading: true })
@@ -58,7 +61,10 @@ export function startDashboardPolling(onChange: (state: DashboardState) => void)
     try {
       const [latest, assessment, tasks] = await Promise.all(requests)
       if (!requestController.signal.aborted) {
-        publish({ latest, assessment, tasks, connected: true, loading: false, error: '', lastUpdated: new Date() })
+        // Repeated cached responses must not restart their freshness lifetime.
+        const qualityObservedAt = latest.evaluatedAt === state.latest?.evaluatedAt
+          ? state.qualityObservedAt ?? requestStartedAt : requestStartedAt
+        publish({ latest, assessment, tasks, connected: true, loading: false, error: '', lastUpdated: new Date(), qualityObservedAt, qualityReceivedAt: performance.now() })
       }
     } catch (error) {
       const cancelled = requestController.signal.aborted

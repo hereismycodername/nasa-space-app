@@ -1,12 +1,13 @@
-# Backend после BE-05
+# Backend после BE-06
 
 BE-01 разделяет сервер и фиксирует контракт. BE-02 добавляет сравнимое время UTC,
 явное происхождение времени истории и схему ежедневных задач с переносом данных.
 BE-03 нормализует время при сравнении повторов и делает сохранение измерения транзакционным.
 BE-04 добавляет фильтры и страницы истории, а также независимые последние значения
 каждой метрики. BE-05 добавляет агрегированные ряды по всему диапазону с ограниченным
-числом точек и явными пробелами. Свежесть по метрикам и задачи по датам остаются
-следующими задачами [плана](backend-plan.md).
+числом точек и явными пробелами. BE-06 добавляет качество и свежесть каждой метрики
+с независимой оценкой последней доставки. Задачи по датам и медицинские правила
+остаются следующими задачами [плана](backend-plan.md).
 
 ## Границы модулей
 
@@ -50,7 +51,6 @@ api преобразует wire DTO и решает, какой HTTP-ответ 
 | storage::measurements::device | `&SqlitePool`, `device_id: &str` | `Option<Device>` |
 | storage::measurements::history | `&SqlitePool`, `astronaut_id: &str`, `&HistoryQuery` | `HistoryPage {items, has_more, next_cursor}` |
 | storage::measurements::latest_by_metric | `&SqlitePool`, `astronaut_id: &str` | `Vec<LatestMetric>` с шестью метриками |
-| storage::measurements::latest_received | `&SqlitePool`, `astronaut_id: &str` | `Option<Measurement>` |
 | storage::measurements::insert_or_get | `&SqlitePool`, `&NewMeasurement`, `&Device`, `received_at: &str` | `InsertOutcome {measurement, created}` |
 | storage::series::aggregate | `&SqlitePool`, `astronaut_id: &str`, `&SeriesQuery` | `Vec<BucketAggregate>` только непустых интервалов по возрастанию индекса |
 | storage::tasks::list | `&SqlitePool` | `Vec<Task>` |
@@ -68,6 +68,9 @@ api преобразует wire DTO и решает, какой HTTP-ответ 
 - `SeriesQuery::parse(metric: Option<String>, from: Option<&str>, to: Option<&str>, max_points: Option<&str>) -> Result<SeriesQuery, ValidationError>`;
 - `series::fill_gaps(&SeriesQuery, Vec<BucketAggregate>) -> Result<Vec<SeriesPoint>, InvalidSeriesData>`;
 - `assess(Option<&Measurement>, now: DateTime<Utc>) -> Result<Assessment, InvalidStoredTimestamp>`;
+- `assess_snapshot(&[LatestMetric], now: DateTime<Utc>) -> Result<Assessment, InvalidStoredTimestamp>`;
+- `freshness::evaluate(Option<&Measurement>, &MetricPolicy, now: DateTime<Utc>) -> Result<Quality, InvalidStoredTimestamp>`;
+- `freshness::evaluate_metrics(&[LatestMetric], now: DateTime<Utc>) -> Result<Vec<MetricQuality>, InvalidStoredTimestamp>`;
 - `completion_time(completed: bool, now: DateTime<Utc>) -> Option<DateTime<Utc>>`.
 
 Текущий момент передаётся аргументом для воспроизводимых тестов. При изменении
@@ -81,7 +84,7 @@ api преобразует wire DTO и решает, какой HTTP-ответ 
 - POST новой записи — 201, повтор — 200, конфликт — 409.
 - История — envelope со страницей до 500 записей и явным продолжением; latest не зависит от размера страницы.
 - Series агрегирует весь диапазон в 1–500 интервалов; ограничение ответа не обрезает входные измерения.
-- Текущая оценка свежести — по одной последней принятой записи, с порогом 15 секунд для известного времени.
+- Свежесть рассчитывается для каждой метрики и её последней доставки; legacy summary одной записи сохранён как deprecated.
 - Публичный API задач пока недатированный; повтор true обновляет completedAt.
 - Исходная миграция не переписывается.
 
@@ -89,7 +92,7 @@ api преобразует wire DTO и решает, какой HTTP-ответ 
 
 Ошибки API, включая extraction, имеют единый Problem Details JSON с
 code/message/optional field и legacy error. HTTP-статусы существующих сценариев
-сохраняются. Эти изменения BE-01 продолжают действовать в BE-05.
+сохраняются. Эти изменения BE-01 продолжают действовать в BE-06.
 
 В BE-02 `Measurement` возвращает `timeBasis`: `measuredAt` для известного времени
 или `receivedAt` для неизвестного. `measuredAt` остаётся `null`, когда устройство
@@ -154,6 +157,35 @@ unknown-time последняя доставка не скрывает посл�
 добавляет индексы astronaut/effective time, astronaut/metric/known time,
 astronaut/metric/receipt time и astronaut/receipt time. Индекс metric/effective time
 из `0002` используется повторно; исходные миграции и данные не изменяются.
+
+### Качество и свежесть BE-06
+
+`domain/metric_config.rs` содержит типизированную таблицу `METRIC_POLICIES` и
+`MAX_FUTURE_SKEW_SECONDS=300`: пульс 15 s, давление/температура 3600 s,
+сон/самочувствие 86400 s. Это демонстрационная политика сбора, не клинические пороги.
+
+`domain/freshness.rs` предоставляет чистые `evaluate(row, policy, now)` и
+`evaluate_metrics(metrics, now)`. Последняя получает уже выбранные storage записи;
+основное качество использует latestKnownMeasurement либо latestReceivedMeasurement
+при отсутствии известного времени. Последняя доставка оценивается отдельно.
+Результаты `Quality`/`MetricQuality` не сериализуются и не сохраняются в БД;
+публичную форму задают DTO в api.
+
+Один `now` передаётся всем расчётам ответа и возвращается как UTC `evaluatedAt`.
+Будущее определяется сравнением разобранных моментов до вычитания; любая положительная
+разница даёт clockSkew. Для небудущего времени точная Duration сравнивается с окном
+включительно: +1 ns после окна даёт stale. Возраст дробный и неотрицательный;
+для missing/unknownTime/clockSkew он null. Время приёма не заменяет measuredAt.
+Некорректный timestamp из БД преобразуется в 500 DATABASE_ERROR.
+
+`domain/assessments.rs` сохраняет deprecated сводку одной последней принятой записи,
+используя ту же функцию качества и окно её метрики. `assess_snapshot` выбирает её
+из уже прочитанных latestReceivedMeasurement, поэтому summary и metrics внутри
+одного ответа используют одинаковый снимок БД. Новые `metrics` endpoint оценки
+и latest вычисляются одной доменной логикой. Отдельные HTTP-запросы не обещают общего
+снимка: React использует качество из ответа latest для карточек этого же ответа.
+Будущие правила BE-08 должны читать per-metric quality. Поля сырых измерений,
+история и series не меняются; BE-06 не требует миграции.
 
 ### Агрегированные ряды BE-05
 
@@ -245,7 +277,6 @@ offset. Дата миссии — календарно корректная `YYY
 
 ## Точки последующего расширения
 
-- **BE-06:** свежесть каждой метрики, единая модель качества, clockSkew.
 - **BE-07:** публичная дата миссии UTC, выбор ежедневного выполнения, идемпотентный PATCH.
 - **BE-08:** объяснимые демонстрационные правила.
 

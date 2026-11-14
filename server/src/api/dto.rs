@@ -1,12 +1,13 @@
 //! HTTP serialization stays separate from domain rules and SQLite rows.
 use crate::domain::{
-    assessments::Assessment,
+    assessments::{self, InvalidStoredTimestamp},
+    freshness::{self, MetricQuality, Quality},
     history::{HistoryCursor, HistoryPage, HistoryQuery, LatestMetric},
     measurements::{Measurement, NewMeasurement, ValidationError},
     series::{self, BucketAggregate, InvalidSeriesData, SeriesPoint, SeriesQuery},
     tasks::Task,
 };
-use chrono::{DateTime, SecondsFormat};
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -188,8 +189,24 @@ pub(crate) struct LatestRequest {}
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LatestResponse {
-    pub astronaut_id: &'static str,
-    pub metrics: Vec<LatestMetricResponse>,
+    astronaut_id: &'static str,
+    evaluated_at: String,
+    metrics: Vec<LatestMetricResponse>,
+}
+
+impl LatestResponse {
+    pub fn from_data(
+        astronaut_id: &'static str,
+        metrics: Vec<LatestMetric>,
+        now: DateTime<Utc>,
+    ) -> Result<Self, InvalidStoredTimestamp> {
+        let qualities = freshness::evaluate_metrics(&metrics, now)?;
+        Ok(Self {
+            astronaut_id,
+            evaluated_at: now.to_rfc3339_opts(SecondsFormat::AutoSi, true),
+            metrics: metrics.into_iter().zip(qualities).map(Into::into).collect(),
+        })
+    }
 }
 
 #[derive(Serialize)]
@@ -199,15 +216,59 @@ pub(crate) struct LatestMetricResponse {
     latest_measurement: Option<MeasurementResponse>,
     latest_known_measurement: Option<MeasurementResponse>,
     latest_received_measurement: Option<MeasurementResponse>,
+    quality: QualityResponse,
+    latest_received_quality: QualityResponse,
 }
 
-impl From<LatestMetric> for LatestMetricResponse {
-    fn from(value: LatestMetric) -> Self {
+impl From<(LatestMetric, MetricQuality)> for LatestMetricResponse {
+    fn from((value, quality): (LatestMetric, MetricQuality)) -> Self {
         Self {
             metric: value.metric,
             latest_measurement: value.latest_measurement.map(Into::into),
             latest_known_measurement: value.latest_known_measurement.map(Into::into),
             latest_received_measurement: value.latest_received_measurement.map(Into::into),
+            quality: quality.quality.into(),
+            latest_received_quality: quality.latest_received_quality.into(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QualityResponse {
+    status: &'static str,
+    measurement_id: Option<String>,
+    fresh_for_seconds: u32,
+    age_seconds: Option<f64>,
+    clock_skew: bool,
+}
+
+impl From<Quality> for QualityResponse {
+    fn from(quality: Quality) -> Self {
+        Self {
+            status: quality.status.as_str(),
+            measurement_id: quality.measurement_id,
+            fresh_for_seconds: quality.fresh_for_seconds,
+            age_seconds: quality.age_seconds,
+            clock_skew: quality.clock_skew,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MetricQualityResponse {
+    metric: &'static str,
+    quality: QualityResponse,
+    latest_received_quality: QualityResponse,
+}
+
+impl From<MetricQuality> for MetricQualityResponse {
+    fn from(metric: MetricQuality) -> Self {
+        Self {
+            metric: metric.metric,
+            quality: metric.quality.into(),
+            latest_received_quality: metric.latest_received_quality.into(),
         }
     }
 }
@@ -278,16 +339,29 @@ impl From<Measurement> for MeasurementResponse {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct AssessmentResponse {
     status: &'static str,
     explanation: &'static str,
+    astronaut_id: &'static str,
+    evaluated_at: String,
+    metrics: Vec<MetricQualityResponse>,
 }
-impl From<Assessment> for AssessmentResponse {
-    fn from(value: Assessment) -> Self {
-        Self {
-            status: value.status,
-            explanation: value.explanation,
-        }
+impl AssessmentResponse {
+    pub fn from_data(
+        astronaut_id: &'static str,
+        metrics: &[LatestMetric],
+        now: DateTime<Utc>,
+    ) -> Result<Self, InvalidStoredTimestamp> {
+        let summary = assessments::assess_snapshot(metrics, now)?;
+        let qualities = freshness::evaluate_metrics(metrics, now)?;
+        Ok(Self {
+            status: summary.status,
+            explanation: summary.explanation,
+            astronaut_id,
+            evaluated_at: now.to_rfc3339_opts(SecondsFormat::AutoSi, true),
+            metrics: qualities.into_iter().map(Into::into).collect(),
+        })
     }
 }
 
