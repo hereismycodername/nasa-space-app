@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 ui-model = { path = "../ui-model" }
+ui-backend = { path = "../ui-backend" }
 eframe = { version = "0.31", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
 # only used by the optional --screenshot switch (visual checks / documentation)
 image = { version = "0.25", default-features = false, features = ["png"] }
