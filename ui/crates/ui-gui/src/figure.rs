@@ -71,7 +71,7 @@ impl Figure {
         painter.rect_filled(rect, egui::CornerRadius::same(10), SURFACE);
         painter.rect_stroke(rect, egui::CornerRadius::same(10), stroke(1.0, LINE), egui::StrokeKind::Inside);
 
-        let s = ((rect.width() - 150.0) / 172.0).min((rect.height() - 30.0) / anatomy::H).max(0.2);
+        let s = ((rect.width() - 150.0) / anatomy::BODY_W).min((rect.height() - 30.0) / anatomy::H).max(0.2);
         let origin = pos2(rect.center().x - 120.0 * s, rect.top() + 14.0);
         let to_screen = move |q: P| origin + vec2(q.x, q.y) * s;
         let to_design = move |q: Pos2| P { x: (q.x - origin.x) / s, y: (q.y - origin.y) / s };
