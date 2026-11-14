@@ -60,27 +60,34 @@ pub(crate) async fn latest_per_metric(
     pool: &SqlitePool,
     astronaut_id: &str,
 ) -> Result<Vec<LatestMetric>, sqlx::Error> {
-    let rows = sqlx::query(
-        "WITH metrics(metric) AS (VALUES ('heartRate'), ('systolicPressure'),
-            ('diastolicPressure'), ('temperature'), ('sleepHours'), ('mood'))
+    let mut query = QueryBuilder::<Sqlite>::new("WITH metrics(metric) AS (");
+    query.push_values(&METRICS, |mut row, metric| {
+        row.push_bind(metric.metric);
+    });
+    query.push(
+        ")
         SELECT m.* FROM metrics JOIN measurements m ON m.id = (
-            SELECT id FROM measurements WHERE astronaut_id = ?1 AND metric = metrics.metric
+            SELECT id FROM measurements WHERE astronaut_id = ",
+    );
+    query.push_bind(astronaut_id).push(
+        " AND metric = metrics.metric
                 AND measured_at IS NOT NULL ORDER BY measured_at_ms DESC, id DESC LIMIT 1
         )
         UNION ALL
         SELECT m.* FROM metrics JOIN measurements m ON m.id = (
-            SELECT id FROM measurements WHERE astronaut_id = ?1 AND metric = metrics.metric
+            SELECT id FROM measurements WHERE astronaut_id = ",
+    );
+    query.push_bind(astronaut_id).push(
+        " AND metric = metrics.metric
                 ORDER BY received_at_ms DESC, id DESC LIMIT 1
         ) WHERE m.measured_at IS NULL",
-    )
-    .bind(astronaut_id)
-    .fetch_all(pool)
-    .await?;
+    );
+    let rows = query.build().fetch_all(pool).await?;
     let mut metrics: Vec<_> = METRICS
         .into_iter()
-        .map(|(metric, unit)| LatestMetric {
-            metric,
-            unit,
+        .map(|metric| LatestMetric {
+            metric: metric.metric,
+            unit: metric.unit,
             latest_known_measurement: None,
             latest_unknown_time_measurement: None,
         })

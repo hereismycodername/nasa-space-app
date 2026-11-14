@@ -25,7 +25,7 @@ impl TryFrom<HistoryQuery> for HistoryFilter {
         if query
             .metric
             .as_ref()
-            .is_some_and(|value| !METRICS.iter().any(|(metric, _)| metric == value))
+            .is_some_and(|value| !METRICS.iter().any(|metric| metric.metric == value))
         {
             return Err(ValidationError {
                 field: "metric",

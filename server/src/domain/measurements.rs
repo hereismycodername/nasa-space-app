@@ -1,12 +1,35 @@
 use chrono::{DateTime, Utc};
 
-pub(crate) const METRICS: [(&str, &str); 6] = [
-    ("heartRate", "bpm"),
-    ("systolicPressure", "mmHg"),
-    ("diastolicPressure", "mmHg"),
-    ("temperature", "°C"),
-    ("sleepHours", "h"),
-    ("mood", "score"),
+pub(crate) struct MetricDefinition {
+    pub metric: &'static str,
+    pub unit: &'static str,
+}
+
+pub(crate) const METRICS: [MetricDefinition; 6] = [
+    MetricDefinition {
+        metric: "heartRate",
+        unit: "bpm",
+    },
+    MetricDefinition {
+        metric: "systolicPressure",
+        unit: "mmHg",
+    },
+    MetricDefinition {
+        metric: "diastolicPressure",
+        unit: "mmHg",
+    },
+    MetricDefinition {
+        metric: "temperature",
+        unit: "°C",
+    },
+    MetricDefinition {
+        metric: "sleepHours",
+        unit: "h",
+    },
+    MetricDefinition {
+        metric: "mood",
+        unit: "score",
+    },
 ];
 
 pub(crate) struct HistoryFilter {
@@ -66,19 +89,14 @@ impl NewMeasurement {
                 message: "Invalid deviceId, sessionId or sequence",
             });
         }
-        let expected = match self.metric.as_str() {
-            "heartRate" => "bpm",
-            "systolicPressure" | "diastolicPressure" => "mmHg",
-            "temperature" => "°C",
-            "sleepHours" => "h",
-            "mood" => "score",
-            _ => {
-                return Err(ValidationError {
-                    field: "metric",
-                    message: "Unknown metric",
-                })
-            }
-        };
+        let expected = METRICS
+            .iter()
+            .find(|metric| metric.metric == self.metric)
+            .ok_or(ValidationError {
+                field: "metric",
+                message: "Unknown metric",
+            })?
+            .unit;
         if self.unit != expected || !self.value.is_finite() {
             return Err(ValidationError {
                 field: if self.unit != expected {
