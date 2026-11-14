@@ -108,8 +108,11 @@ fn age_text(s: u64) -> String {
 }
 
 fn link_label(ui: &mut Ui, text: &str, active: bool) -> bool {
-    let r = ui.add(egui::Label::new(RichText::new(text).size(12.5).color(if active { ACCENT } else { TXT }).strong()).sense(Sense::click()));
-    r.clicked()
+    let r = ui.add(egui::Label::new(RichText::new(text).size(12.5).color(if active { TXT } else { ACCENT }).strong()).sense(Sense::click()));
+    if r.hovered() && !active {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    r.clicked() && !active
 }
 
 fn short_name(full: &str) -> String {
@@ -529,11 +532,11 @@ impl<B: Backend> GuiApp<B> {
         let o = self.b.overview();
         let env = self.b.environment();
         let gap = 10.0;
-        let cw = (ui.available_width() - 2.0 * gap) / 3.0 - 1.0;
+        let cw = ((ui.available_width() - 2.0 * gap) / 3.0).floor();
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
             // readiness
-            vcard(ui, cw, 150.0, |ui| {
+            vcard(ui, cw, 164.0, |ui| {
                 caption(ui, "Readiness index");
                 ui.add_space(4.0);
                 let (label, col) = readiness(o.score);
@@ -554,7 +557,7 @@ impl<B: Backend> GuiApp<B> {
                 ui.label(RichText::new("Relative to personal baseline").size(11.0).color(MUT));
             });
             // daily tasks: plain list, no rings
-            vcard(ui, cw, 150.0, |ui| {
+            vcard(ui, cw, 164.0, |ui| {
                 caption(ui, "Daily tasks");
                 let val = |id: &str| self.b.latest(id).map(|r| r.value).unwrap_or(0.0);
                 let (ex, sl) = (val("exercise"), val("sleep"));
@@ -573,7 +576,7 @@ impl<B: Backend> GuiApp<B> {
                 ui.label(RichText::new(format!("{} due now", o.due_count)).size(11.5).color(MUT));
             });
             // mission
-            vcard(ui, cw, 150.0, |ui| {
+            vcard(ui, cw, 164.0, |ui| {
                 caption(ui, "Environment");
                 ui.add(egui::Label::new(RichText::new(env.name.split(" (").next().unwrap_or(&env.name)).size(14.0).strong()).truncate());
                 for (k, v) in [("Gravity", env.gravity.clone()), ("Comms", env.comms.clone()), ("Radiation", format!("{} mSv/day typical", fmt_num(env.typical_dose)))] {
@@ -587,9 +590,12 @@ impl<B: Backend> GuiApp<B> {
         // contributors + insights
         let mut go: Option<Nav> = None;
         let issues = self.issues();
+        let row_h = (self.systems.len() as f32 * 30.0).max(issues.len().min(5) as f32 * 58.0) + 38.0;
+        ui.spacing_mut().item_spacing.x = gap;
         ui.columns(2, |cols| {
             card().show(&mut cols[0], |ui| {
                 ui.set_width(ui.available_width());
+                ui.set_min_height(row_h);
                 caption(ui, "Body systems");
                 ui.add_space(4.0);
                 for s in &self.systems {
@@ -612,6 +618,7 @@ impl<B: Backend> GuiApp<B> {
             });
             card().show(&mut cols[1], |ui| {
                 ui.set_width(ui.available_width());
+                ui.set_min_height(row_h);
                 caption(ui, "Findings");
                 ui.add_space(4.0);
                 if issues.is_empty() {
@@ -794,7 +801,7 @@ impl<B: Backend> GuiApp<B> {
                 ("Max", fmt_num(mx)),
             ];
             let gap = 8.0;
-            let w = (ui.available_width() - gap * 4.0) / 5.0 - 1.0;
+            let w = ((ui.available_width() - gap * 4.0) / 5.0).floor();
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = gap;
                 for (k, val) in stats {
