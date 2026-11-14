@@ -74,7 +74,13 @@ async fn empty_history_and_latest_explicitly_represent_missing_data() {
             "diastolicPressure",
             "temperature",
             "sleepHours",
-            "mood"
+            "mood",
+            "spo2",
+            "glucose",
+            "visionBlur",
+            "exerciseMinutes",
+            "headache",
+            "backPain"
         ]
     );
     for row in metrics {

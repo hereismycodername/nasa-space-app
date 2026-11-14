@@ -2,7 +2,7 @@ use super::{
     freshness::{evaluate, FreshnessStatus},
     history::LatestMetric,
     measurements::Measurement,
-    metric_config::definition_for,
+    metric_config::{definition_for, LEGACY_SUMMARY_METRICS},
 };
 use chrono::{DateTime, Utc};
 
@@ -62,6 +62,7 @@ pub(crate) fn assess_snapshot(
     let mut latest: Option<(i64, &str, &Measurement)> = None;
     for row in metrics
         .iter()
+        .filter(|metric| LEGACY_SUMMARY_METRICS.contains(&metric.metric))
         .filter_map(|metric| metric.latest_received_measurement.as_ref())
     {
         let received_ms = DateTime::parse_from_rfc3339(&row.received_at)
