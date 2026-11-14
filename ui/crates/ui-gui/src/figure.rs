@@ -36,7 +36,10 @@ struct Outline {
     /// the part that sets the pulse (the largest one), its index
     lead: usize,
     cov: Vec<u8>,
+    /// status outline (2 texels)
     tex: Option<TextureHandle>,
+    /// selection / hover outline (1 texel): the dimmed surroundings already make the organ stand out
+    thin: Option<TextureHandle>,
 }
 
 struct Part {
@@ -146,7 +149,7 @@ impl Figure {
         let mut outlines: Vec<Outline> = vec![];
         for p in parts.iter().filter(|p| p.s.layer == 2 && p.s.hit) {
             if !outlines.iter().any(|o| o.sys == p.s.sys) {
-                outlines.push(Outline { sys: p.s.sys, origin: p.origin(), w: 0, h: 0, lead: 0, cov: vec![], tex: None });
+                outlines.push(Outline { sys: p.s.sys, origin: p.origin(), w: 0, h: 0, lead: 0, cov: vec![], tex: None, thin: None });
             }
         }
         for o in outlines.iter_mut() {
@@ -197,9 +200,9 @@ impl Figure {
             p.gpu = Some(Gpu { main: load("main", main), alt: load("alt", alt), mask });
         }
         for o in self.outlines.iter_mut() {
-            let grown = dilate(&o.cov, o.w, o.h, 2);
-            let edge: Vec<Color32> = grown.iter().zip(&o.cov).map(|(&g, &c)| white_a(g.saturating_sub(c))).collect();
-            o.tex = Some(ctx.load_texture(format!("anatomy-outline-{}", o.sys), ColorImage { size: [o.w, o.h], pixels: edge }, opts));
+            let edge = |r: usize| -> Vec<Color32> { dilate(&o.cov, o.w, o.h, r).iter().zip(&o.cov).map(|(&g, &c)| white_a(g.saturating_sub(c))).collect() };
+            o.tex = Some(ctx.load_texture(format!("anatomy-outline-{}", o.sys), ColorImage { size: [o.w, o.h], pixels: edge(2) }, opts));
+            o.thin = Some(ctx.load_texture(format!("anatomy-outline-thin-{}", o.sys), ColorImage { size: [o.w, o.h], pixels: edge(1) }, opts));
         }
     }
 
@@ -237,10 +240,14 @@ impl Figure {
         let breathe = if animate { (0.5 + 0.5 * (time * std::f64::consts::TAU / 4.2).sin()) as f32 } else { 0.0 };
         let alert = if animate { (0.5 + 0.5 * (time * std::f64::consts::TAU / 1.4).sin()) as f32 } else { 0.5 };
 
-        // drawing order for the mode: skin body, the quiet layer, the emphasised layer, then the skin glass
-        let order: [u8; 2] = match mode {
-            Mode::Organs => [1, 2],
-            Mode::Skeleton | Mode::XRay => [2, 1],
+        // drawing order for the mode: skin body, the quiet layer, the emphasised layer, then the skin glass.
+        // A selection in the quiet layer (bones while looking at organs, an organ in the skeleton view) goes on top.
+        let sel_layer = self.parts.iter().filter(|p| p.s.layer != 0 && p.s.sys == selected).map(|p| p.s.layer).max();
+        let order: [u8; 2] = match (sel_layer, mode) {
+            (Some(1), _) => [2, 1],
+            (Some(_), _) => [1, 2],
+            (None, Mode::Organs) => [1, 2],
+            (None, _) => [2, 1],
         };
         let alpha_of = |p: &Part, sel: bool, hov: bool| -> f32 {
             let mut a = Self::layer_alpha(p.s.layer, mode);
@@ -282,6 +289,27 @@ impl Figure {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
 
+        // focus 1 = full light; with a selection the other systems fade to DIM (a hovered one comes half back)
+        const DIM: f32 = 0.28;
+        let ctx = ui.ctx().clone();
+        let any = ctx.animate_bool_with_time(egui::Id::new("figure-any-selected"), !selected.is_empty(), 0.18);
+        let mut focus: Vec<(&'static str, f32)> = vec![];
+        for p in &self.parts {
+            if p.s.layer == 0 || focus.iter().any(|f| f.0 == p.s.sys) {
+                continue;
+            }
+            let target = if selected.is_empty() || p.s.sys == selected {
+                1.0
+            } else if hovered == Some(p.s.sys) {
+                0.65
+            } else {
+                0.0
+            };
+            focus.push((p.s.sys, ctx.animate_value_with_time(egui::Id::new(("figure-focus", p.s.sys)), target, 0.18)));
+        }
+        let focus_of = |sys: &str| focus.iter().find(|f| f.0 == sys).map_or(1.0, |f| f.1);
+        let light_of = |sys: &str| DIM + (1.0 - DIM) * focus_of(sys);
+
         // --- sprites
         let full = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
         let place = |p: &Part| -> Rect {
@@ -296,10 +324,16 @@ impl Figure {
             Rect::from_center_size(to_screen(c), vec2(w * s * k, h * s * k))
         };
         let tint = |a: f32| white_a((a.clamp(0.0, 1.0) * 255.0) as u8);
+        // colour x k at opacity a (premultiplied)
+        let lit = |k: f32, a: f32| {
+            let (k, a) = (k.clamp(0.0, 1.0), a.clamp(0.0, 1.0));
+            let v = (k * a * 255.0 + 0.5) as u8;
+            Color32::from_rgba_premultiplied(v, v, v, (a * 255.0 + 0.5) as u8)
+        };
         let xray = mode == Mode::XRay;
         for p in self.parts.iter().filter(|p| p.s.layer == 0) {
             let g = p.gpu.as_ref().unwrap();
-            painter.image(g.main.id(), place(p), full, tint(if xray { 0.75 } else { 1.0 }));
+            painter.image(g.main.id(), place(p), full, lit(1.0 - 0.3 * any, if xray { 0.75 } else { 1.0 }));
         }
         for layer in order {
             for p in self.parts.iter().filter(|p| p.s.layer == layer) {
@@ -311,41 +345,43 @@ impl Figure {
                 }
                 let g = p.gpu.as_ref().unwrap();
                 let r = place(p);
-                painter.image(if xray { g.alt.id() } else { g.main.id() }, r, full, tint(a));
+                let k = light_of(p.s.sys);
+                painter.image(if xray { g.alt.id() } else { g.main.id() }, r, full, lit(k, a));
                 if let Some(m) = &g.mask {
                     // organs carry their status as a light tint; bones stay neutral (their marker shows it)
                     match status_of(p.s.sys) {
                         Status::Watch => {
-                            painter.image(m.id(), r, full, alpha(WARN, 0.12 * a));
+                            painter.image(m.id(), r, full, alpha(WARN, 0.12 * a * k));
                         }
                         Status::Act => {
-                            painter.image(m.id(), r, full, alpha(CRIT, (0.12 + 0.10 * alert) * a));
+                            painter.image(m.id(), r, full, alpha(CRIT, (0.12 + 0.10 * alert) * a * k));
                         }
                         _ => {}
                     }
-                    if sel || hov {
-                        painter.image(m.id(), r, full, alpha(Color32::WHITE, if sel { 0.10 } else { 0.06 } * a));
+                    if sel {
+                        painter.image(m.id(), r, full, alpha(Color32::WHITE, 0.05 * a));
                     }
                 }
             }
         }
         for p in self.parts.iter().filter(|p| p.s.layer == 0) {
             let g = p.gpu.as_ref().unwrap();
-            painter.image(g.alt.id(), place(p), full, tint(1.0));
+            painter.image(g.alt.id(), place(p), full, tint(1.0 - 0.45 * any));
         }
-        // one outline per system: white when selected, otherwise the status colour
+        // one outline per system: thin white when selected / hovered, otherwise the status colour
         for o in &self.outlines {
             let st = status_of(o.sys);
             let sel = o.sys == selected;
             let hov = hovered == Some(o.sys);
-            let col = if sel {
-                alpha(Color32::WHITE, 0.95)
+            let f = 0.25 + 0.75 * focus_of(o.sys);
+            let (col, thin) = if sel {
+                (alpha(Color32::WHITE, 0.95), true)
             } else if hov {
-                alpha(Color32::WHITE, 0.6)
+                (alpha(Color32::WHITE, 0.6), true)
             } else {
                 match st {
-                    Status::Watch => alpha(WARN, 0.9),
-                    Status::Act => alpha(CRIT, 0.6 + 0.4 * alert),
+                    Status::Watch => (alpha(WARN, 0.9 * f), false),
+                    Status::Act => (alpha(CRIT, (0.6 + 0.4 * alert) * f), false),
                     _ => continue,
                 }
             };
@@ -356,7 +392,8 @@ impl Figure {
             let c = lr.center();
             let r = Rect::from_min_size(to_screen(o.origin), vec2(o.w as f32 / TPU * s, o.h as f32 / TPU * s));
             let r = Rect::from_min_max(c + (r.min - c) * k, c + (r.max - c) * k);
-            painter.image(o.tex.as_ref().unwrap().id(), r, full, col);
+            let tex = if thin { o.thin.as_ref() } else { o.tex.as_ref() };
+            painter.image(tex.unwrap().id(), r, full, col);
         }
 
         // --- callouts: square marker on the organ, 45-degree leader, tracked mono label
@@ -374,7 +411,8 @@ impl Figure {
             let run = (edge_x - a.x).abs();
             let diag = (ly - a.y).abs().min((run - 10.0).max(0.0));
             let elbow = pos2(a.x + dir * diag, ly);
-            let lc = if sel || hov { alpha(TXT, 0.85) } else { alpha(MUT, 0.7) };
+            let back = 0.35 + 0.65 * focus_of(c.sys);
+            let lc = if sel || hov { alpha(TXT, 0.85) } else { alpha(MUT, 0.7 * back) };
             // the leader starts at the marker's bracket, not under it
             let d = elbow - a;
             let start = if d.length() > 8.0 { a + d.normalized() * 7.0 } else { a + vec2(dir * 7.0, 0.0) };
@@ -388,19 +426,19 @@ impl Figure {
             // marker: square with a bracket around it
             let pulse = if st == Status::Act { 1.5 * alert } else { 0.0 };
             painter.rect_filled(Rect::from_center_size(a, vec2(6.0, 6.0)), egui::CornerRadius::ZERO, col);
-            painter.rect_stroke(Rect::from_center_size(a, Vec2::splat(11.0 + pulse * 2.0)), egui::CornerRadius::ZERO, stroke(1.0, alpha(col, if sel || hov { 0.9 } else { 0.5 })), egui::StrokeKind::Middle);
+            painter.rect_stroke(Rect::from_center_size(a, Vec2::splat(11.0 + pulse * 2.0)), egui::CornerRadius::ZERO, stroke(1.0, alpha(col, if sel || hov { 0.9 } else { 0.5 * back })), egui::StrokeKind::Middle);
             let (pos, al) = match c.side {
                 Side::Left => (pos2(lr.left(), ly), Align2::LEFT_CENTER),
                 Side::Right => (pos2(lr.right(), ly), Align2::RIGHT_CENTER),
             };
-            let name = egui::RichText::new(c.label.to_uppercase()).font(mono(10.5)).extra_letter_spacing(0.6).color(if sel || hov { TXT } else { Color32::from_rgb(0xc0, 0xc8, 0xd3) });
+            let name = egui::RichText::new(c.label.to_uppercase()).font(mono(10.5)).extra_letter_spacing(0.6).color(if sel || hov { TXT } else { alpha(Color32::from_rgb(0xc0, 0xc8, 0xd3), back) });
             let g = egui::WidgetText::from(name).into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, FontId::default());
             let tp = match al {
                 Align2::LEFT_CENTER => pos + vec2(0.0, -6.0 - g.size().y / 2.0),
                 _ => pos + vec2(-g.size().x, -6.0 - g.size().y / 2.0),
             };
             painter.galley(tp, g, TXT);
-            painter.text(pos + vec2(0.0, 7.0), al, st.name().to_uppercase(), mono(9.0), col);
+            painter.text(pos + vec2(0.0, 7.0), al, st.name().to_uppercase(), mono(9.0), if sel || hov { col } else { alpha(col, back) });
         }
 
         if resp.clicked() {
