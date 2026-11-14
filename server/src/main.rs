@@ -1,7 +1,20 @@
-use std::{env, path::Path};
+use std::{env, path::Path, process::ExitCode};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> ExitCode {
+    match run().await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!(
+                "Startup failed: {}",
+                error.to_string().replace(['\r', '\n'], " ")
+            );
+            ExitCode::FAILURE
+        }
+    }
+}
+
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let pool = space_health_server::database::connect_from_env().await?;
     let address = env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".into());
     let dist = env::var("FRONTEND_DIST").unwrap_or_else(|_| "dist".into());
@@ -26,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|error| {
             std::io::Error::new(
                 error.kind(),
-                format!("Cannot listen on BIND_ADDR={address}: {error}"),
+                format!("Cannot listen on BIND_ADDR={address}: {error}; set BIND_ADDR to a valid free address, e.g. 127.0.0.1:8080"),
             )
         })?;
     println!("Space Health: http://{}", listener.local_addr()?);
@@ -35,8 +48,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Err(error) = shutdown_signal().await {
                 eprintln!("Shutdown signal handler failed: {error}");
             }
+            println!("Shutdown requested; finishing in-flight requests.");
         })
         .await?;
+    println!("Server stopped gracefully.");
     Ok(())
 }
 

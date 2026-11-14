@@ -1,6 +1,8 @@
 # План разработки backend — Rust + SQLite
 
-Статус: **BE-01–BE-06, BE-08 и BE-09 выполнены**. BE-07 и BE-10–BE-12 остаются планом следующих изменений.
+Статус: **BE-01–BE-06, BE-08 и BE-09 выполнены**, BE-11 реализован и локально проверен
+на Windows; второе устройство и offline-приёмка остаются ручными проверками.
+BE-07, завершение QA BE-10 и BE-12 остаются планом следующих изменений.
 Текущая реализация описана в [контракте](contracts.md) и
 [архитектуре модулей](backend-architecture.md).
 Интеграция изменений команды, новые инструменты запуска и шлюз датчиков описаны
@@ -387,6 +389,42 @@ Python SIGTERM вызывает KeyboardInterrupt и сохраняет outbox. 
 **Готово:** другой участник воспроизводит сценарий по команде; заданный seed и
 опорная дата создают те же показания; повтор не дублирует записи.
 
+**Перенос на интеграцию (2026-11-14):** `feature/be-09-demo-data` основана на
+`origin/codex/team-integration` (`4a13f2a`), старые BE-04/BE-05 не возвращались.
+Конфликты `.gitignore`, `package.json`, `backend-plan.md`, `main.rs` и симулятора
+разрешены объединением: сохранены диагностика/сигналы техлида, его API BE-06,
+новые команды, UI и native workspace. Добавлен общий `SHUTDOWN_STDIN` в сервер,
+симулятор и супервизоры. Demo runner берёт Cargo из tooling, бинарник — из
+compiler-artifact; latest/series соответствуют BE-06. Существующие проверки
+остановки используют stdin на Windows, сигналы на Unix. Python-проверка SIGTERM
+пропускается на Windows, SQLite-соединения в тестах явно закрываются.
+Два ранее написанных теста генератора включены в существующий запуск Vitest;
+маска Python-тестов в package.json заключена в двойные кавычки для cmd и bash.
+
+Реальный вывод `demo:prepare -- --scenario baseline --force`:
+
+```text
+heartRate: 201=2016 200=0 errors=0
+temperature: 201=21 200=0 errors=0
+sleepHours: 201=7 200=0 errors=0
+mood: 201=7 200=0 errors=0
+```
+
+Для `--scenario delayed --force`, reference `2026-11-14T14:27:00.000Z`:
+
+```text
+heartRate: 201=2016 200=3 errors=0
+temperature: 201=20 200=0 errors=0
+sleepHours: 201=7 200=0 errors=0
+mood: 201=7 200=0 errors=0
+```
+
+В обоих сценариях latest содержит шесть элементов контракта, из них четыре
+заполнены: heartRate, temperature, sleepHours, mood. Series за семь суток:
+HTTP 200, points=200, gaps=0, samples=2016. Оба сервера завершились с кодом 0.
+В delayed температура может иметь на одну запись меньше: последние 30 минут
+остальных метрик исключаются сценарием, расписание зависит от reference.
+
 ### BE-10 — Интеграция с React и QA
 
 **Владелец:** ты; участвуют iwbhappy, frontend и QA. **Зависимости:** готовые API-функции.
@@ -402,18 +440,135 @@ Python SIGTERM вызывает KeyboardInterrupt и сохраняет outbox. 
 **Готово:** основной сценарий работает через настоящий API; QA фиксирует проверенную
 версию и результаты, а README не обещает ещё не реализованные функции.
 
-### BE-11 — Подготовка локального выпуска
+### BE-11 — Подготовка локального выпуска — реализовано, внешняя приёмка открыта
 
 **Владелец:** iwbhappy. **Зависимости:** BE-10 и зелёные проверки.
 
-- Проверить release-бинарник вместе с dist, без Vite.
-- Проверить понятные ошибки конфигурации, отсутствующего dist и недоступного файла БД.
-- Документировать bind address, пути к БД/статике и работу из другой директории.
-- Добавить полезные логи запросов/ошибок без полного содержимого измерений.
-- Проверить аккуратное завершение процесса и сохранность подтверждённых записей.
-- Запустить со второго устройства в доверенной локальной сети.
-- Проверить работу при отключённом интернете и сохранённой связи с сервером.
-- Зафиксировать версию Rust для воспроизводимой сборки, Cargo.lock и npm lock-файл.
+Доработка PR #4 после ревью: ветка перебазирована на BE-09 `19be3c1`.
+`run.mjs` собирает `--bins` в debug/release, отдельно распознаёт executable
+серверного и admin compiler-artifact и после release-сборки печатает путь admin.
+Пути custom target и отдельные marker-файлы сохранены. README описывает оба
+бинарника с dist и запуск admin из release-папки с абсолютным DATABASE_URL.
+Новых тестов и зависимостей в этой доработке нет; расширены существующие проверки.
+
+Ручная проверка на пустом target:
+`CARGO_TARGET_DIR=.../space-health-clean-release-review-8PPKwI/target`
+(до запуска каталога не было), `CARGO_BUILD_TARGET=x86_64-pc-windows-msvc`,
+`npm run release`:
+
+```text
+Finished `release` profile [optimized] target(s) in 1m 20s
+Both clean-target exe files exist=true
+Admin --help exit=0: {"commands":["register-device <id>","list-devices"],"databaseEnvironment":"DATABASE_URL","defaultDatabaseUrl":"sqlite://space-health.db"}
+Admin from release directory: {"created":true,"device":{"astronautId":"demo-astronaut","deviceId":"review-sensor-01","source":"sensor"}}
+Clean release UI=200; API=200
+Server stopped gracefully.
+Custom-target marker reused with --no-build; persisted sensor records=1
+Server stopped gracefully.
+```
+
+Оба artifact находятся в `<CARGO_TARGET_DIR>/x86_64-pc-windows-msvc/release/`.
+На обеих ветках после доработки проходят check, rustfmt, locked Clippy/test,
+test:tools, smoke, demo-smoke, check:api; на Windows остаются два обоснованных
+skip, описанные в BE-09. Фактический Linux CI запуск в этой сессии не выполнен.
+
+Реализован `npm run release` (`run.mjs --release`): сборка dist, locked Cargo
+release, путь из compiler-artifact, отдельный marker для повторного запуска
+release/debug. По умолчанию без симулятора; `--simulator` включает его.
+Лаунчеры останавливают производителей перед сервером через stdin на Windows
+или сигнал Unix process group, с таймаутом 10 секунд и fallback; SIGINT/SIGTERM сохранены,
+systemd-юнит не менялся. Сервер явно пишет о штатной остановке.
+
+Middleware `axum::middleware::from_fn` пишет одну строку запроса API с методом,
+путём без query, статусом и длительностью. Статика, тела и значения не пишутся.
+5xx и ошибки хранилища идут в stderr, `REQUEST_LOG=0` отключает строки запросов,
+но сохраняет сообщения об ошибках. Добавлен один Rust-тест форматирования;
+новых npm/Cargo зависимостей и миграций нет.
+
+Ошибки запуска выводятся через Display одной строкой с действием для оператора,
+без panic/backtrace, код выхода 1. Версия Rust закреплена на локальной
+`rustc 1.100.0 (0ef1bc386 2026-11-09)` с rustfmt/clippy; оба CI job используют
+ту же версию. Lock-файлы сохранены. README объединяет прежний production-раздел
+в [«Выпуск и показ»](../README.md#выпуск-и-показ): PowerShell/bash, сборка,
+LAN, прямой бинарник из другой папки, остановка, восстановление и offline.
+
+**Локальная проверка 2026-11-14 (Windows x64):**
+
+- На обеих ветках проходят `npm run check` (82 теста, lint/build), `check:api`,
+  `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`,
+  `cargo test --locked`, `npm run test:smoke`, `npm run test:tooling`,
+  `npm run test:demo`, 22 теста native workspace и сравнение результата
+  `scripts/export-anatomy.rs` с generated-файлом. OpenAPI имеет прежний warning
+  об отсутствующем info.license, ошибок нет.
+- Tooling: `tests 6, pass 5, fail 0, skipped 1` (Unix executable-stub тест).
+  Python: `Ran 7 tests; OK (skipped=1)` (Unix SIGTERM). Проверены напрямую через
+  `python -B -m unittest discover -s tools -p 'test_*.py'` и через `npm run test:tools`:
+  для последнего в PATH добавлена временная обёртка `python3.cmd` к установленному
+  Python 3.13.7, поскольку системный `python3` — нерабочий Windows alias.
+  Node 24.13.1 использован из подготовленного каталога,
+  системный Node 22 не соответствует `.nvmrc`. Для `doctor` добавлен в PATH
+  установленный MSVC; exit 0, остаётся предупреждение об optional Python alias.
+- `npm ci`: `added 101 packages ... found 0 vulnerabilities`.
+  `npm run release`: `Finished release profile [optimized] ... in 1m 22s`;
+  `Binary (release): ...\target\release\space-health-server.exe`.
+  UI и `/api/health` на 127.0.0.1:8080 возвращают HTTP 200; Vite и симулятор
+  не запускались. Три POST получили 201. После stdin-остановки лаунчера:
+
+  ```text
+  Shutdown requested; finishing in-flight requests.
+  Server stopped gracefully.
+  Launcher exit=0; graceful server exit confirmed
+  Persistence after launcher stdin shutdown/restart: saved measurements=3
+  ```
+
+- Проверены также полные `npm run demo` с конечным потоком, `npm run server`
+  и `npm run start`: каждый дошёл до Ready, завершился с кодом 0 и сообщением
+  `Server stopped gracefully.`.
+
+- Прямой release-бинарник запущен из временной папки с абсолютным FRONTEND_DIST
+  и `sqlite://C:/Users/iwbhappy/AppData/Local/Temp/space-health-config-manual-bI93YA/absolute path.db`.
+  Windows URL с пробелом работает. С `BIND_ADDR=0.0.0.0:8080`:
+  `curl.exe --noproxy * ... http://192.168.8.60:8080/` → `HTTP 200` с этой машины.
+- Занятый порт, неверный bind, неверный URL, неверный SQLite mode,
+  отсутствующий каталог и каталог с запрещённой через Windows ACL записью:
+  код 1, одна строка stderr. Тестовый ACL восстановлен. Примеры:
+
+  ```text
+  Startup failed: Invalid DATABASE_URL; use sqlite://space-health.db or an absolute sqlite:///path/file.db URL
+  Startup failed: Could not open DATABASE_URL database: error returned from database: (code: 14) unable to open database file; create its parent directory and grant write access to the directory and database file
+  ```
+
+- Отсутствующий dist: предупреждение, `/api/health` → 200. При удалённой таблице
+  в отдельной временной БД: history → 500, ошибка хранилища и строка запроса в
+  stderr. `REQUEST_LOG=0` убирает строки запросов, ошибки остаются. Примеры:
+
+  ```text
+  POST /api/measurements 201 3ms
+  GET /api/measurements 400 0ms
+  database error: error returned from database: (code: 1) no such table: measurements
+  GET /api/measurements 500 0ms - API request failed; check storage diagnostics
+  ```
+
+- `rustup show`: `1.100.0-x86_64-pc-windows-msvc (active)`;
+  `active because: overridden by ...\rust-toolchain.toml`.
+
+**Остаётся ручная приёмка:** второе устройство в LAN, физическое отключение
+интернета с сохранённой LAN, браузерный показ на другой машине, runtime-проверка
+Linux/systemd и физическая Pi. В этой сессии есть только Windows-машина;
+изменять её сетевое подключение для offline-проверки не стали. Успех curl по
+собственному LAN-IP не подтверждает доступность с другого устройства.
+Проверена stdin-ветка остановки лаунчера; физическое нажатие Ctrl+C в Windows
+терминале отдельно не воспроизводилось. Флаг ReadOnly файла не использовался
+как доказательство отсутствия прав: проверка выполнена через ACL каталога.
+
+- [x] Release-бинарник вместе с dist, без Vite.
+- [x] Понятные ошибки конфигурации, отсутствующего dist и недоступного файла БД.
+- [x] Bind address, пути к БД/статике и запуск из другой директории документированы.
+- [x] Логи запросов/ошибок без содержимого измерений.
+- [x] Штатная stdin-остановка и сохранность подтверждённых записей.
+- [ ] Запуск со второго устройства в доверенной локальной сети.
+- [ ] Работа при отключённом интернете и сохранённой связи с сервером.
+- [x] Точная версия Rust, Cargo.lock и npm lock-файл.
 
 **Готово:** другая машина запускает стенд по README; релизная сборка проходит
 smoke и приёмку QA. API без авторизации остаётся локальным демонстрационным стендом.
