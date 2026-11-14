@@ -7,7 +7,7 @@ it('keeps a successful PATCH visible when polling replaced the task while the wr
   let current = original
   let respond!: (task: DailyTask) => void
   const patch = vi.fn(() => new Promise<DailyTask>(resolve => { respond = resolve }))
-  const acknowledgement = confirmTaskUpdate('a', true, () => current, patch)
+  const acknowledgement = confirmTaskUpdate('a', '2026-11-14', true, () => current, patch)
 
   // A concurrent GET completes before PATCH; its snapshot still lacks the new mark.
   const polled = { ...original }
@@ -19,12 +19,12 @@ it('keeps a successful PATCH visible when polling replaced the task while the wr
   expect(confirmed.snapshot).toBe(polled)
   expect(confirmed.snapshot).not.toBe(original)
   expect(confirmed.value).toBe(saved)
-  expect(patch).toHaveBeenCalledExactlyOnceWith('a', true)
+  expect(patch).toHaveBeenCalledExactlyOnceWith('a', '2026-11-14', true)
 })
 
 it('does not acknowledge a failed task update or read a new snapshot as if it were saved', async () => {
   const currentSnapshot = vi.fn<() => DailyTask>()
   const patch = vi.fn<() => Promise<DailyTask>>().mockRejectedValue(new TypeError('Connection lost'))
-  await expect(confirmTaskUpdate('a', false, currentSnapshot, patch)).rejects.toThrow('Connection lost')
+  await expect(confirmTaskUpdate('a', '2026-11-14', false, currentSnapshot, patch)).rejects.toThrow('Connection lost')
   expect(currentSnapshot).not.toHaveBeenCalled()
 })

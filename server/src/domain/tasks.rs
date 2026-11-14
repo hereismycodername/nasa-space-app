@@ -1,4 +1,5 @@
-use chrono::{DateTime, Utc};
+use super::measurements::ValidationError;
+use chrono::NaiveDate;
 
 #[derive(Debug)]
 pub(crate) struct Task {
@@ -7,7 +8,19 @@ pub(crate) struct Task {
     pub completed_at: Option<String>,
 }
 
-/// The legacy endpoint still replaces completion time; dated HTTP semantics are BE-07.
-pub(crate) fn completion_time(completed: bool, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
-    completed.then_some(now)
+/// Accept only canonical calendar dates; timestamps and relaxed padding are invalid.
+pub(crate) fn parse_date(
+    value: Option<&str>,
+    field: &'static str,
+) -> Result<NaiveDate, ValidationError> {
+    let invalid = || ValidationError {
+        field,
+        message: "Expected a calendar date in YYYY-MM-DD format",
+    };
+    let value = value.ok_or_else(invalid)?;
+    let date = NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(|_| invalid())?;
+    if value.len() != 10 || date.to_string() != value {
+        return Err(invalid());
+    }
+    Ok(date)
 }

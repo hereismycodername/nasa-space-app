@@ -322,7 +322,7 @@ fn task_validation_error_is_not_retried_or_reported_as_saved() {
     let server = MockServer::start(move |method, path, body| {
         assert_eq!(method, "PATCH");
         assert_eq!(path, "/api/tasks/daily-check");
-        assert_eq!(body, json!({"completed":true}));
+        assert_eq!(body, json!({"missionDate":"2026-11-14","completed":true}));
         count.fetch_add(1, Ordering::Relaxed);
         Some((
             404,
@@ -335,6 +335,7 @@ fn task_validation_error_is_not_retried_or_reported_as_saved() {
         &server.url,
         Command::Task {
             id: "daily-check".into(),
+            mission_date: "2026-11-14".into(),
             completed: true,
         },
         &state,
@@ -346,13 +347,13 @@ fn task_validation_error_is_not_retried_or_reported_as_saved() {
 }
 
 #[test]
-fn lost_task_response_is_not_replayed_because_legacy_patch_changes_the_timestamp() {
+fn lost_task_response_refreshes_state_without_reporting_an_unconfirmed_save() {
     let attempts = Arc::new(AtomicUsize::new(0));
     let count = Arc::clone(&attempts);
     let server = MockServer::start(move |method, path, body| {
         assert_eq!(method, "PATCH");
         assert_eq!(path, "/api/tasks/daily-check");
-        assert_eq!(body, json!({"completed":true}));
+        assert_eq!(body, json!({"missionDate":"2026-11-14","completed":true}));
         count.fetch_add(1, Ordering::Relaxed);
         // The server applied the change, but the acknowledgement was lost.
         None
@@ -363,6 +364,7 @@ fn lost_task_response_is_not_replayed_because_legacy_patch_changes_the_timestamp
         &server.url,
         Command::Task {
             id: "daily-check".into(),
+            mission_date: "2026-11-14".into(),
             completed: true,
         },
         &state,
@@ -377,7 +379,9 @@ fn lost_task_response_is_not_replayed_because_legacy_patch_changes_the_timestamp
 fn worker_recovers_after_connection_failure_without_inventing_demo_data() {
     let ready = Arc::new(AtomicBool::new(false));
     let availability = Arc::clone(&ready);
-    let server = MockServer::start(move |_method, path, _body| {
+    let completed = Arc::new(AtomicBool::new(false));
+    let mark = Arc::clone(&completed);
+    let server = MockServer::start(move |method, path, body| {
         if !availability.load(Ordering::Relaxed) {
             return Some((503, json!({"message":"maintenance"})));
         }
@@ -385,10 +389,18 @@ fn worker_recovers_after_connection_failure_without_inventing_demo_data() {
             Some((200, json!({"status":"ok","storage":"sqlite"})))
         } else if path == "/api/measurements/latest" {
             Some((200, latest_json()))
+        } else if path == "/api/tasks/daily-check" {
+            assert_eq!(method, "PATCH");
+            assert_eq!(body, json!({"missionDate":"2026-11-14","completed":true}));
+            mark.store(true, Ordering::Relaxed);
+            Some((
+                200,
+                json!({"missionDate":"2026-11-14","id":"daily-check","title":"Daily check","completedAt":"2026-11-15T00:00:01Z"}),
+            ))
         } else if path == "/api/tasks" {
             Some((
                 200,
-                json!([{"id":"daily-check","title":"Daily check","completedAt":null}]),
+                json!({"missionDate":"2026-11-14","tasks":[{"id":"daily-check","title":"Daily check","completedAt":if mark.load(Ordering::Relaxed) {Some("2026-11-15T00:00:01Z")} else {None}}]}),
             ))
         } else {
             Some((503, json!({"message":"history temporarily unavailable"})))
@@ -408,6 +420,13 @@ fn worker_recovers_after_connection_failure_without_inventing_demo_data() {
         .take_messages()
         .iter()
         .any(|m| m.contains("Connection restored")));
+    backend.set_task_completed("daily-check", true).unwrap();
+    wait_for(|| backend.pending_writes() == 0 && backend.tasks()[0].completed_at.is_some());
+    assert!(completed.load(Ordering::Relaxed));
+    assert!(backend
+        .take_messages()
+        .iter()
+        .any(|m| m.starts_with("Task saved to server:")));
     ready.store(false, Ordering::Relaxed);
     wait_for(|| !backend.overview().link_up);
     assert_eq!(
@@ -674,7 +693,7 @@ fn old_six_metric_server_receives_only_supported_history_queries() {
             });
             Some((200, value))
         }
-        "/api/tasks" => Some((200, json!([]))),
+        "/api/tasks" => Some((200, json!({"missionDate":"2026-11-14","tasks":[]}))),
         "/api/assessments" => Some((
             200,
             json!({"astronautId":"demo-astronaut","evaluatedAt":"2026-11-15T01:00:00Z"}),

@@ -84,7 +84,8 @@ function CoverageGauge({ count, total }: { count: number; total: number }) {
 }
 
 export default function App() {
-  const { latest, assessment, tasks, connected, loading: polling, lastUpdated, qualityObservedAt, qualityReceivedAt, assessmentObservedAt, assessmentReceivedAt, previousHealthAlerts, refresh } = useDashboard()
+  const { latest, assessment, tasks: taskList, connected, loading: polling, lastUpdated, qualityObservedAt, qualityReceivedAt, assessmentObservedAt, assessmentReceivedAt, previousHealthAlerts, refresh } = useDashboard()
+  const tasks = taskList?.tasks
   const freshnessElapsed = useFreshnessElapsed(latest, qualityObservedAt, qualityReceivedAt)
   const healthElapsed = useHealthElapsed(assessment, assessmentObservedAt, assessmentReceivedAt)
   const healthContext: HealthContext = { assessment, latest, connected, updating: polling, elapsedSeconds: healthElapsed, latestElapsedSeconds: freshnessElapsed, previousHealthAlerts }
@@ -168,7 +169,7 @@ export default function App() {
             <div className="panel"><h2>Возможности прототипа</h2><p>Один профиль, {supported.length} поддерживаемых сервером показателей, история, задачи и объяснимые демо-правила. Для показателей без правил выводится «Не оценено». Передача сообщений экипажу и на Землю не подключена. Пороговые правила не валидированы для космического полёта и не заменяют индивидуальный медицинский план.</p></div>
           </> : role === 'ground' ? <>
             <Suspense fallback={<div className="loading-panel">Загрузка наземной консоли…</div>}><GroundConsole latest={latest} connected={connected} elapsedSeconds={freshnessElapsed} healthContext={healthContext} refreshVersion={refreshVersion} selectedSystem={selectedSystem} onSystemSelect={selectSystem} onOpenMetric={openMetric} onAddMetric={openMetricCheckIn} channels={groundChannels} onChannelsChange={setGroundChannels} days={groundDays} onDaysChange={setGroundDays} /></Suspense>
-            <TaskPanel tasks={tasks} connected={connected} onChanged={refresh} />
+            <TaskPanel tasks={taskList} connected={connected} onChanged={refresh} />
           </> : <>
             <HealthPanel context={healthContext} />
             <div className="summary-grid">
@@ -192,7 +193,7 @@ export default function App() {
             <SystemCheckInActions system={selectedSystem} onAdd={openMetricCheckIn} supportedMetrics={supportedIds} />
             {latest ? <p className="quality-context note">Оценка сервера: {formatTime(latest.evaluatedAt)}. Сроки различаются по показателям; время доставки не подтверждает свежесть.{!connected ? ' Показан предыдущий ответ; свежесть не подтверждена.' : ''}</p> : null}
             <MetricOverview latest={latest} selectedSystem={selectedSystem} onSelect={openMetric} onAdd={openMetricCheckIn} connected={connected} elapsedSeconds={freshnessElapsed} healthContext={healthContext} />
-            <TaskPanel tasks={tasks} connected={connected} onChanged={refresh} />
+            <TaskPanel tasks={taskList} connected={connected} onChanged={refresh} />
           </>}
           {assessment?.health && tab !== 'trends' ? <FlightEducationPanel education={assessment.health.education} /> : null}
         </> : null}

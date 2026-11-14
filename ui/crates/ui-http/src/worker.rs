@@ -138,7 +138,7 @@ fn poll(
     client: &Client,
     base: &str,
     stop: &AtomicBool,
-) -> Result<(dto::Latest, Vec<dto::Task>), Failure> {
+) -> Result<(dto::Latest, dto::TasksResponse), Failure> {
     let health: dto::HealthResponse = response(client.get(format!("{base}/api/health")))?;
     if health.status != "ok" || health.storage != "sqlite" {
         return Err(Failure::protocol("Server storage is not ready"));
@@ -151,7 +151,12 @@ fn poll(
     if stop.load(Ordering::Relaxed) {
         return Err(Failure::protocol("Client closed"));
     }
-    let tasks: Vec<dto::Task> = response(client.get(format!("{base}/api/tasks")))?;
+    let tasks: dto::TasksResponse = response(client.get(format!("{base}/api/tasks")))?;
+    if chrono::NaiveDate::parse_from_str(&tasks.mission_date, "%Y-%m-%d").map_or(true, |date| {
+        tasks.mission_date.len() != 10 || date.to_string() != tasks.mission_date
+    }) {
+        return Err(Failure::protocol("Invalid task mission date"));
+    }
     Ok((latest, tasks))
 }
 
@@ -181,26 +186,32 @@ fn write(client: &Client, base: &str, command: &Command) -> Result<String, Failu
                 saved.value, saved.unit, saved.metric
             ))
         }
-        Command::Task { id, completed } => {
+        Command::Task {
+            id,
+            mission_date,
+            completed,
+        } => {
             let mut url = reqwest::Url::parse(&format!("{base}/api/tasks/"))
                 .map_err(|_| Failure::protocol("Invalid API origin"))?;
             url.path_segments_mut()
                 .map_err(|_| Failure::protocol("Invalid task URL"))?
                 .pop_if_empty()
                 .push(id);
-            let saved: dto::Task = response(
-                client
-                    .patch(url)
-                    .json(&serde_json::json!({"completed": completed})),
-            )?;
-            if saved.id != *id || saved.completed_at.is_some() != *completed {
+            let saved: dto::TaskUpdateResponse =
+                response(client.patch(url).json(
+                    &serde_json::json!({"missionDate": mission_date, "completed": completed}),
+                ))?;
+            if saved.mission_date != *mission_date
+                || saved.task.id != *id
+                || saved.task.completed_at.is_some() != *completed
+            {
                 return Err(Failure::protocol(
                     "Server confirmation does not match the task update",
                 ));
             }
             Ok(format!(
                 "Task saved to server: {} ({})",
-                saved.title,
+                saved.task.title,
                 if *completed {
                     "completed"
                 } else {
@@ -223,8 +234,8 @@ fn perform_write(
         return;
     }
     let mut result = Err(Failure::protocol("Client closed before confirmation"));
-    // Measurements have an explicit idempotency key. Legacy BE-06 task PATCH
-    // rewrites its completion timestamp, so an ambiguous result must not replay.
+    // Preserve the existing retry policy: replay measurements with their explicit
+    // idempotency key; refresh task state after an ambiguous acknowledgement.
     let attempts = if matches!(command, Command::Measurement(_)) {
         3
     } else {
@@ -388,7 +399,8 @@ pub(crate) fn run(
                     }
                     state.latest = Some(latest);
                     state.snapshot_at = Some(requested_at);
-                    state.tasks = tasks;
+                    state.mission_date = Some(tasks.mission_date);
+                    state.tasks = tasks.tasks;
                     match assessment {
                         Some(Ok(assessment)) => {
                             state.assessment = Some(assessment);

@@ -1,4 +1,4 @@
-# JSON-примеры API v0.8.1 (с совместимыми fixtures BE-06)
+# JSON-примеры API v0.9.0 (с совместимыми fixtures BE-06)
 
 Файлы содержат чистые JSON payload, пригодные для UI fixtures и ручных запросов.
 UUID и timestamps в ответах иллюстративные, реальные значения генерирует сервер.
@@ -42,9 +42,9 @@ UUID и timestamps в ответах иллюстративные, реальн�
 | assessment.rules-normal.response.json | Свежие показатели без срабатывания заданных правил; не заключение о здоровье |
 | assessment.rules-attention.response.json | Сон, настроение и пульс требуют внимания; причины, действия и источники |
 | assessment.rules-critical.response.json | Высокое систолическое давление; срочный маршрут помощи и evidence ID |
-| tasks.response.json | GET /api/tasks |
-| task-update.request.json | PATCH /api/tasks/daily-check |
-| task.response.json | Обновлённая задача |
+| tasks.response.json | GET /api/tasks?date=2026-11-13: missionDate и список шаблонов с отметками |
+| task-update.request.json | PATCH /api/tasks/daily-check с явной missionDate |
+| task.response.json | Обновлённая задача с missionDate |
 | validation-error.response.json | Problem Details с кодом и полем |
 
 Пример отправки из корня репозитория:
