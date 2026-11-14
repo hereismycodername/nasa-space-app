@@ -1,3 +1,5 @@
+import { heartRateValue } from './profile.mjs'
+
 const MINUTE = 60_000
 const DAY = 24 * 60 * MINUTE
 export const SCENARIOS = ['baseline', 'attention', 'stale', 'delayed']
@@ -44,8 +46,8 @@ export function generateHistory({ scenario, seed, reference }) {
       + Math.max(0, 1 - Math.abs(hour - 16) / 0.25)
     const resting = 67.5 + 5 * Math.cos((hour - 15) * Math.PI / 12)
     const noise = random() * 6 - 3
-    add(time, 'heartRate', round(resting + noise
-      + activity * 37 + (attention ? 12 + (noise + 3) / 2 : 0)), 'bpm')
+    add(time, 'heartRate', heartRateValue(resting + noise + activity * 37,
+      attention ? 'attention' : 'normal', (noise + 3) / 6), 'bpm')
   }
   // Calendar schedules keep sleep in the morning and mood in the evening even
   // when reference is not midnight. Filtering [start, end) gives seven of each.

@@ -13,7 +13,7 @@ test('launcher uses Cargo executable artifact from a configured target and reuse
   const target = join(directory, 'target')
   const binary = join(target, 'custom-triple', 'debug', 'space-health-server')
   await mkdir(join(target, 'custom-triple', 'debug'), { recursive: true })
-  await writeFile(binary, `#!${process.execPath}\nimport { createServer } from 'node:http';\nconst [host,port]=process.env.BIND_ADDR.split(':');\nconst server=createServer((_q,r)=>{r.writeHead(200,{'Content-Type':'application/json'});r.end('{"status":"ok"}')});\nserver.listen(Number(port),host);\nprocess.on('SIGINT',()=>server.close());\n`, { mode: 0o755 })
+  await writeFile(binary, `#!${process.execPath}\nimport { createServer } from 'node:http';\nif(process.env.SHUTDOWN_STDIN==='1') throw new Error('Unix launcher must use signals');\nconst [host,port]=process.env.BIND_ADDR.split(':');\nconst server=createServer((_q,r)=>{r.writeHead(200,{'Content-Type':'application/json'});r.end('{"status":"ok"}')});\nserver.listen(Number(port),host);\nconst stop=()=>server.close(()=>console.log('Fixture stopped gracefully'));\nprocess.once('SIGINT',stop);process.once('SIGTERM',stop);\n`, { mode: 0o755 })
   const cargo = join(directory, 'cargo')
   await writeFile(cargo, `#!${process.execPath}\nconst command=process.argv[2];\nif(command==='--version') console.log('cargo test-stub');\nelse if(command==='metadata') console.log(${JSON.stringify(JSON.stringify({ target_directory: target }))});\nelse if(command==='build') console.log(${JSON.stringify(JSON.stringify({ reason: 'compiler-artifact', target: { name: 'space-health-server' }, executable: binary }))});\nelse process.exit(2);\n`, { mode: 0o755 })
   let child
@@ -37,6 +37,8 @@ test('launcher uses Cargo executable artifact from a configured target and reuse
       assert.match(output, /Ready:/)
       child.kill('SIGTERM')
       assert.equal((await done)[0], 0, output)
+      assert.match(output, /Fixture stopped gracefully/)
+      assert.doesNotMatch(output, /terminating it/)
     }
   } finally {
     if (child && child.exitCode === null) { child.kill('SIGTERM'); await once(child, 'exit') }

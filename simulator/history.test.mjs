@@ -10,6 +10,16 @@ describe('synthetic history', () => {
     const rows = generateHistory(options)
     expect(JSON.stringify(generateHistory(options))).toBe(JSON.stringify(rows))
     expect(generateHistory({ ...options, seed: 43 }).map(row => row.value)).not.toEqual(rows.map(row => row.value))
+    const attentionPulse = generateHistory({ ...options, scenario: 'attention' }).filter(row => row.metric === 'heartRate')
+    const normalPulse = rows.filter(row => row.metric === 'heartRate')
+    for (const [index, row] of attentionPulse.entries()) {
+      const delta = row.value - normalPulse[index].value
+      if (Date.parse(row.measuredAt) < Date.parse(options.reference) - 3 * 86400_000) expect(delta).toBe(0)
+      else {
+        expect(delta).toBeGreaterThanOrEqual(12)
+        expect(delta).toBeLessThanOrEqual(15)
+      }
+    }
     expect(new Set(rows.map(row => row.sequence)).size).toBe(rows.length)
     expect(rows.map(row => row.sequence)).toEqual(rows.map((_, index) => index))
     expect(Object.fromEntries(Object.keys(units).map(metric => [metric, rows.filter(row => row.metric === metric).length])))

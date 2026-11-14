@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { simulatorConfig } from './config.mjs'
+import { heartRateValue } from './profile.mjs'
 
 const shutdown = new AbortController()
 const stop = () => shutdown.abort()
@@ -11,13 +12,14 @@ if (process.env.SHUTDOWN_STDIN === '1') {
   process.stdin.on('end', stop)
 }
 try {
-  const { base, interval, count, retry, timeout } = simulatorConfig()
+  const { base, interval, count, retry, timeout, profile } = simulatorConfig()
   const sessionId = randomUUID()
-  console.log(`Synthetic sensor → ${base}/api/measurements; session ${sessionId}; Ctrl+C stops`)
+  console.log(`Synthetic sensor → ${base}/api/measurements; session ${sessionId}; profile=${profile}; Ctrl+C stops`)
   for (let sequence = 0; !shutdown.signal.aborted && (count === 0 || sequence < count); sequence++) {
     const body = {
       deviceId: 'simulator-01', sessionId, sequence,
-      metric: 'heartRate', value: Math.round(72 + 8 * Math.sin(sequence / 5)),
+      metric: 'heartRate', value: heartRateValue(Math.round(72 + 8 * Math.sin(sequence / 5)),
+        profile, (Math.sin(sequence / 5) + 1) / 2),
       unit: 'bpm', measuredAt: new Date().toISOString(),
     }
     // Keep the same payload and sequence during retries: ingestion is idempotent.
