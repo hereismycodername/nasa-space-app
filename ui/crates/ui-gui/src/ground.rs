@@ -272,13 +272,12 @@ impl<B: Backend> GuiApp<B> {
         // event log
         caption(ui, "Event log");
         ui.add_space(4.0);
-        let alerts = self.b.alerts();
-        let msgs = self.b.messages();
+        let events = self.b.events(60);
         let mut ack: Option<u64> = None;
         let mut open: Option<String> = None;
         card().show(ui, |ui| {
             ui.set_width(ui.available_width());
-            if alerts.is_empty() && msgs.is_empty() {
+            if events.is_empty() {
                 ui.label(RichText::new("No events for this crew member.").size(12.0).color(MUT));
             }
             egui::Grid::new("events").num_columns(6).spacing([14.0, 7.0]).striped(true).show(ui, |ui| {
@@ -286,29 +285,33 @@ impl<B: Backend> GuiApp<B> {
                     ui.label(RichText::new(h.to_uppercase()).size(9.5).color(MUT).strong());
                 }
                 ui.end_row();
-                for a in &alerts {
-                    let c = status_color(a.status);
-                    ui.label(RichText::new(a.status.name().to_uppercase()).size(10.0).color(c).strong());
-                    if ui.add(egui::Label::new(RichText::new(&a.indicator_name).size(12.0)).sense(Sense::click())).clicked() {
-                        open = Some(a.indicator.clone());
+                for e in &events {
+                    let (sev, c) = match e.kind {
+                        EventKind::Finding => (e.severity.name().to_uppercase(), status_color(e.severity)),
+                        EventKind::Uplink => ("UPLINK".to_string(), ACCENT),
+                        EventKind::Crew => ("CREW".to_string(), ACCENT),
+                    };
+                    ui.label(RichText::new(sev).size(10.0).color(c).strong());
+                    let src = ui.add(egui::Label::new(RichText::new(&e.source).size(12.0)).sense(Sense::click()));
+                    if src.clicked() {
+                        open = e.indicator.clone();
                     }
-                    ui.add(egui::Label::new(RichText::new(&a.headline).size(11.5).color(MUT)).truncate());
-                    ui.label(RichText::new(format!("{} {}", fmt_num(a.value), a.unit)).font(mono(11.5)));
-                    ui.label(RichText::new(a.day.to_string()).font(mono(11.5)).color(MUT));
-                    if a.acked {
-                        ui.label(RichText::new("ACK").size(10.0).color(MUT));
-                    } else if ui.small_button("Acknowledge").clicked() {
-                        ack = Some(a.id);
+                    ui.add(egui::Label::new(RichText::new(&e.text).size(11.5).color(MUT)).truncate());
+                    ui.label(RichText::new(e.value.clone().unwrap_or_default()).font(mono(11.5)));
+                    ui.label(RichText::new(e.day.to_string()).font(mono(11.5)).color(MUT));
+                    match (e.kind, e.alert_id) {
+                        (EventKind::Finding, Some(id)) if !e.acked => {
+                            if ui.small_button("Acknowledge").clicked() {
+                                ack = Some(id);
+                            }
+                        }
+                        (EventKind::Finding, _) => {
+                            ui.label(RichText::new("ACK").size(10.0).color(MUT));
+                        }
+                        _ => {
+                            ui.label("");
+                        }
                     }
-                    ui.end_row();
-                }
-                for m in msgs.iter().rev().take(5) {
-                    ui.label(RichText::new(if m.from_ground { "UPLINK" } else { "CREW" }).size(10.0).color(ACCENT).strong());
-                    ui.label(RichText::new("Message").size(12.0));
-                    ui.add(egui::Label::new(RichText::new(&m.text).size(11.5).color(MUT)).truncate());
-                    ui.label("");
-                    ui.label(RichText::new(m.day.to_string()).font(mono(11.5)).color(MUT));
-                    ui.label("");
                     ui.end_row();
                 }
             });

@@ -222,3 +222,30 @@ pub struct Message {
     pub day: u32,
 }
 
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EventKind {
+    /// an indicator outside its normal range
+    Finding,
+    /// message from ground to the crew
+    Uplink,
+    /// message from the crew to ground
+    Crew,
+}
+
+/// One line of the event log shown to ground: findings and messages in one list.
+#[derive(Clone, Debug)]
+pub struct Event {
+    pub day: u32,
+    pub kind: EventKind,
+    pub severity: Status,
+    pub source: String,
+    pub text: String,
+    /// formatted value with unit (findings only)
+    pub value: Option<String>,
+    /// set for findings: pass to `Backend::ack_alert`
+    pub alert_id: Option<u64>,
+    /// indicator the finding refers to
+    pub indicator: Option<String>,
+    pub acked: bool,
+}
