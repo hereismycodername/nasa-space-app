@@ -11,10 +11,11 @@ Both exist as a **window** (`astrocheck-gui`, egui) and a **terminal** program (
 works over SSH / serial console / on boards without a display). Switch role at runtime (GUI: Crew|Ground control
 in the top bar, TUI: key `r`).
 
-Real anatomy: a human figure with skin, skeleton (skull, spine, ribs, clavicles, pelvis, arm and leg bones),
-and organs (brain with gyri, eyes, lungs with lobes and bronchi, heart with great vessels, liver, stomach, intestines,
-spleen). Layers: *Organs / Skeleton / X-ray*. Organ outlines and the hotspot markers show status (green / amber / red);
-labels with leader lines are clickable. In the terminal the same figure is drawn with braille dots.
+Real anatomy: the figure is a frontal projection of the CT-based adult male meshes of BodyParts3D (skin, skull, spine,
+ribs, clavicles, scapulae, pelvis, arm and leg bones; brain, eyes, trachea, lungs, thymus, heart, liver, gallbladder, stomach,
+pancreas, kidneys, intestines, bladder), so sizes and positions are measured, not drawn. Layers: *Organs / Skeleton / X-ray*.
+Organ outlines and the hotspot markers show status; labels with leader lines are clickable. In the terminal the same figure
+is drawn with braille dots. Regenerate the data with `tools/gen_anatomy.py` (needs the BodyParts3D download, see the script).
 
 Screens: see `docs/*.png` (window) and `docs/terminal-*.txt` (terminal frames).
 
@@ -99,9 +100,18 @@ expected to differ - measure on the target. The terminal version is the lightwei
 
 ## Honest limits
 
-* The anatomy is a schematic medical illustration authored in code (`anatomy.rs`), not a licensed atlas. To use official
-  artwork replace `anatomy::parts()`; nothing else depends on how the shapes were made.
+* The anatomy is one real adult male (BodyParts3D, 99 % reduced meshes, frontal view only, no spleen or lymph nodes in the
+  data set, hands and feet are skin only). It is not a patient-specific model. To use other artwork replace `anatomy::parts()`;
+  nothing else depends on how the shapes were made.
 * Thresholds, advice texts and the demo crew are illustrative. Not a medical device.
 * Developed and tested on Windows 11 only. Not yet run on a Raspberry Pi or any other board; the GUI needs the usual
   GL / X11 / Wayland runtime libraries there.
 * The demo backend keeps everything in memory; persistence, integrity checks and the downlink queue belong to the real backend.
+
+## Credits and licences
+
+* Anatomy data: "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International"
+  ([licence](https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html)). The mesh files themselves carry the older
+  CC Attribution-Share Alike 2.1 Japan header, so `crates/ui-model/src/anatomy_data.rs` (derived data) is shared under the
+  same terms.
+* Fonts: Inter, Public Sans, DM Mono (SIL Open Font License, texts in `crates/ui-gui/assets/fonts`).
