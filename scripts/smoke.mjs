@@ -1,3 +1,4 @@
+import { HISTORY_METRICS } from '../simulator/history.mjs'
 import { spawn } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -10,14 +11,20 @@ const base = 'http://127.0.0.1:18080'
 let server
 async function stop() {
   if (server && server.exitCode === null) {
-    await new Promise(resolve => { server.once('exit', resolve); server.kill('SIGINT') })
+    const stopped = new Promise(resolve => server.once('exit', resolve))
+    if (process.platform === 'win32') server.stdin.end('shutdown\n')
+    else server.kill('SIGINT')
+    const exited = await Promise.race([stopped.then(() => true), delay(10_000, false, { ref: false })])
+    if (!exited) server.kill('SIGKILL')
+    await stopped
   }
 }
 async function start() {
   server = spawn('./target/debug/space-health-server', [], {
-    env: { ...process.env, BIND_ADDR: '127.0.0.1:18080', DATABASE_URL: `sqlite://${directory}/smoke.db` },
-    stdio: 'inherit',
+    env: { ...process.env, BIND_ADDR: '127.0.0.1:18080', DATABASE_URL: `sqlite://${directory}/smoke.db`, SHUTDOWN_STDIN: process.platform === 'win32' ? '1' : '0' },
+    stdio: [process.platform === 'win32' ? 'pipe' : 'inherit', 'inherit', 'inherit'],
   })
+  server.stdin?.on('error', () => { /* server may have exited before shutdown */ })
   server.on('error', error => console.error(error))
   for (let attempt = 0; attempt < 50; attempt++) {
     if (server.exitCode !== null) throw new Error('Server exited before becoming ready')
@@ -48,7 +55,7 @@ try {
   assert.equal(history.nextCursor, null)
   assert.ok(history.items.every(row => row.source === 'simulator'))
   const latest = await (await fetch(`${base}/api/measurements/latest`)).json()
-  assert.equal(latest.metrics.length, 6)
+  assert.deepEqual(latest.metrics.map(row => row.metric), HISTORY_METRICS)
   assert.equal(latest.metrics[0].latestKnownMeasurement.id, history.items[0].id)
   assert.ok(latest.metrics.slice(1).every(row => row.latestMeasurement === null))
   assert.ok(Number.isFinite(Date.parse(latest.evaluatedAt)))
@@ -57,7 +64,7 @@ try {
   assert.equal(latest.metrics[0].quality.freshForSeconds, 15)
   assert.ok(latest.metrics.slice(1).every(row => row.quality.status === 'missing'))
   const assessment = await (await fetch(`${base}/api/assessments`)).json()
-  assert.equal(assessment.metrics.length, 6)
+  assert.deepEqual(assessment.metrics.map(row => row.metric), HISTORY_METRICS)
   assert.equal(assessment.metrics[0].quality.measurementId, latest.metrics[0].quality.measurementId)
   assert.equal(assessment.metrics[0].quality.status, latest.metrics[0].quality.status)
   const timestamps = history.items.map(row => Date.parse(row.measuredAt))

@@ -2,12 +2,14 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
 import { MetricOverview } from './App'
 import type { DataQuality, LatestMeasurements, LatestMetric, Measurement } from './shared/types'
+import { healthFixture } from './features/dashboard/health.fixture'
 
-const empty: LatestMeasurements = { astronautId: 'demo-astronaut', evaluatedAt: '2026-11-14T08:00:00Z', metrics: [] }
+const empty: LatestMeasurements = { astronautId: 'demo-astronaut', evaluatedAt: '2026-11-14T08:00:00Z', metrics: healthFixture().latest.metrics.map(entry => ({ ...entry, latestMeasurement: null, latestKnownMeasurement: null, latestReceivedMeasurement: null,
+  quality: { ...entry.quality, status: 'missing', measurementId: null, ageSeconds: null }, latestReceivedQuality: { ...entry.quality, status: 'missing', measurementId: null, ageSeconds: null } })) }
 const fresh: DataQuality = { status: 'fresh', measurementId: 'known-sleep', freshForSeconds: 86400, ageSeconds: 86400, clockSkew: false }
 
 function snapshot(measurement: NonNullable<LatestMetric['latestKnownMeasurement']>, quality: DataQuality, received: Measurement = measurement, receivedQuality = quality): LatestMeasurements {
-  return { ...empty, metrics: [{ metric: measurement.metric, latestMeasurement: received, latestKnownMeasurement: measurement, latestReceivedMeasurement: received, quality, latestReceivedQuality: receivedQuality }] }
+  return { ...empty, metrics: empty.metrics.map(entry => entry.metric === measurement.metric ? { metric: measurement.metric, latestMeasurement: received, latestKnownMeasurement: measurement, latestReceivedMeasurement: received, quality, latestReceivedQuality: receivedQuality } : entry) }
 }
 
 const known: NonNullable<LatestMetric['latestKnownMeasurement']> = {
@@ -32,14 +34,15 @@ it('shows a rare known measurement separately from a newer receipt without measu
   expect(html.match(/<article/g)).toHaveLength(6)
 })
 
-it('filters the overview to the selected body system without inventing unavailable metrics', () => {
+it('filters the overview to the selected body system and keeps absent B/C measurements empty', () => {
   const heart = renderToStaticMarkup(<MetricOverview selectedSystem="heart" latest={empty} />)
   expect(heart.match(/<article/g)).toHaveLength(3)
   expect(heart).toContain('Пульс')
   expect(heart).not.toContain('Самочувствие')
-  const lungs = renderToStaticMarkup(<MetricOverview selectedSystem="lungs" />)
-  expect(lungs).toContain('Показатели пока не подключены')
+  const lungs = renderToStaticMarkup(<MetricOverview selectedSystem="lungs" latest={empty} />)
+  expect(lungs).toContain('Сервер пока не поддерживает ввод')
   expect(lungs).not.toContain('<article')
+  expect(lungs).not.toContain('Измерено')
 })
 
 it('shows missing values explicitly for all metrics when the latest response is empty', () => {
@@ -50,10 +53,9 @@ it('shows missing values explicitly for all metrics when the latest response is 
 
 it('keeps per-metric freshness independent and expires a cached result between server polls', () => {
   const pulse: typeof known = { ...known, id: 'pulse', metric: 'heartRate', unit: 'bpm', value: 72 }
-  const latest: LatestMeasurements = { ...empty, metrics: [
-    ...snapshot(pulse, { ...fresh, measurementId: pulse.id, freshForSeconds: 15, ageSeconds: 14 }).metrics,
-    ...snapshot(known, { ...fresh, ageSeconds: 3600 }).metrics,
-  ] }
+  const latest = snapshot(pulse, { ...fresh, measurementId: pulse.id, freshForSeconds: 15, ageSeconds: 14 })
+  const sleep = snapshot(known, { ...fresh, ageSeconds: 3600 }).metrics.find(entry => entry.metric === 'sleepHours')!
+  latest.metrics = latest.metrics.map(entry => entry.metric === 'sleepHours' ? sleep : entry)
   const html = renderToStaticMarkup(<MetricOverview latest={latest} connected elapsedSeconds={2} />)
   const cards = html.match(/<article[\s\S]*?<\/article>/g)!
   expect(cards[0]).toContain('Данные устарели')

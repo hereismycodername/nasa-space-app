@@ -2,6 +2,7 @@
 use crate::domain::{
     assessments::{self, InvalidStoredTimestamp},
     freshness::{self, MetricQuality, Quality},
+    health_rules::{self, FlightEducation, HealthEvaluation, HealthRule},
     history::{HistoryCursor, HistoryPage, HistoryQuery, LatestMetric},
     measurements::{Measurement, NewMeasurement, ValidationError},
     series::{self, BucketAggregate, InvalidSeriesData, SeriesPoint, SeriesQuery},
@@ -346,6 +347,7 @@ pub(crate) struct AssessmentResponse {
     astronaut_id: &'static str,
     evaluated_at: String,
     metrics: Vec<MetricQualityResponse>,
+    health: HealthEvaluationResponse,
 }
 impl AssessmentResponse {
     pub fn from_data(
@@ -355,13 +357,107 @@ impl AssessmentResponse {
     ) -> Result<Self, InvalidStoredTimestamp> {
         let summary = assessments::assess_snapshot(metrics, now)?;
         let qualities = freshness::evaluate_metrics(metrics, now)?;
+        let health = health_rules::evaluate(metrics, &qualities)?;
         Ok(Self {
             status: summary.status,
             explanation: summary.explanation,
             astronaut_id,
             evaluated_at: now.to_rfc3339_opts(SecondsFormat::AutoSi, true),
             metrics: qualities.into_iter().map(Into::into).collect(),
+            health: health.into(),
         })
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HealthEvaluationResponse {
+    rule_set_version: &'static str,
+    demonstration_only: bool,
+    status: &'static str,
+    explanation: String,
+    disclaimer: &'static str,
+    emergency_guidance: &'static str,
+    evaluated_metric_count: usize,
+    total_metric_count: usize,
+    rules: Vec<HealthRuleResponse>,
+    education: Vec<FlightEducationResponse>,
+}
+
+impl From<HealthEvaluation> for HealthEvaluationResponse {
+    fn from(value: HealthEvaluation) -> Self {
+        Self {
+            rule_set_version: health_rules::RULE_SET_VERSION,
+            demonstration_only: true,
+            status: value.status.as_str(),
+            explanation: value.explanation,
+            disclaimer: value.disclaimer,
+            emergency_guidance: value.emergency_guidance,
+            evaluated_metric_count: value.evaluated_metric_count,
+            total_metric_count: value.total_metric_count,
+            rules: value.rules.into_iter().map(Into::into).collect(),
+            education: value.education.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HealthRuleResponse {
+    rule_id: String,
+    rule_version: &'static str,
+    metric: &'static str,
+    title: &'static str,
+    status: &'static str,
+    explanation: String,
+    measurement_ids: Vec<String>,
+    valid_until: Option<String>,
+    suggested_action: &'static str,
+    escalation: &'static str,
+    flight_context: &'static str,
+    source_urls: &'static [&'static str],
+    demonstration_only: bool,
+}
+
+impl From<HealthRule> for HealthRuleResponse {
+    fn from(value: HealthRule) -> Self {
+        Self {
+            rule_id: value.rule_id,
+            rule_version: health_rules::RULE_SET_VERSION,
+            metric: value.metric,
+            title: value.title,
+            status: value.status.as_str(),
+            explanation: value.explanation,
+            measurement_ids: value.measurement_ids,
+            valid_until: value.valid_until,
+            suggested_action: value.suggested_action,
+            escalation: value.escalation,
+            flight_context: value.flight_context,
+            source_urls: value.source_urls,
+            demonstration_only: true,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FlightEducationResponse {
+    id: &'static str,
+    title: &'static str,
+    explanation: &'static str,
+    suggested_action: &'static str,
+    source_urls: &'static [&'static str],
+}
+
+impl From<FlightEducation> for FlightEducationResponse {
+    fn from(value: FlightEducation) -> Self {
+        Self {
+            id: value.id,
+            title: value.title,
+            explanation: value.explanation,
+            suggested_action: value.suggested_action,
+            source_urls: value.source_urls,
+        }
     }
 }
 
@@ -382,9 +478,33 @@ impl From<Task> for TaskResponse {
     }
 }
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct TaskUpdateRequest {
+    // Missing, null and non-string dates all receive a field-specific validation error.
+    #[serde(default)]
+    pub mission_date: serde_json::Value,
     pub completed: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TasksRequest {
+    pub date: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TasksResponse {
+    pub mission_date: String,
+    pub tasks: Vec<TaskResponse>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TaskUpdateResponse {
+    pub mission_date: String,
+    #[serde(flatten)]
+    pub task: TaskResponse,
 }
 
 #[derive(Serialize)]

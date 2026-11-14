@@ -112,7 +112,7 @@ async fn data_freshness_and_tasks() {
         &app,
         "PATCH",
         "/api/tasks/daily-check",
-        json!({"completed":true}),
+        json!({"missionDate":"2026-11-14","completed":true}),
     )
     .await;
     assert!(done["completedAt"].is_string());
@@ -121,7 +121,7 @@ async fn data_freshness_and_tasks() {
             &app,
             "PATCH",
             "/api/tasks/missing",
-            json!({"completed":true})
+            json!({"missionDate":"2026-11-14","completed":true})
         )
         .await
         .0,
@@ -300,7 +300,7 @@ async fn missing_routes_and_tasks_use_distinct_problem_codes() {
         &app,
         "PATCH",
         "/api/tasks/missing",
-        json!({"completed":true}).to_string(),
+        json!({"missionDate":"2026-11-14","completed":true}).to_string(),
         Some("application/json"),
     )
     .await;
@@ -333,7 +333,7 @@ async fn invalid_path_encoding_returns_a_problem_response() {
         &app,
         "PATCH",
         "/api/tasks/%FF",
-        json!({"completed":true}).to_string(),
+        json!({"missionDate":"2026-11-14","completed":true}).to_string(),
         Some("application/json"),
     )
     .await;
@@ -354,34 +354,175 @@ async fn database_failures_return_generic_problems() {
 }
 
 #[tokio::test]
-async fn health_and_task_success_responses_keep_their_existing_shape() {
-    let app = setup().await;
+async fn health_and_dated_task_responses_preserve_daily_completion() {
+    let (app, pool) = setup_with_pool().await;
     let (status, health) = call(&app, "GET", "/api/health", Value::Null).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(health, json!({"status":"ok","storage":"sqlite"}));
-    let (_, tasks) = call(&app, "GET", "/api/tasks", Value::Null).await;
-    assert_eq!(
-        tasks,
-        json!([{
-            "id":"daily-check", "title":"Заполнить ежедневные измерения", "completedAt":null,
-        }])
-    );
-    call(
-        &app,
-        "PATCH",
-        "/api/tasks/daily-check",
-        json!({"completed":true}),
-    )
-    .await;
-    let (status, cleared) = call(
-        &app,
-        "PATCH",
-        "/api/tasks/daily-check",
-        json!({"completed":false}),
-    )
-    .await;
+    sqlx::query("INSERT INTO task_templates (id,title) VALUES ('extra-check','Extra check')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let before = chrono::Utc::now();
+    let (status, today) = call(&app, "GET", "/api/tasks", Value::Null).await;
+    let after = chrono::Utc::now();
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(cleared, tasks[0]);
+    let date =
+        chrono::NaiveDate::parse_from_str(today["missionDate"].as_str().unwrap(), "%Y-%m-%d")
+            .unwrap();
+    assert!(date == before.date_naive() || date == after.date_naive());
+    let templates: Vec<(String, String)> =
+        sqlx::query_as("SELECT id,title FROM task_templates ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    let expected: Vec<Value> = templates
+        .into_iter()
+        .map(|(id, title)| json!({"id":id,"title":title,"completedAt":null}))
+        .collect();
+    assert_eq!(today["tasks"], json!(expected));
+    let yesterday = date.pred_opt().unwrap().to_string();
+    let path = format!("/api/tasks?date={yesterday}");
+    let (_, empty) = call(&app, "GET", &path, Value::Null).await;
+    assert_eq!(empty, json!({"missionDate":yesterday,"tasks":expected}));
+    let today_body = json!({"missionDate":today["missionDate"],"completed":true});
+    let (status, today_mark) = call(&app, "PATCH", "/api/tasks/daily-check", today_body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(today_mark["missionDate"], today["missionDate"]);
+    let body = json!({"missionDate":yesterday,"completed":true});
+    let start = chrono::Utc::now();
+    let (status, saved) = call(&app, "PATCH", "/api/tasks/daily-check", body.clone()).await;
+    let end = chrono::Utc::now();
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(saved["missionDate"], yesterday);
+    assert_eq!(saved["id"], empty["tasks"][0]["id"]);
+    assert_eq!(saved["title"], empty["tasks"][0]["title"]);
+    assert_eq!(saved.as_object().unwrap().len(), 4);
+    let time =
+        chrono::DateTime::parse_from_rfc3339(saved["completedAt"].as_str().unwrap()).unwrap();
+    assert!(time >= start && time <= end);
+    let (status, repeated) = call(&app, "PATCH", "/api/tasks/daily-check", body.clone()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(repeated, saved);
+    let (_, read) = call(&app, "GET", &path, Value::Null).await;
+    assert_eq!(read["tasks"][0]["completedAt"], saved["completedAt"]);
+    for _ in 0..2 {
+        let (status, cleared) = call(
+            &app,
+            "PATCH",
+            "/api/tasks/daily-check",
+            json!({"missionDate":yesterday,"completed":false}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            cleared,
+            json!({"missionDate":yesterday,"id":saved["id"],"title":saved["title"],"completedAt":null})
+        );
+        assert_eq!(call(&app, "GET", &path, Value::Null).await.1, empty);
+        let (_, current) = call(&app, "GET", &format!("/api/tasks?date={date}"), Value::Null).await;
+        assert_eq!(
+            current["tasks"][0]["completedAt"],
+            today_mark["completedAt"]
+        );
+    }
+    let (_, renewed) = call(&app, "PATCH", "/api/tasks/daily-check", body).await;
+    let renewed_time =
+        chrono::DateTime::parse_from_rfc3339(renewed["completedAt"].as_str().unwrap()).unwrap();
+    assert!(renewed_time > time);
+    let legacy: Option<String> =
+        sqlx::query_scalar("SELECT completed_at FROM tasks WHERE id='daily-check'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(legacy.is_none());
+}
+
+#[tokio::test]
+async fn task_date_and_body_errors_use_problem_fields_and_unknown_tasks_return_404() {
+    let app = setup().await;
+    for date in [
+        "",
+        "2026-02-30",
+        "2026-1-5",
+        "2026-11-14T00:00:00Z",
+        "2026-11-14+05:00",
+        "2026-11-14 ",
+    ] {
+        let query = format!("date={}", date.replace('+', "%2B").replace(' ', "%20"));
+        let response = call_raw(
+            &app,
+            "GET",
+            &format!("/api/tasks?{query}"),
+            String::new(),
+            None,
+        )
+        .await;
+        assert_problem(&response, StatusCode::BAD_REQUEST, "VALIDATION_ERROR");
+        assert_eq!(response.2["field"], "date");
+        let response = call_raw(
+            &app,
+            "PATCH",
+            "/api/tasks/daily-check",
+            json!({"missionDate":date,"completed":true}).to_string(),
+            Some("application/json"),
+        )
+        .await;
+        assert_problem(&response, StatusCode::BAD_REQUEST, "VALIDATION_ERROR");
+        assert_eq!(response.2["field"], "missionDate");
+    }
+    for body in [
+        json!({"completed":true}),
+        json!({"missionDate":null,"completed":true}),
+        json!({"missionDate":123,"completed":true}),
+    ] {
+        let response = call_raw(
+            &app,
+            "PATCH",
+            "/api/tasks/daily-check",
+            body.to_string(),
+            Some("application/json"),
+        )
+        .await;
+        assert_problem(&response, StatusCode::BAD_REQUEST, "VALIDATION_ERROR");
+        assert_eq!(response.2["field"], "missionDate");
+    }
+    for body in [
+        json!({"missionDate":"2026-11-14"}),
+        json!({"missionDate":"2026-11-14","completed":"true"}),
+        json!({"missionDate":"2026-11-14","completed":true,"completedAt":"2026-11-14T00:00:00Z"}),
+        json!({"missionDate":"2026-11-14","completed":true,"astronautId":"other"}),
+    ] {
+        let response = call_raw(
+            &app,
+            "PATCH",
+            "/api/tasks/daily-check",
+            body.to_string(),
+            Some("application/json"),
+        )
+        .await;
+        assert_problem(&response, StatusCode::BAD_REQUEST, "INVALID_BODY");
+    }
+    for query in ["unknown=1", "date=2026-11-14&date=2026-11-15"] {
+        let response = call_raw(
+            &app,
+            "GET",
+            &format!("/api/tasks?{query}"),
+            String::new(),
+            None,
+        )
+        .await;
+        assert_problem(&response, StatusCode::BAD_REQUEST, "INVALID_QUERY");
+    }
+    let response = call_raw(
+        &app,
+        "PATCH",
+        "/api/tasks/missing",
+        json!({"missionDate":"2026-11-14","completed":true}).to_string(),
+        Some("application/json"),
+    )
+    .await;
+    assert_problem(&response, StatusCode::NOT_FOUND, "TASK_NOT_FOUND");
 }
 
 #[tokio::test]
@@ -530,4 +671,162 @@ async fn accepted_rfc3339_variants_store_exact_utc_milliseconds() {
             .unwrap();
         assert_eq!(actual, expected_ms, "{time}");
     }
+}
+
+#[tokio::test]
+async fn new_metrics_accept_manual_input_validate_fields_and_expose_all_latest_entries() {
+    let app = setup().await;
+    let cases = [
+        ("spo2", "%", 0.0),
+        ("glucose", "mg/dL", 90.0),
+        ("visionBlur", "score", 1.25),
+        ("exerciseMinutes", "min", 1440.0),
+        ("headache", "score", 0.0),
+        ("backPain", "score", 10.0),
+    ];
+    let (_, empty) = call(&app, "GET", "/api/measurements/latest", Value::Null).await;
+    assert_eq!(empty["metrics"].as_array().unwrap().len(), 12);
+    for (index, (metric, unit, value)) in cases.iter().enumerate() {
+        let missing = empty["metrics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["metric"] == *metric)
+            .unwrap();
+        assert_eq!(missing["quality"]["status"], "missing");
+        let input = json!({"deviceId":"manual-01", "sessionId":"new-metrics", "sequence":index,
+            "metric":metric, "unit":unit, "value":value});
+        let (status, created) = call(&app, "POST", "/api/measurements", input.clone()).await;
+        assert_eq!(status, StatusCode::CREATED, "{created}");
+        assert_eq!(created["source"], "manual");
+        assert_eq!(created["measuredAt"], Value::Null);
+        let (status, retry) = call(&app, "POST", "/api/measurements", input).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(retry, created);
+    }
+    for (metric, unit, value, field) in [
+        ("headache", "score", 10.01, "value"),
+        ("spo2", "bpm", 97.0, "unit"),
+        ("glucose", "mg/dL", 0.0, "value"),
+    ] {
+        let input = json!({"deviceId":"manual-01", "sessionId":"invalid-new", "sequence":0,
+            "metric":metric, "unit":unit, "value":value});
+        let (status, error) = call(&app, "POST", "/api/measurements", input).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{error}");
+        assert_eq!(error["code"], "VALIDATION_ERROR");
+        assert_eq!(error["field"], field);
+    }
+    let (_, latest) = call(&app, "GET", "/api/measurements/latest", Value::Null).await;
+    assert_eq!(latest["metrics"].as_array().unwrap().len(), 12);
+    for (metric, unit, value) in cases {
+        let entry = latest["metrics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["metric"] == metric)
+            .unwrap();
+        assert_eq!(entry["latestMeasurement"]["unit"], unit);
+        assert_eq!(entry["latestMeasurement"]["value"], value);
+        assert_eq!(entry["quality"]["status"], "unknownTime");
+    }
+    let (_, history) = call(
+        &app,
+        "GET",
+        "/api/measurements?metric=headache",
+        Value::Null,
+    )
+    .await;
+    assert_eq!(history["items"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn new_series_aggregate_mean_and_last_and_summary_selects_latest_received_metric() {
+    let (app, pool) = setup_with_pool().await;
+    let measured = chrono::Utc::now().to_rfc3339();
+    for (sequence, (metric, unit, value)) in [
+        ("heartRate", "bpm", 72.0),
+        ("systolicPressure", "mmHg", 120.0),
+        ("diastolicPressure", "mmHg", 80.0),
+        ("temperature", "°C", 36.7),
+        ("sleepHours", "h", 7.5),
+        ("mood", "score", 4.0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let input = json!({"deviceId":"manual-01", "sessionId":"legacy", "sequence":sequence,
+            "metric":metric, "unit":unit, "value":value, "measuredAt":measured});
+        assert_eq!(
+            call(&app, "POST", "/api/measurements", input).await.0,
+            StatusCode::CREATED
+        );
+    }
+    let (_, before) = call(&app, "GET", "/api/assessments", Value::Null).await;
+    assert_eq!(before["status"], "not-evaluated");
+    assert_eq!(before["metrics"].as_array().unwrap().len(), 12);
+    assert_eq!(
+        before["metrics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["quality"]["status"] == "missing")
+            .count(),
+        6
+    );
+    for (metric, unit, values, expected, aggregation) in [
+        ("spo2", "%", [96.0, 98.0], 97.0, "mean"),
+        ("headache", "score", [1.5, 5.0], 5.0, "last"),
+    ] {
+        for (index, value) in values.into_iter().enumerate() {
+            let input = json!({"deviceId":"manual-01", "sessionId":metric, "sequence":index,
+                "metric":metric, "unit":unit, "value":value,
+                "measuredAt":format!("2020-01-01T00:00:0{}Z", index + 1)});
+            assert_eq!(
+                call(&app, "POST", "/api/measurements", input).await.0,
+                StatusCode::CREATED
+            );
+        }
+        let path = format!("/api/measurements/series?metric={metric}&from=2020-01-01T00:00:00Z&to=2020-01-02T00:00:00Z&maxPoints=1");
+        let (status, series) = call(&app, "GET", &path, Value::Null).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(series["aggregation"], aggregation);
+        assert_eq!(series["unit"], unit);
+        assert_eq!(series["points"][0]["value"], expected);
+        assert_eq!(series["points"][0]["count"], 2);
+        if aggregation == "mean" {
+            assert_eq!(series["points"][0]["min"], 96.0);
+            assert_eq!(series["points"][0]["max"], 98.0);
+        } else {
+            assert_eq!(series["points"][0]["min"], Value::Null);
+            assert_eq!(series["points"][0]["max"], Value::Null);
+        }
+    }
+    // Keep earlier receipts strictly older, regardless of clock resolution or id ties.
+    sqlx::query("UPDATE measurements SET received_at='2020-01-01T00:00:00Z'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let input = json!({"deviceId":"manual-01", "sessionId":"headache", "sequence":2,
+        "metric":"headache", "unit":"score", "value":4.5});
+    let (status, headache) = call(&app, "POST", "/api/measurements", input).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(headache["measuredAt"], Value::Null);
+    let (_, after) = call(&app, "GET", "/api/assessments", Value::Null).await;
+    assert_eq!(after["status"], "unknown-time");
+    assert_ne!(after["explanation"], before["explanation"]);
+    let metrics = after["metrics"].as_array().unwrap();
+    assert_eq!(metrics.len(), 12);
+    assert_eq!(
+        metrics
+            .iter()
+            .filter(|row| row["quality"]["status"] == "missing")
+            .count(),
+        4
+    );
+    let quality = &metrics
+        .iter()
+        .find(|row| row["metric"] == "headache")
+        .unwrap()["latestReceivedQuality"];
+    assert_eq!(quality["measurementId"], headache["id"]);
+    assert_eq!(quality["status"], "unknownTime");
 }

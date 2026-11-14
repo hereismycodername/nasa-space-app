@@ -1,8 +1,11 @@
-use crate::{catalog::METRICS, dto, lock, Command, State};
+use crate::{
+    catalog::{self, Metric, METRICS},
+    dto, lock, Command, State,
+};
 use chrono::{DateTime, SecondsFormat, Utc};
 use reqwest::blocking::{Client, RequestBuilder};
 use serde::de::DeserializeOwned;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -64,16 +67,27 @@ fn response<T: DeserializeOwned>(request: RequestBuilder) -> Result<T, Failure> 
 }
 
 fn validate_latest(latest: &dto::Latest) -> Result<(), Failure> {
-    if latest.astronaut_id.is_empty() || latest.metrics.len() != METRICS.len() {
+    if latest.astronaut_id.is_empty() {
         return Err(Failure::protocol("Unexpected latest-measurements schema"));
     }
     dto::timestamp_ms(&latest.evaluated_at).map_err(Failure::protocol)?;
+    let mut seen = HashSet::new();
+    if latest
+        .metrics
+        .iter()
+        .any(|entry| !seen.insert(&entry.metric))
+    {
+        return Err(Failure::protocol("Repeated metric in latest response"));
+    }
     for metric in &METRICS {
         let entries: Vec<_> = latest
             .metrics
             .iter()
             .filter(|m| m.metric == metric.api)
             .collect();
+        if entries.is_empty() && !metric.required {
+            continue;
+        }
         if entries.len() != 1 {
             return Err(Failure::protocol(
                 "Missing or repeated metric in latest response",
@@ -124,7 +138,7 @@ fn poll(
     client: &Client,
     base: &str,
     stop: &AtomicBool,
-) -> Result<(dto::Latest, Vec<dto::Task>), Failure> {
+) -> Result<(dto::Latest, dto::TasksResponse), Failure> {
     let health: dto::HealthResponse = response(client.get(format!("{base}/api/health")))?;
     if health.status != "ok" || health.storage != "sqlite" {
         return Err(Failure::protocol("Server storage is not ready"));
@@ -137,7 +151,12 @@ fn poll(
     if stop.load(Ordering::Relaxed) {
         return Err(Failure::protocol("Client closed"));
     }
-    let tasks: Vec<dto::Task> = response(client.get(format!("{base}/api/tasks")))?;
+    let tasks: dto::TasksResponse = response(client.get(format!("{base}/api/tasks")))?;
+    if chrono::NaiveDate::parse_from_str(&tasks.mission_date, "%Y-%m-%d").map_or(true, |date| {
+        tasks.mission_date.len() != 10 || date.to_string() != tasks.mission_date
+    }) {
+        return Err(Failure::protocol("Invalid task mission date"));
+    }
     Ok((latest, tasks))
 }
 
@@ -167,26 +186,32 @@ fn write(client: &Client, base: &str, command: &Command) -> Result<String, Failu
                 saved.value, saved.unit, saved.metric
             ))
         }
-        Command::Task { id, completed } => {
+        Command::Task {
+            id,
+            mission_date,
+            completed,
+        } => {
             let mut url = reqwest::Url::parse(&format!("{base}/api/tasks/"))
                 .map_err(|_| Failure::protocol("Invalid API origin"))?;
             url.path_segments_mut()
                 .map_err(|_| Failure::protocol("Invalid task URL"))?
                 .pop_if_empty()
                 .push(id);
-            let saved: dto::Task = response(
-                client
-                    .patch(url)
-                    .json(&serde_json::json!({"completed": completed})),
-            )?;
-            if saved.id != *id || saved.completed_at.is_some() != *completed {
+            let saved: dto::TaskUpdateResponse =
+                response(client.patch(url).json(
+                    &serde_json::json!({"missionDate": mission_date, "completed": completed}),
+                ))?;
+            if saved.mission_date != *mission_date
+                || saved.task.id != *id
+                || saved.task.completed_at.is_some() != *completed
+            {
                 return Err(Failure::protocol(
                     "Server confirmation does not match the task update",
                 ));
             }
             Ok(format!(
                 "Task saved to server: {} ({})",
-                saved.title,
+                saved.task.title,
                 if *completed {
                     "completed"
                 } else {
@@ -209,8 +234,8 @@ fn perform_write(
         return;
     }
     let mut result = Err(Failure::protocol("Client closed before confirmation"));
-    // Measurements have an explicit idempotency key. Legacy BE-06 task PATCH
-    // rewrites its completion timestamp, so an ambiguous result must not replay.
+    // Preserve the existing retry policy: replay measurements with their explicit
+    // idempotency key; refresh task state after an ambiguous acknowledgement.
     let attempts = if matches!(command, Command::Measurement(_)) {
         3
     } else {
@@ -244,6 +269,7 @@ fn perform_write(
 }
 
 struct SeriesCycle {
+    metrics: Vec<&'static Metric>,
     from: String,
     to: String,
     next: usize,
@@ -251,13 +277,14 @@ struct SeriesCycle {
 }
 
 impl SeriesCycle {
-    fn new(evaluated_at: &str) -> Result<Self, String> {
-        let to_ms = dto::timestamp_ms(evaluated_at)?;
+    fn new(latest: &dto::Latest) -> Result<Self, String> {
+        let to_ms = dto::timestamp_ms(&latest.evaluated_at)?;
         let to = DateTime::<Utc>::from_timestamp_millis(to_ms).ok_or("Invalid server timestamp")?;
         let from = to
             .checked_sub_signed(chrono::Duration::days(7))
             .ok_or("Invalid history range")?;
         Ok(Self {
+            metrics: catalog::available(Some(latest)),
             from: from.to_rfc3339_opts(SecondsFormat::Millis, true),
             to: to.to_rfc3339_opts(SecondsFormat::Millis, true),
             next: 0,
@@ -266,7 +293,7 @@ impl SeriesCycle {
     }
 
     fn fetch_next(&mut self, client: &Client, base: &str) -> Result<bool, Failure> {
-        let metric = &METRICS[self.next];
+        let metric = self.metrics[self.next];
         let series: dto::Series = response(
             client
                 .get(format!("{base}/api/measurements/series"))
@@ -291,7 +318,7 @@ impl SeriesCycle {
             series.into_timed().map_err(Failure::protocol)?,
         );
         self.next += 1;
-        Ok(self.next == METRICS.len())
+        Ok(self.next == self.metrics.len())
     }
 }
 
@@ -320,7 +347,7 @@ pub(crate) fn run(
     let mut next_history = Instant::now();
     let mut cycle: Option<SeriesCycle> = None;
     while !stop.load(Ordering::Relaxed) {
-        // Prioritise edits between requests, including during a six-metric refresh.
+        // Prioritise edits between requests, including during a multi-metric refresh.
         let wait = if cycle.is_some() || Instant::now() >= next_poll {
             Duration::ZERO
         } else {
@@ -344,6 +371,19 @@ pub(crate) fn run(
         if Instant::now() >= next_poll {
             let requested_at = Instant::now();
             let result = poll(&client, &base, &stop);
+            let assessment_at = Instant::now();
+            // Assessment failures must not turn a working telemetry connection into an outage.
+            let assessment = if result.is_ok() && !stop.load(Ordering::Relaxed) {
+                Some(
+                    response::<dto::Assessment>(client.get(format!("{base}/api/assessments")))
+                        .and_then(|value| {
+                            crate::health::validate(&value).map_err(Failure::protocol)?;
+                            Ok(value)
+                        }),
+                )
+            } else {
+                None
+            };
             next_poll = Instant::now() + POLL_INTERVAL;
             let mut state = lock(&state);
             match result {
@@ -354,12 +394,22 @@ pub(crate) fn run(
                     state.online = true;
                     state.error = None;
                     if Instant::now() >= next_history && cycle.is_none() {
-                        cycle = SeriesCycle::new(&latest.evaluated_at).ok();
+                        cycle = SeriesCycle::new(&latest).ok();
                         next_history = Instant::now() + HISTORY_INTERVAL;
                     }
                     state.latest = Some(latest);
                     state.snapshot_at = Some(requested_at);
-                    state.tasks = tasks;
+                    state.mission_date = Some(tasks.mission_date);
+                    state.tasks = tasks.tasks;
+                    match assessment {
+                        Some(Ok(assessment)) => {
+                            state.assessment = Some(assessment);
+                            state.assessment_at = Some(assessment_at);
+                            state.assessment_error = None;
+                        }
+                        Some(Err(error)) => state.assessment_error = Some(error.message),
+                        None => {}
+                    }
                 }
                 Err(error) => {
                     if state.online {

@@ -9,9 +9,10 @@ interface CheckInPanelProps {
   initialMetric?: Metric
   onSaved: () => void
   onClose: () => void
+  supportedMetrics?: readonly Metric[]
 }
 
-export function CheckInPanel({ initialMetric = 'heartRate', onSaved, onClose }: CheckInPanelProps) {
+export function CheckInPanel({ initialMetric = 'heartRate', onSaved, onClose, supportedMetrics = [] }: CheckInPanelProps) {
   const [metric, setMetric] = useState<Metric>(initialMetric)
   const [value, setValue] = useState('')
   const [localTime, setLocalTime] = useState(localDateTime)
@@ -24,6 +25,8 @@ export function CheckInPanel({ initialMetric = 'heartRate', onSaved, onClose }: 
   if (saver.current === null) saver.current = createMeasurementSaver()
   const submitMeasurement = saver.current
   const config = METRICS.find(item => item.id === metric) ?? METRICS[0]
+  const supported = supportedMetrics.includes(metric)
+  const choices = METRICS.filter(item => supportedMetrics.includes(item.id))
 
   function edited() {
     setError('')
@@ -34,6 +37,7 @@ export function CheckInPanel({ initialMetric = 'heartRate', onSaved, onClose }: 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (pending) return
+    if (!supported) { setError('Сервер пока не поддерживает ввод этого показателя. Обновите данные или выберите доступный показатель.'); return }
     setSuccess('')
     setError('')
     let input
@@ -72,14 +76,15 @@ export function CheckInPanel({ initialMetric = 'heartRate', onSaved, onClose }: 
         <div className="form-field">
           <label htmlFor="checkin-metric">Показатель</label>
           <select id="checkin-metric" value={metric} onChange={event => { setMetric(event.target.value as Metric); setValue(''); edited() }}>
-            {METRICS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+            {!supported ? <option value={metric} disabled>{config.label} · не поддерживается сервером</option> : null}
+            {choices.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
           </select>
         </div>
         <div className="form-field">
           <label htmlFor="checkin-value">Значение · {config.unit}</label>
-          <input id="checkin-value" name="value" type="number" inputMode="decimal" value={value}
+          <input id="checkin-value" name="value" type="number" inputMode="decimal" value={value} disabled={!supported}
             min={config.input.min} max={config.input.max} step="any" required
-            placeholder={metric === 'mood' ? 'От 1 до 5' : metric === 'sleepHours' ? 'От 0 до 24' : 'Введите значение'}
+            placeholder={config.input.max !== undefined ? `От ${config.input.min} до ${config.input.max}` : 'Введите значение'}
             onChange={event => { setValue(event.target.value); edited() }} />
           <span className="form-hint">{config.description}</span>
         </div>
@@ -96,10 +101,11 @@ export function CheckInPanel({ initialMetric = 'heartRate', onSaved, onClose }: 
           {unknownTime ? <span className="form-hint">Запись сохранится без времени измерения. Свежесть этих данных не подтверждена.</span> : null}
         </div>
       </fieldset>
+      {!supported ? <p className="form-hint">Сервер пока не поддерживает ввод этого показателя.</p> : null}
       {error ? <p className="form-error" role="alert">{error}</p> : null}
       {success ? <p className="form-success" role="status">{success}</p> : null}
       <div className="form-actions">
-        <button type="submit" className="primary-button" disabled={pending}>
+        <button type="submit" className="primary-button" disabled={pending || !supported}>
           {pending ? 'Сохраняем…' : unconfirmed ? 'Повторить отправку' : 'Сохранить измерение'}
         </button>
         <span className="form-hint">Указывайте время самого измерения, даже если записываете его позже.</span>

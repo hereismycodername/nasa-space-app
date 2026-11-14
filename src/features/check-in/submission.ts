@@ -33,15 +33,9 @@ export function parseCheckIn(draft: CheckInDraft): MeasurementInput {
   const raw = draft.value.trim()
   const value = Number(raw.replace(',', '.'))
   if (!raw || !Number.isFinite(value)) throw new Error('Введите числовое значение показателя.')
-  if (draft.metric === 'sleepHours' && (value < 0 || value > 24)) {
-    throw new Error('Продолжительность сна должна быть от 0 до 24 часов.')
-  }
-  if (draft.metric === 'mood' && (value < 1 || value > 5)) {
-    throw new Error('Самочувствие оценивается от 1 до 5.')
-  }
-  if (!['sleepHours', 'mood'].includes(draft.metric) && value <= 0) {
-    throw new Error('Значение должно быть больше нуля.')
-  }
+  const { min, max, exclusiveMin } = config.input
+  if (exclusiveMin ? value <= min : value < min) throw new Error(`${config.label}: значение должно быть ${exclusiveMin ? 'больше' : 'не меньше'} ${min}.`)
+  if (max !== undefined && value > max) throw new Error(`${config.label}: значение не должно превышать ${max}.`)
   return {
     metric: draft.metric,
     unit: config.unit,

@@ -1,4 +1,5 @@
-import type { DailyTask, HealthAssessment, HistoryFilters, LatestMeasurements, Measurement, MeasurementHistory, MeasurementSeries, NewMeasurement, SeriesFilters } from '../shared/types'
+import type { DatedTask, TaskList, HealthAssessment, HistoryFilters, LatestMeasurements, Measurement, MeasurementHistory, MeasurementSeries, NewMeasurement, SeriesFilters } from '../shared/types'
+import { parseAssessment } from './assessmentSchema'
 
 /** HTTP failure with the server's stable error code and optional input field. */
 export class ApiError extends Error {
@@ -65,11 +66,11 @@ export function getMeasurementSeries(filters: SeriesFilters, signal?: AbortSigna
   }
   return request<MeasurementSeries>(`/measurements/series?${query}`, { signal })
 }
-export const getAssessment = (signal?: AbortSignal) => request<HealthAssessment>('/assessments', { signal })
-export const getTasks = (signal?: AbortSignal) => request<DailyTask[]>('/tasks', { signal })
+export const getAssessment = async (signal?: AbortSignal): Promise<HealthAssessment> => parseAssessment(await request<unknown>('/assessments', { signal }))
+export const getTasks = (date?: string, signal?: AbortSignal) => request<TaskList>(`/tasks${date === undefined ? '' : `?${new URLSearchParams({ date })}`}`, { signal })
 export const saveMeasurement = (measurement: NewMeasurement) => request<Measurement>('/measurements', {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(measurement),
 })
-export const updateTask = (id: string, completed: boolean) => request<DailyTask>(`/tasks/${encodeURIComponent(id)}`, {
-  method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ completed }),
+export const updateTask = (id: string, missionDate: string, completed: boolean) => request<DatedTask>(`/tasks/${encodeURIComponent(id)}`, {
+  method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ missionDate, completed }),
 })

@@ -2,12 +2,13 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
 import GroundConsole, { ObservationLog } from './GroundConsole'
 import type { LatestMeasurements } from '../../shared/types'
+import { healthFixture } from '../dashboard/health.fixture'
 
-const latest: LatestMeasurements = { astronautId: 'demo-astronaut', evaluatedAt: '2026-11-14T12:00:00Z', metrics: [] }
+const latest: LatestMeasurements = healthFixture(true).latest
 
-it('offers all six channels, the shared range controls and an honest current observation summary', () => {
+it('offers all twelve channels, the shared range controls and an honest current observation summary', () => {
   const html = renderToStaticMarkup(<GroundConsole latest={latest} connected elapsedSeconds={0} refreshVersion={0} selectedSystem={null} onSystemSelect={() => {}} onOpenMetric={() => {}} channels={['heartRate', 'temperature', 'sleepHours']} onChannelsChange={() => {}} days={1} onDaysChange={() => {}} />)
-  expect(html.match(/type="checkbox"/g)).toHaveLength(6)
+  expect(html.match(/type="checkbox"/g)).toHaveLength(12)
   expect(html).toContain('24 часа')
   expect(html).toContain('7 дней')
   expect(html).toContain('30 дней')
