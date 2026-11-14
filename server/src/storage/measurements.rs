@@ -1,5 +1,6 @@
 use crate::domain::measurements::{
-    Device, HistoryFilter, LatestMetric, Measurement, MeasurementPage, NewMeasurement, METRICS,
+    BucketAggregate, Device, HistoryFilter, LatestMetric, Measurement, MeasurementPage,
+    NewMeasurement, SeriesData, SeriesFilter, METRICS,
 };
 use sqlx::{sqlite::SqliteRow, QueryBuilder, Row, Sqlite, SqlitePool};
 use uuid::Uuid;
@@ -114,6 +115,67 @@ pub(crate) async fn latest_received(pool: &SqlitePool) -> Result<Option<Measurem
         .await?
         .map(decode)
         .transpose()
+}
+
+/// Integer division in SQLite truncates toward zero; subtract one for a negative remainder.
+const SERIES_SQL: &str = "WITH ranked AS (
+    SELECT (measured_at_ms / ?5 - (measured_at_ms % ?5 < 0)) AS bucket_number,
+        value,
+        ROW_NUMBER() OVER (
+            PARTITION BY (measured_at_ms / ?5 - (measured_at_ms % ?5 < 0))
+            ORDER BY measured_at_ms DESC, id DESC
+        ) AS position
+    FROM measurements
+    WHERE astronaut_id = ?1 AND metric = ?2 AND measured_at IS NOT NULL
+        AND measured_at_ms >= ?3 AND measured_at_ms < ?4
+)
+SELECT bucket_number * ?5 AS start_ms, COUNT(*) AS count,
+    MIN(value) AS min, MAX(value) AS max, AVG(value) AS mean,
+    MAX(CASE WHEN position = 1 THEN value END) AS last
+FROM ranked GROUP BY bucket_number ORDER BY bucket_number";
+
+pub(crate) async fn series(
+    pool: &SqlitePool,
+    filter: &SeriesFilter,
+) -> Result<SeriesData, sqlx::Error> {
+    // Keep the excluded count and aggregates in the same read snapshot.
+    let mut transaction = pool.begin().await?;
+    let excluded_unknown_time_count = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM measurements
+         WHERE astronaut_id = ?1 AND metric = ?2 AND measured_at IS NULL
+             AND received_at_ms >= ?3 AND received_at_ms < ?4",
+    )
+    .bind(filter.astronaut_id)
+    .bind(filter.metric.metric)
+    .bind(filter.from_ms)
+    .bind(filter.to_ms)
+    .fetch_one(&mut *transaction)
+    .await?;
+    let buckets = sqlx::query(SERIES_SQL)
+        .bind(filter.astronaut_id)
+        .bind(filter.metric.metric)
+        .bind(filter.from_ms)
+        .bind(filter.to_ms)
+        .bind(filter.bucket_seconds * 1000)
+        .fetch_all(&mut *transaction)
+        .await?
+        .into_iter()
+        .map(|row| {
+            Ok(BucketAggregate {
+                start_ms: row.try_get("start_ms")?,
+                mean: row.try_get("mean")?,
+                last: row.try_get("last")?,
+                min: row.try_get("min")?,
+                max: row.try_get("max")?,
+                count: row.try_get("count")?,
+            })
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()?;
+    transaction.commit().await?;
+    Ok(SeriesData {
+        buckets,
+        excluded_unknown_time_count,
+    })
 }
 
 pub(crate) async fn device(

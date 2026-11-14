@@ -17,6 +17,7 @@ pub(crate) fn routes() -> Router<SqlitePool> {
     Router::new()
         .route("/", any(handlers::not_found))
         .route("/health", get(handlers::health))
+        .route("/measurements/series", get(handlers::series))
         .route(
             "/measurements",
             get(handlers::history).post(handlers::ingest),

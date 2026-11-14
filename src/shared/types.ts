@@ -35,6 +35,29 @@ export interface LatestMeasurementsResponse {
     latestUnknownTimeMeasurement: Measurement | null
   }[]
 }
+export interface SeriesParams {
+  metric: Metric
+  from: string
+  to: string
+  maxPoints?: number
+}
+export interface SeriesResponse {
+  metric: Metric
+  unit: Unit
+  from: string
+  to: string
+  bucketSeconds: number
+  aggregation: 'mean' | 'last'
+  timeBasis: 'measuredAt'
+  excludedUnknownTimeCount: number
+  points: {
+    start: string
+    value: number | null
+    min: number | null
+    max: number | null
+    count: number
+  }[]
+}
 export interface HealthAssessment {
   status: 'no-data' | 'stale' | 'not-evaluated' | 'unknown-time'
   explanation: string

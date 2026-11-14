@@ -46,6 +46,181 @@ fn sample() -> Value {
 }
 
 #[tokio::test]
+async fn series_aggregates_known_time_and_preserves_gaps() {
+    let (app, pool) = setup_with_pool().await;
+    // Deliberately partial first bucket, before the Unix epoch; end is exclusive.
+    for (sequence, (id, metric, value, time, astronaut)) in [
+        (
+            "hr-before",
+            "heartRate",
+            999.0,
+            Some("1969-12-31T23:59:34Z"),
+            "demo-astronaut",
+        ),
+        (
+            "hr-a",
+            "heartRate",
+            60.0,
+            Some("1969-12-31T23:59:35Z"),
+            "demo-astronaut",
+        ),
+        (
+            "hr-b",
+            "heartRate",
+            80.0,
+            Some("1969-12-31T23:59:39Z"),
+            "demo-astronaut",
+        ),
+        (
+            "hr-c",
+            "heartRate",
+            90.0,
+            Some("1969-12-31T23:59:50Z"),
+            "demo-astronaut",
+        ),
+        (
+            "hr-end",
+            "heartRate",
+            999.0,
+            Some("1970-01-01T00:00:00Z"),
+            "demo-astronaut",
+        ),
+        (
+            "mood-z",
+            "mood",
+            5.0,
+            Some("1969-12-31T23:59:36Z"),
+            "demo-astronaut",
+        ),
+        (
+            "mood-a",
+            "mood",
+            1.0,
+            Some("1969-12-31T23:59:37Z"),
+            "demo-astronaut",
+        ),
+        (
+            "mood-b",
+            "mood",
+            3.0,
+            Some("1969-12-31T23:59:37Z"),
+            "demo-astronaut",
+        ),
+        (
+            "mood-c",
+            "mood",
+            4.0,
+            Some("1969-12-31T23:59:51Z"),
+            "demo-astronaut",
+        ),
+        ("unknown", "heartRate", 999.0, None, "demo-astronaut"),
+        (
+            "other-astronaut",
+            "heartRate",
+            999.0,
+            Some("1969-12-31T23:59:35Z"),
+            "other",
+        ),
+        ("other-unknown", "heartRate", 999.0, None, "other"),
+        ("other-metric", "temperature", 36.5, None, "demo-astronaut"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        sqlx::query("INSERT INTO measurements (id,device_id,astronaut_id,session_id,sequence,metric,value,unit,measured_at,received_at,source) VALUES (?,'simulator-01',?,'series',?,?,?,'fixture',?,'1969-12-31T23:59:40Z','simulator')")
+            .bind(id).bind(astronaut).bind(sequence as i64).bind(metric).bind(value).bind(time)
+            .execute(&pool).await.unwrap();
+    }
+    // This unknown-time row is outside the received-time range and must not be counted.
+    let mut unknown = sample();
+    unknown["sessionId"] = json!("outside-range");
+    assert_eq!(
+        call(&app, "POST", "/api/measurements", unknown).await.0,
+        StatusCode::CREATED
+    );
+    let query = "from=1970-01-01T04:59:35%2B05:00&to=1970-01-01T00:00:00Z&maxPoints=3";
+    let (status, series) = call(
+        &app,
+        "GET",
+        &format!("/api/measurements/series?metric=heartRate&{query}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        series,
+        json!({
+            "metric": "heartRate", "unit": "bpm",
+            "from": "1969-12-31T23:59:35Z", "to": "1970-01-01T00:00:00Z",
+            "bucketSeconds": 10, "aggregation": "mean", "timeBasis": "measuredAt",
+            "excludedUnknownTimeCount": 1,
+            "points": [
+                {"start":"1969-12-31T23:59:30Z","value":70.0,"min":60.0,"max":80.0,"count":2},
+                {"start":"1969-12-31T23:59:40Z","value":null,"min":null,"max":null,"count":0},
+                {"start":"1969-12-31T23:59:50Z","value":90.0,"min":90.0,"max":90.0,"count":1}
+            ]
+        })
+    );
+    let (status, mood) = call(
+        &app,
+        "GET",
+        &format!("/api/measurements/series?metric=mood&{query}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(mood["aggregation"], "last");
+    assert_eq!(mood["unit"], "score");
+    assert_eq!(mood["excludedUnknownTimeCount"], 0);
+    assert_eq!(
+        mood["points"],
+        json!([
+            {"start":"1969-12-31T23:59:30Z","value":3.0,"min":1.0,"max":5.0,"count":3},
+            {"start":"1969-12-31T23:59:40Z","value":null,"min":null,"max":null,"count":0},
+            {"start":"1969-12-31T23:59:50Z","value":4.0,"min":4.0,"max":4.0,"count":1}
+        ])
+    );
+}
+
+#[tokio::test]
+async fn series_rejects_missing_metric_invalid_range_and_unknown_parameter() {
+    let app = setup().await;
+    for (query, field, code) in [
+        (
+            "from=2020-01-01T00:00:00Z&to=2020-01-02T00:00:00Z",
+            "metric",
+            "VALIDATION_ERROR",
+        ),
+        (
+            "metric=heartRate&from=2020-01-01T00:00:00Z&to=2020-01-01T00:00:00Z",
+            "to",
+            "VALIDATION_ERROR",
+        ),
+        (
+            "metric=heartRate&from=2020-01-02T00:00:00Z&to=2020-01-01T00:00:00Z",
+            "to",
+            "VALIDATION_ERROR",
+        ),
+        (
+            "metric=heartRate&from=2020-01-01T00:00:00Z&to=2020-01-02T00:00:00Z&unexpected=1",
+            "unexpected",
+            "INVALID_QUERY",
+        ),
+    ] {
+        let (status, problem) = call(
+            &app,
+            "GET",
+            &format!("/api/measurements/series?{query}"),
+            Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{problem}");
+        assert_eq!(problem["field"], field);
+        assert_eq!(problem["code"], code);
+    }
+}
+
+#[tokio::test]
 async fn latest_keeps_rare_metrics_and_all_six_slots() {
     let app = setup().await;
     let mut sleep = sample();

@@ -1,4 +1,4 @@
-# JSON-примеры API v0.4.0
+# JSON-примеры API v0.5.0
 
 Файлы содержат чистые JSON payload, пригодные для UI fixtures и ручных запросов.
 UUID и timestamps в ответах иллюстративные, реальные значения генерирует сервер.
@@ -13,6 +13,7 @@ UUID и timestamps в ответах иллюстративные, реальн�
 | measurement.unknown-time.response.json | measuredAt: null, timeBasis: receivedAt |
 | measurements.response.json | GET /api/measurements (items/hasMore) |
 | latest.response.json | GET /api/measurements/latest |
+| series.response.json | GET /api/measurements/series, включая пустой интервал |
 | health.response.json | GET /api/health |
 | assessment.empty.response.json | Пустая БД |
 | assessment.recent.response.json | Недавняя запись, правила не подключены |
