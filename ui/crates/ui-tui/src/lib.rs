@@ -1,0 +1,1068 @@
+//! Terminal interface for crew and ground. Uses only the 16 ANSI colours, so it looks right on a
+//! Linux console, over SSH and over a serial line. Redraws only when something changed.
+
+mod braille;
+
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use ratatui::{
+    prelude::*,
+    widgets::{Block, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState, Wrap},
+};
+use std::time::{Duration, Instant};
+// explicit imports: ratatui's prelude also exports a `Backend` trait
+use ui_model::{fmt_num, Backend, CrewMember, IndicatorInfo, Priority, QState, Role, Status, SystemInfo};
+
+const TEMPLATES: [&str; 4] = [
+    "Repeat the measurement in 1 hour.",
+    "Check cabin CO2 and ventilation.",
+    "Rest, hydrate, and re-test later today.",
+    "Schedule a private medical conference.",
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Pane {
+    Systems,
+    Indicators,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum View {
+    Main,
+    Comms,
+    Health,
+    Help,
+}
+struct Edit {
+    ind: String,
+    text: String,
+}
+
+pub struct App<B: Backend> {
+    pub b: B,
+    systems: Vec<SystemInfo>,
+    role: Role,
+    sys: usize,
+    ind: usize,
+    alert_idx: usize,
+    pane: Pane,
+    view: View,
+    edit: Option<Edit>,
+    compose: Option<String>,
+    tpl: usize,
+    checkin: Vec<String>,
+    toast: Option<(String, Instant)>,
+    scroll: u16,
+    pub quit: bool,
+    pub dirty: bool,
+}
+
+fn sc(s: Status) -> Color {
+    match s {
+        Status::Normal => Color::Green,
+        Status::Watch => Color::Yellow,
+        Status::Act => Color::Red,
+        Status::NoData => Color::DarkGray,
+    }
+}
+fn word(s: Status) -> &'static str {
+    match s {
+        Status::Normal => "NORMAL",
+        Status::Watch => "WATCH",
+        Status::Act => "ACT NOW",
+        Status::NoData => "NO DATA",
+    }
+}
+fn rtt(s: f64) -> String {
+    if s < 60.0 {
+        format!("{} s", fmt_num(s))
+    } else {
+        format!("{} min", (s / 60.0).round())
+    }
+}
+fn age(s: u64) -> String {
+    if s < 60 {
+        format!("{}s", s)
+    } else if s < 3600 {
+        format!("{}m", s / 60)
+    } else if s < 86_400 {
+        format!("{}h", s / 3600)
+    } else {
+        format!("{}d", s / 86_400)
+    }
+}
+fn baseline(v: &[ui_model::Reading]) -> Option<f64> {
+    if v.is_empty() {
+        return None;
+    }
+    let n = v.len().min(7);
+    Some(v[..n].iter().map(|r| r.value).sum::<f64>() / n as f64)
+}
+fn spark(vals: &[f64]) -> String {
+    const G: [char; 8] = ['\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}', '\u{2588}'];
+    let (mn, mx) = vals.iter().fold((f64::MAX, f64::MIN), |a, v| (a.0.min(*v), a.1.max(*v)));
+    vals.iter().map(|v| if mx - mn < 1e-9 { G[3] } else { G[(((v - mn) / (mx - mn)) * 7.0).round() as usize] }).collect()
+}
+/// Short names that fit a narrow list (full names are shown in the detail panel).
+fn short(id: &str, full: &str) -> String {
+    match id {
+        "brain" => "Brain & Mind",
+        "eyes" => "Eyes & Vision",
+        "heart" => "Heart",
+        "lungs" => "Lungs",
+        "gut" => "Metabolism",
+        "msk" => "Bones & Muscles",
+        "immune" => "Whole body",
+        _ => return trunc(full, 15),
+    }
+    .to_string()
+}
+fn trunc(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        s.to_string()
+    } else {
+        let t: String = s.chars().take(n.saturating_sub(1)).collect();
+        format!("{}~", t)
+    }
+}
+
+/// ASCII body sketch for consoles without braille glyphs (ASTROCHECK_ASCII=1 or TERM=linux).
+const FIGURE: [&str; 20] = [
+    ".-----.",
+    "/BBBBBBB\\",
+    "| BBBBBBB |",
+    "|  E   E  |",
+    "\\_______/",
+    ".---|     |---.",
+    "/MMM |LLLHLLL| MMM\\",
+    "|MMM |LLLHLLL| MMM|",
+    "|MM  |LLLLLLL|  MM|",
+    "|MM  |LLLLLLL|  MM|",
+    "|MM  | GGGGG |  MM|",
+    "|MM  |GGGGGGG|  MM|",
+    "|MM  |GGGGGGG|  MM|",
+    "'.MM  \\_____/  MM.'",
+    "|MM|   |MM|",
+    "|MM|   |MM|",
+    "|MM|   |MM|",
+    "|MM|   |MM|",
+    "|MM|   |MM|",
+    "'--'   '--'",
+];
+fn figure_cell(c: char) -> (Option<&'static str>, char) {
+    match c {
+        'B' => (Some("brain"), '\u{2592}'),
+        'E' => (Some("eyes"), 'o'),
+        'L' => (Some("lungs"), '\u{2593}'),
+        'H' => (Some("heart"), '\u{2665}'),
+        'G' => (Some("gut"), '\u{2591}'),
+        'M' => (Some("msk"), '\u{2588}'),
+        ' ' => (None, ' '),
+        o => (Some("immune"), o),
+    }
+}
+
+impl<B: Backend> App<B> {
+    pub fn new(b: B) -> Self {
+        let systems = b.systems();
+        App { b, systems, role: Role::Crew, sys: 2, ind: 0, alert_idx: 0, pane: Pane::Systems, view: View::Main, edit: None, compose: None, tpl: 0, checkin: vec![], toast: None, scroll: 0, quit: false, dirty: true }
+    }
+    fn say(&mut self, m: impl Into<String>) {
+        self.toast = Some((m.into(), Instant::now()));
+        self.dirty = true;
+    }
+    fn cur_sys(&self) -> &SystemInfo {
+        &self.systems[self.sys]
+    }
+    fn cur_inds(&self) -> Vec<IndicatorInfo> {
+        self.b.indicators(&self.cur_sys().id)
+    }
+    fn all_inds(&self) -> Vec<IndicatorInfo> {
+        self.systems.iter().flat_map(|s| self.b.indicators(&s.id)).collect()
+    }
+    fn crew_name(&self) -> String {
+        let id = self.b.selected_crew();
+        self.b.crew().into_iter().find(|c| c.id == id).map(|c| c.name).unwrap_or_else(|| "crew member".into())
+    }
+
+    /// Call once per second.
+    pub fn tick(&mut self) {
+        if self.b.tick() {
+            self.dirty = true;
+        }
+        for m in self.b.take_messages() {
+            self.say(m);
+        }
+        if let Some((_, t)) = &self.toast {
+            if t.elapsed() > Duration::from_secs(4) {
+                self.toast = None;
+                self.dirty = true;
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ keys
+    pub fn on_key(&mut self, k: KeyEvent) {
+        if k.kind == KeyEventKind::Release {
+            return;
+        }
+        self.dirty = true;
+        if self.compose.is_some() {
+            return self.compose_key(k);
+        }
+        if self.edit.is_some() {
+            return self.edit_key(k);
+        }
+        match k.code {
+            KeyCode::Char('q') => self.quit = true,
+            KeyCode::Char('?') => self.view = if self.view == View::Help { View::Main } else { View::Help },
+            KeyCode::Char('g') => self.view = if self.view == View::Comms { View::Main } else { View::Comms },
+            KeyCode::Char('h') => self.view = if self.view == View::Health { View::Main } else { View::Health },
+            KeyCode::Char('r') => {
+                self.role = if self.role == Role::Crew { Role::Ground } else { Role::Crew };
+                self.view = View::Main;
+                self.pane = Pane::Systems;
+                self.alert_idx = 0;
+                self.say(if self.role == Role::Ground { "Ground console" } else { "Crew view" });
+            }
+            KeyCode::Char('m') if self.role == Role::Ground => {
+                self.compose = Some(String::new());
+            }
+            KeyCode::Char('m') => self.view = View::Main,
+            KeyCode::Char('a') if self.role == Role::Ground => {
+                let alerts = self.b.alerts();
+                if let Some(a) = alerts.get(self.alert_idx) {
+                    self.b.ack_alert(a.id);
+                    self.say(format!("Acknowledged: {}", a.indicator_name));
+                }
+            }
+            KeyCode::Char('b') => {
+                let on = !self.b.blackout();
+                self.b.set_blackout(on);
+                self.say(if on { "Blackout: autonomous mode" } else { "Link restored: queue is being sent" });
+            }
+            KeyCode::Char('e') => {
+                let envs = self.b.environments();
+                let cur = self.b.environment().id;
+                let i = envs.iter().position(|e| e.id == cur).unwrap_or(0);
+                let next = envs[(i + 1) % envs.len()].clone();
+                self.b.set_environment(&next.id);
+                self.say(format!("Environment: {}", next.name));
+            }
+            KeyCode::Char('n') => self.b.demo_next_day(),
+            KeyCode::Char('s') => {
+                self.b.demo_solar_storm();
+                self.say("Solar particle event simulated");
+            }
+            KeyCode::Char('f') => {
+                let m = self.b.demo_inject_fault();
+                self.say(m);
+            }
+            KeyCode::Char('t') => {
+                self.b.run_selftest();
+                self.view = View::Health;
+            }
+            KeyCode::Char('x') => match self.b.export() {
+                Ok(p) => self.say(format!("Exported: {}", p)),
+                Err(e) => self.say(format!("Export failed: {}", e)),
+            },
+            KeyCode::Char('c') if self.role == Role::Crew => {
+                self.checkin = self.all_inds().into_iter().filter(|i| self.b.is_due(&i.id)).map(|i| i.id).rev().collect();
+                if self.checkin.is_empty() {
+                    self.say("Nothing due right now");
+                } else {
+                    self.next_checkin();
+                }
+            }
+            KeyCode::Esc => {
+                if self.view != View::Main {
+                    self.view = View::Main
+                } else if self.pane == Pane::Indicators {
+                    self.pane = Pane::Systems
+                }
+            }
+            _ if self.view != View::Main => {}
+            KeyCode::Up | KeyCode::Char('k') => self.move_sel(-1),
+            KeyCode::Down | KeyCode::Char('j') => self.move_sel(1),
+            KeyCode::Tab | KeyCode::Right => self.pane = Pane::Indicators,
+            KeyCode::Left => self.pane = Pane::Systems,
+            KeyCode::PageDown => self.scroll = self.scroll.saturating_add(3),
+            KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(3),
+            KeyCode::Enter => match (self.role, self.pane) {
+                (_, Pane::Systems) => self.pane = Pane::Indicators,
+                (Role::Crew, Pane::Indicators) => {
+                    if let Some(i) = self.cur_inds().get(self.ind) {
+                        self.begin_edit(&i.id.clone());
+                    }
+                }
+                (Role::Ground, Pane::Indicators) => {}
+            },
+            _ => {}
+        }
+    }
+
+    fn move_sel(&mut self, d: i32) {
+        self.scroll = 0;
+        if self.role == Role::Ground {
+            match self.pane {
+                Pane::Systems => {
+                    let crew = self.b.crew();
+                    if crew.is_empty() {
+                        return;
+                    }
+                    let cur = self.b.selected_crew();
+                    let i = crew.iter().position(|c| c.id == cur).unwrap_or(0) as i32;
+                    let n = (i + d).rem_euclid(crew.len() as i32) as usize;
+                    self.b.select_crew(&crew[n].id);
+                    self.alert_idx = 0;
+                }
+                Pane::Indicators => {
+                    let n = self.b.alerts().len() as i32;
+                    if n > 0 {
+                        self.alert_idx = (self.alert_idx as i32 + d).rem_euclid(n) as usize;
+                    }
+                }
+            }
+            return;
+        }
+        match self.pane {
+            Pane::Systems => {
+                self.sys = (self.sys as i32 + d).rem_euclid(self.systems.len() as i32) as usize;
+                self.ind = 0;
+            }
+            Pane::Indicators => {
+                let n = self.cur_inds().len() as i32;
+                self.ind = (self.ind as i32 + d).rem_euclid(n) as usize;
+            }
+        }
+    }
+
+    fn begin_edit(&mut self, id: &str) {
+        for (si, s) in self.systems.iter().enumerate() {
+            if let Some(ii) = self.b.indicators(&s.id).iter().position(|i| i.id == id) {
+                self.sys = si;
+                self.ind = ii;
+                self.pane = Pane::Indicators;
+                self.view = View::Main;
+            }
+        }
+        let t = self.b.thresholds(id);
+        let v = self.b.latest(id).map(|r| r.value).unwrap_or((t.ok.0 + t.ok.1) / 2.0);
+        self.edit = Some(Edit { ind: id.to_string(), text: fmt_num(v) });
+    }
+    fn next_checkin(&mut self) {
+        match self.checkin.pop() {
+            Some(id) => self.begin_edit(&id),
+            None => self.say("Check-in finished"),
+        }
+    }
+
+    fn compose_key(&mut self, k: KeyEvent) {
+        let mut text = self.compose.take().unwrap_or_default();
+        match k.code {
+            KeyCode::Char(c) => text.push(c),
+            KeyCode::Backspace => {
+                text.pop();
+            }
+            KeyCode::Tab => {
+                text = TEMPLATES[self.tpl % TEMPLATES.len()].to_string();
+                self.tpl += 1;
+            }
+            KeyCode::Esc => return,
+            KeyCode::Enter => {
+                let t = text.trim().to_string();
+                if !t.is_empty() {
+                    self.b.send_message(&t);
+                    for m in self.b.take_messages() {
+                        self.say(m);
+                    }
+                }
+                return;
+            }
+            _ => {}
+        }
+        self.compose = Some(text);
+    }
+
+    fn edit_key(&mut self, k: KeyEvent) {
+        let ind = self.edit.as_ref().unwrap().ind.clone();
+        let info = self.all_inds().into_iter().find(|i| i.id == ind).unwrap();
+        let e = self.edit.as_mut().unwrap();
+        match k.code {
+            KeyCode::Char(c) if c.is_ascii_digit() || c == '.' || c == '-' => e.text.push(c),
+            KeyCode::Backspace => {
+                e.text.pop();
+            }
+            KeyCode::Up | KeyCode::Down | KeyCode::Char('+') | KeyCode::Char('=') => {
+                let cur: f64 = e.text.replace(',', ".").parse().unwrap_or(0.0);
+                let d = if k.code == KeyCode::Down { -info.step } else { info.step };
+                e.text = fmt_num((cur + d).clamp(info.min, info.max));
+            }
+            KeyCode::Esc => {
+                self.edit = None;
+                self.checkin.clear();
+            }
+            KeyCode::Enter => {
+                if let Ok(v) = e.text.replace(',', ".").parse::<f64>() {
+                    self.edit = None;
+                    let r = self.b.log(&ind, v);
+                    self.say(format!("{}: {} {} - {}{}", info.name, fmt_num(r.value), info.unit, word(r.status), if r.xp_gained > 0 { format!("  +{} XP", r.xp_gained) } else { String::new() }));
+                    for m in self.b.take_messages() {
+                        self.say(m);
+                    }
+                    if !self.checkin.is_empty() {
+                        self.next_checkin();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // ------------------------------------------------------------------ drawing
+    pub fn draw(&self, f: &mut Frame) {
+        let area = f.area();
+        if area.width < 80 || area.height < 24 {
+            f.render_widget(Paragraph::new(format!("Terminal too small ({}x{}).\nAstroCheck needs at least 80x24.", area.width, area.height)), area);
+            return;
+        }
+        let rows = Layout::vertical([Constraint::Length(1), Constraint::Min(10), Constraint::Length(1), Constraint::Length(1)]).split(area);
+        self.header(f, rows[0]);
+        match self.view {
+            View::Main if self.role == Role::Ground => self.ground_view(f, rows[1]),
+            View::Main => self.main_view(f, rows[1]),
+            View::Comms => self.comms_view(f, rows[1]),
+            View::Health => self.health_view(f, rows[1]),
+            View::Help => self.help_view(f, rows[1]),
+        }
+        self.keys_line(f, rows[2]);
+        self.status_line(f, rows[3]);
+    }
+
+    fn header(&self, f: &mut Frame, a: Rect) {
+        let o = self.b.overview();
+        let sep = Span::styled(" | ", Style::new().fg(Color::DarkGray));
+        let link = if !o.link_up {
+            Span::styled("LINK DOWN", Style::new().fg(Color::Red).bold())
+        } else if o.autonomous {
+            Span::styled(format!("AUTONOMOUS  RTT {}", rtt(o.rtt_s)), Style::new().fg(Color::Yellow).bold())
+        } else {
+            Span::styled(format!("LINK OK  RTT {}", rtt(o.rtt_s)), Style::new().fg(Color::Green))
+        };
+        let score = o.score.map(|s| s.to_string()).unwrap_or("-".into());
+        let sc_col = match o.score {
+            Some(s) if s >= 85 => Color::Green,
+            Some(s) if s >= 65 => Color::Yellow,
+            _ => Color::Red,
+        };
+        let ground = self.role == Role::Ground;
+        let who = if ground { self.crew_name() } else { format!("Lv {}  {}-day streak", o.level, o.streak) };
+        let line = Line::from(vec![
+            Span::styled(" ASTROCHECK ", Style::new().fg(Color::Black).bg(Color::Cyan).bold()),
+            Span::styled(if ground { " GROUND " } else { " CREW " }, Style::new().fg(Color::Black).bg(if ground { Color::Yellow } else { Color::Green }).bold()),
+            Span::raw(format!(" Day {}", o.mission_day)),
+            sep.clone(),
+            Span::raw("Score "),
+            Span::styled(score, Style::new().fg(sc_col).bold()),
+            sep.clone(),
+            link,
+            sep.clone(),
+            Span::raw(o.env_name.split(" (").next().unwrap_or(&o.env_name).to_string()),
+            sep,
+            Span::raw(who),
+        ]);
+        f.render_widget(Paragraph::new(line), a);
+    }
+
+    fn left_split(&self, a: Rect) -> (Rect, Rect, bool) {
+        let lw = if a.width >= 100 { 32 } else { 29 };
+        let cols = Layout::horizontal([Constraint::Length(lw), Constraint::Min(40)]).split(a);
+        (cols[0], cols[1], cols[0].height >= 31)
+    }
+
+    fn main_view(&self, f: &mut Frame, a: Rect) {
+        let (l, r, show_fig) = self.left_split(a);
+        if show_fig {
+            let parts = Layout::vertical([Constraint::Min(22), Constraint::Length(9)]).split(l);
+            self.figure(f, parts[0], &self.cur_sys().id);
+            self.sys_list(f, parts[1]);
+        } else {
+            self.sys_list(f, l);
+        }
+        let inds = self.cur_inds();
+        let th = (inds.len() as u16 + 3).min(r.height.saturating_sub(6));
+        let right = Layout::vertical([Constraint::Length(th), Constraint::Min(5)]).split(r);
+        self.ind_table(f, right[0], &inds);
+        self.detail(f, right[1], &inds);
+    }
+
+    fn ground_view(&self, f: &mut Frame, a: Rect) {
+        let (l, r, show_fig) = self.left_split(a);
+        let n = self.b.crew().len().max(1) as u16;
+        if show_fig {
+            let parts = Layout::vertical([Constraint::Min(22), Constraint::Length(n + 2)]).split(l);
+            self.figure(f, parts[0], "");
+            self.crew_list(f, parts[1]);
+        } else {
+            self.crew_list(f, l);
+        }
+        let alerts = self.b.alerts();
+        let ah = (alerts.len() as u16 + 3).clamp(5, 11).min(r.height.saturating_sub(8));
+        let right = Layout::vertical([Constraint::Length(ah), Constraint::Min(6)]).split(r);
+        self.alert_table(f, right[0]);
+        self.clinical_table(f, right[1]);
+    }
+
+    fn focus_style(&self, p: Pane) -> Style {
+        if self.pane == p { Style::new().fg(Color::Cyan) } else { Style::new().fg(Color::DarkGray) }
+    }
+
+    fn figure(&self, f: &mut Frame, a: Rect, selected: &str) {
+        let block = Block::bordered().title(" BODY ").border_style(Style::new().fg(Color::DarkGray));
+        let inner = block.inner(a);
+        let lines: Vec<Line> = if braille::use_braille() {
+            braille::render(inner.width as usize, inner.height as usize, &|s| self.b.system_status(s), selected)
+                .into_iter()
+                .map(|row| {
+                    Line::from(
+                        row.into_iter()
+                            .map(|c| {
+                                let mut st = Style::new().fg(c.color);
+                                if c.bold {
+                                    st = st.bold();
+                                }
+                                Span::styled(c.ch.to_string(), st)
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect()
+        } else {
+            FIGURE
+                .iter()
+                .map(|row| {
+                    let padded = format!("{:^21}", row);
+                    Line::from(
+                        padded
+                            .chars()
+                            .map(|c| {
+                                let (sys, g) = figure_cell(c);
+                                match sys {
+                                    None => Span::raw(" "),
+                                    Some(s) => {
+                                        let st = self.b.system_status(s);
+                                        let mut style = Style::new().fg(sc(st));
+                                        if s == selected {
+                                            style = style.add_modifier(Modifier::REVERSED | Modifier::BOLD);
+                                        }
+                                        if s == "immune" && s != selected {
+                                            style = style.add_modifier(Modifier::DIM);
+                                        }
+                                        Span::styled(g.to_string(), style)
+                                    }
+                                }
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                    .centered()
+                })
+                .collect()
+        };
+        f.render_widget(Paragraph::new(lines).block(block), a);
+    }
+
+    fn sys_list(&self, f: &mut Frame, a: Rect) {
+        let w = a.width.saturating_sub(4) as usize;
+        let items: Vec<ListItem> = self
+            .systems
+            .iter()
+            .map(|s| {
+                let st = self.b.system_status(&s.id);
+                let name = trunc(&short(&s.id, &s.name), w.saturating_sub(10));
+                ListItem::new(Line::from(vec![
+                    Span::styled("\u{25CF} ", Style::new().fg(sc(st))),
+                    Span::raw(format!("{:<width$}", name, width = w.saturating_sub(9))),
+                    Span::styled(format!("{:>7}", word(st)), Style::new().fg(sc(st))),
+                ]))
+            })
+            .collect();
+        let list = List::new(items).block(Block::bordered().title(" SYSTEMS ").border_style(self.focus_style(Pane::Systems))).highlight_style(Style::new().add_modifier(Modifier::REVERSED));
+        f.render_stateful_widget(list, a, &mut ListState::default().with_selected(Some(self.sys)));
+    }
+
+    fn crew_list(&self, f: &mut Frame, a: Rect) {
+        let crew: Vec<CrewMember> = self.b.crew();
+        let sel = self.b.selected_crew();
+        let w = a.width.saturating_sub(4) as usize;
+        let items: Vec<ListItem> = crew
+            .iter()
+            .map(|c| {
+                let stale = c.last_contact_s > 3600;
+                ListItem::new(Line::from(vec![
+                    Span::styled("\u{25CF} ", Style::new().fg(sc(c.status))),
+                    Span::raw(format!("{:<width$}", trunc(&c.name, w.saturating_sub(13)), width = w.saturating_sub(12))),
+                    Span::styled(format!("{:>3} ", c.score.map(|s| s.to_string()).unwrap_or("-".into())), Style::new().fg(sc(c.status)).bold()),
+                    Span::styled(format!("{:>5}", age(c.last_contact_s)), Style::new().fg(if stale { Color::Yellow } else { Color::DarkGray })),
+                ]))
+            })
+            .collect();
+        let idx = crew.iter().position(|c| c.id == sel).unwrap_or(0);
+        let list = List::new(items).block(Block::bordered().title(" CREW  score  contact ").border_style(self.focus_style(Pane::Systems))).highlight_style(Style::new().add_modifier(Modifier::REVERSED));
+        f.render_stateful_widget(list, a, &mut ListState::default().with_selected(Some(idx)));
+    }
+
+    fn alert_table(&self, f: &mut Frame, a: Rect) {
+        let alerts = self.b.alerts();
+        let rows: Vec<Row> = alerts
+            .iter()
+            .map(|al| {
+                Row::new(vec![
+                    Cell::from(Span::styled(format!("\u{25CF} {}", word(al.status)), Style::new().fg(sc(al.status)))),
+                    Cell::from(al.indicator_name.clone()),
+                    Cell::from(format!("{} {}", fmt_num(al.value), al.unit)),
+                    Cell::from(format!("day {}", al.day)),
+                    Cell::from(if al.acked { Span::styled("ACK'D", Style::new().fg(Color::DarkGray)) } else { Span::styled("open", Style::new().fg(Color::Yellow)) }),
+                ])
+            })
+            .collect();
+        let empty = alerts.is_empty();
+        let table = Table::new(rows, [Constraint::Length(10), Constraint::Min(22), Constraint::Length(12), Constraint::Length(8), Constraint::Length(6)])
+            .header(Row::new(vec!["SEVERITY", "FINDING", "VALUE", "SINCE", "STATE"]).style(Style::new().fg(Color::DarkGray).bold()))
+            .block(Block::bordered().title(" ALERT TRIAGE   a = acknowledge   m = message crew ").border_style(self.focus_style(Pane::Indicators)))
+            .row_highlight_style(if self.pane == Pane::Indicators { Style::new().add_modifier(Modifier::REVERSED) } else { Style::new() });
+        f.render_stateful_widget(table, a, &mut TableState::default().with_selected(if empty { None } else { Some(self.alert_idx.min(alerts.len() - 1)) }));
+    }
+
+    fn clinical_table(&self, f: &mut Frame, a: Rect) {
+        let rows: Vec<Row> = self
+            .all_inds()
+            .iter()
+            .map(|i| {
+                let st = self.b.indicator_status(&i.id);
+                let hist = self.b.history(&i.id);
+                let latest = hist.last().map(|r| r.value);
+                let base = baseline(&hist);
+                let delta = latest.zip(base).map(|(l, b)| l - b);
+                let d = delta.map(|d| format!("{}{}", if d >= 0.0 { "+" } else { "" }, fmt_num((d * 100.0).round() / 100.0))).unwrap_or("-".into());
+                let trend: Vec<f64> = hist.iter().rev().take(14).rev().map(|r| r.value).collect();
+                Row::new(vec![
+                    Cell::from(i.name.clone()),
+                    Cell::from(latest.map(|v| format!("{} {}", fmt_num(v), i.unit)).unwrap_or("-".into())),
+                    Cell::from(base.map(|v| fmt_num((v * 100.0).round() / 100.0)).unwrap_or("-".into())),
+                    Cell::from(Span::styled(d, Style::new().fg(if st == Status::Normal { Color::Gray } else { sc(st) }))),
+                    Cell::from(Span::styled(word(st), Style::new().fg(sc(st)))),
+                    Cell::from(Span::styled(spark(&trend), Style::new().fg(sc(st)))),
+                ])
+            })
+            .collect();
+        let wide = a.width >= 78;
+        let (widths, head): (Vec<Constraint>, Vec<&str>) = if wide {
+            (vec![Constraint::Min(22), Constraint::Length(12), Constraint::Length(9), Constraint::Length(7), Constraint::Length(8), Constraint::Length(14)], vec!["INDICATOR", "LATEST", "BASELINE", "DELTA", "STATUS", "14-DAY"])
+        } else {
+            (vec![Constraint::Min(18), Constraint::Length(10), Constraint::Length(7), Constraint::Length(8)], vec!["INDICATOR", "LATEST", "DELTA", "STATUS"])
+        };
+        let rows: Vec<Row> = if wide {
+            rows
+        } else {
+            self.all_inds()
+                .iter()
+                .map(|i| {
+                    let st = self.b.indicator_status(&i.id);
+                    let hist = self.b.history(&i.id);
+                    let latest = hist.last().map(|r| r.value);
+                    let d = latest.zip(baseline(&hist)).map(|(l, b)| format!("{:+.1}", l - b)).unwrap_or("-".into());
+                    Row::new(vec![Cell::from(trunc(&i.name, 22)), Cell::from(latest.map(fmt_num).unwrap_or("-".into())), Cell::from(d), Cell::from(Span::styled(word(st), Style::new().fg(sc(st))))])
+                })
+                .collect()
+        };
+        let table = Table::new(rows, widths)
+            .header(Row::new(head).style(Style::new().fg(Color::DarkGray).bold()))
+            .block(Block::bordered().title(format!(" CLINICAL SUMMARY - {} ", self.crew_name())).border_style(Style::new().fg(Color::DarkGray)));
+        f.render_widget(table, a);
+    }
+
+    fn ind_table(&self, f: &mut Frame, a: Rect, inds: &[IndicatorInfo]) {
+        let wide = a.width >= 70;
+        let rows: Vec<Row> = inds
+            .iter()
+            .map(|i| {
+                let st = self.b.indicator_status(&i.id);
+                let val = self.b.latest(&i.id).map(|r| format!("{} {}", fmt_num(r.value), i.unit)).unwrap_or("-".into());
+                let hist: Vec<f64> = self.b.history(&i.id).iter().rev().take(14).rev().map(|r| r.value).collect();
+                let mut cells = vec![
+                    Cell::from(format!("{}{}", i.name, if self.b.is_due(&i.id) { " *" } else { "" })),
+                    Cell::from(val),
+                    Cell::from(Span::styled(format!("\u{25CF} {}", word(st)), Style::new().fg(sc(st)))),
+                ];
+                if wide {
+                    cells.push(Cell::from(Span::styled(spark(&hist), Style::new().fg(sc(st)))));
+                }
+                Row::new(cells)
+            })
+            .collect();
+        let widths: Vec<Constraint> = if wide { vec![Constraint::Min(22), Constraint::Length(12), Constraint::Length(10), Constraint::Length(14)] } else { vec![Constraint::Min(18), Constraint::Length(10), Constraint::Length(10)] };
+        let head = if wide { vec!["INDICATOR", "LAST", "STATUS", "14-DAY"] } else { vec!["INDICATOR", "LAST", "STATUS"] };
+        let table = Table::new(rows, widths)
+            .header(Row::new(head).style(Style::new().fg(Color::DarkGray).bold()))
+            .block(Block::bordered().title(" INDICATORS  (* = due) ").border_style(self.focus_style(Pane::Indicators)))
+            .row_highlight_style(if self.pane == Pane::Indicators { Style::new().add_modifier(Modifier::REVERSED) } else { Style::new() });
+        f.render_stateful_widget(table, a, &mut TableState::default().with_selected(Some(self.ind)));
+    }
+
+    fn detail(&self, f: &mut Frame, a: Rect, inds: &[IndicatorInfo]) {
+        let mut l: Vec<Line> = vec![];
+        let dim = Style::new().fg(Color::DarkGray);
+        let title;
+        if self.pane == Pane::Systems || inds.is_empty() {
+            let s = self.cur_sys();
+            title = format!(" {} ", s.name);
+            let st = self.b.system_status(&s.id);
+            l.push(Line::from(Span::styled(format!("Status: {}", word(st)), Style::new().fg(sc(st)).bold())));
+            l.push(Line::from(vec![Span::styled("Function: ", dim), Span::raw(s.function.clone())]));
+            l.push(Line::from(vec![Span::styled("Hazards:  ", dim), Span::styled(s.hazards.join(" | "), Style::new().fg(Color::Magenta))]));
+            l.push(Line::from(vec![Span::styled("Effect:   ", dim), Span::raw(s.effect.clone())]));
+            l.push(Line::from(vec![Span::styled("Why:      ", dim), Span::raw(s.why.clone())]));
+            if let Some(n) = self.b.environment().notes.get(&s.id) {
+                l.push(Line::from(vec![Span::styled("Here:     ", dim), Span::styled(n.clone(), Style::new().fg(Color::Cyan))]));
+            }
+        } else {
+            let i = &inds[self.ind.min(inds.len() - 1)];
+            title = format!(" {} ", i.name);
+            let latest = self.b.latest(&i.id);
+            // while typing a new value, the advice follows what is typed (live preview)
+            let typed = self.edit.as_ref().filter(|e| e.ind == i.id).and_then(|e| e.text.replace(',', ".").parse::<f64>().ok());
+            let ev = self.b.evaluate(&i.id, typed.or(latest.map(|r| r.value)).unwrap_or(0.0));
+            let st = if typed.is_some() { ev.status } else { self.b.indicator_status(&i.id) };
+            l.push(Line::from(vec![
+                Span::styled(format!("{} {}", typed.or(latest.map(|r| r.value)).map(fmt_num).unwrap_or("-".into()), i.unit), Style::new().bold()),
+                Span::raw("   "),
+                Span::styled(word(st), Style::new().fg(sc(st)).bold()),
+                Span::styled(format!("   target {}   Enter = log new value", ev.target), dim),
+            ]));
+            l.push(Line::from(vec![Span::styled("Why: ", dim), Span::raw(i.why.clone())]));
+            l.push(Line::from(Span::styled("How to measure:", dim)));
+            for (n, h) in i.how.iter().enumerate() {
+                l.push(Line::from(format!("  {}. {}", n + 1, h)));
+            }
+            if latest.is_some() || typed.is_some() {
+                l.push(Line::from(""));
+                l.push(Line::from(Span::styled(ev.advice.headline.clone(), Style::new().fg(sc(st)).bold())));
+                for a in &ev.advice.actions {
+                    l.push(Line::from(format!("  - {}", a)));
+                }
+                if let Some(e) = &ev.advice.escalate {
+                    l.push(Line::from(Span::styled(e.clone(), Style::new().fg(Color::Red).bold())));
+                }
+            }
+        }
+        let p = Paragraph::new(l).block(Block::bordered().title(title).border_style(Style::new().fg(Color::DarkGray))).wrap(Wrap { trim: true }).scroll((self.scroll, 0));
+        f.render_widget(p, a);
+    }
+
+    fn comms_view(&self, f: &mut Frame, a: Rect) {
+        let o = self.b.overview();
+        let (s, rows) = self.b.queue(a.height.saturating_sub(8) as usize);
+        let env = self.b.environment();
+        let l = vec![
+            Line::from(vec![
+                Span::raw("Mode: "),
+                if o.autonomous { Span::styled("AUTONOMOUS - onboard protocol is primary", Style::new().fg(Color::Yellow).bold()) } else { Span::styled("GROUND-ASSISTED", Style::new().fg(Color::Green).bold()) },
+            ]),
+            Line::from(format!("Link: {}    Round trip: {}    Comms here: {}", if o.link_up { "UP" } else { "DOWN" }, rtt(o.rtt_s), env.comms)),
+            Line::from(format!("Queued {}   In flight {}   Delivered {}   (urgent first; nothing is lost during blackout or restart)", s.queued, s.in_flight, s.acked)),
+            Line::from(""),
+        ];
+        let head = Row::new(vec!["PRIORITY", "BUNDLE", "STATE"]).style(Style::new().fg(Color::DarkGray).bold());
+        let trs: Vec<Row> = rows
+            .iter()
+            .map(|r| {
+                let (pw, pc) = match r.priority {
+                    Priority::Urgent => ("URGENT", Color::Red),
+                    Priority::Watch => ("watch", Color::Yellow),
+                    Priority::Routine => ("routine", Color::Green),
+                };
+                let sw = match r.state {
+                    QState::Queued => "queued",
+                    QState::InFlight => "in flight",
+                    QState::Acked => "ack from ground",
+                };
+                Row::new(vec![Cell::from(Span::styled(pw, Style::new().fg(pc).bold())), Cell::from(r.label.clone()), Cell::from(sw)])
+            })
+            .collect();
+        let parts = Layout::vertical([Constraint::Length(l.len() as u16), Constraint::Min(3)]).split(a);
+        f.render_widget(Paragraph::new(l), parts[0]);
+        f.render_widget(
+            Table::new(trs, [Constraint::Length(10), Constraint::Min(30), Constraint::Length(16)])
+                .header(head)
+                .block(Block::bordered().title(" DOWNLINK QUEUE   b = blackout on/off   x = export bundle ").border_style(Style::new().fg(Color::DarkGray))),
+            parts[1],
+        );
+    }
+
+    fn health_view(&self, f: &mut Frame, a: Rect) {
+        let h = self.b.health();
+        let ok = h.checks.iter().filter(|c| c.ok).count();
+        let parts = Layout::vertical([Constraint::Length(h.checks.len() as u16 + 4), Constraint::Min(3)]).split(a);
+        let mut l = vec![Line::from(vec![
+            Span::raw("Self-test "),
+            Span::styled(format!("{}/{}", ok, h.checks.len()), Style::new().fg(if ok == h.checks.len() { Color::Green } else { Color::Red }).bold()),
+            Span::styled(format!("    platform {}", h.platform), Style::new().fg(Color::DarkGray)),
+        ])];
+        l.push(Line::from(""));
+        for c in &h.checks {
+            l.push(Line::from(vec![
+                Span::styled(if c.ok { "[ OK ] " } else { "[FAIL] " }, Style::new().fg(if c.ok { Color::Green } else { Color::Red }).bold()),
+                Span::raw(c.name.clone()),
+                Span::styled(format!(" - {}", c.detail), Style::new().fg(Color::DarkGray)),
+            ]));
+        }
+        f.render_widget(Paragraph::new(l).block(Block::bordered().title(" SYSTEM HEALTH   t = run self-test   f = inject fault (demo) ").border_style(Style::new().fg(Color::DarkGray))), parts[0]);
+        let ev: Vec<Line> = h.events.iter().take(parts[1].height.saturating_sub(2) as usize).map(|e| Line::from(Span::styled(e.clone(), Style::new().fg(Color::Gray)))).collect();
+        f.render_widget(Paragraph::new(ev).block(Block::bordered().title(" EVENT LOG ").border_style(Style::new().fg(Color::DarkGray))), parts[1]);
+    }
+
+    fn help_view(&self, f: &mut Frame, a: Rect) {
+        let k = |key: &str, d: &str| Line::from(vec![Span::styled(format!("{:<16}", key), Style::new().fg(Color::Cyan).bold()), Span::raw(d.to_string())]);
+        let l = vec![
+            k("r", "switch between CREW view (self-assessment) and GROUND console (flight surgeon)"),
+            k("Up/Down  j/k", "move in the current list"),
+            k("Tab / Right", "go to the second list      Left / Esc: back"),
+            k("Enter", "crew: open systems, log a new value      ground: open list"),
+            k("  while typing", "digits . -   Up/Down = +/- one step   Enter = save   Esc = cancel"),
+            k("c", "crew: daily check-in, every measurement that is due"),
+            k("a  m", "ground: acknowledge the selected finding / write a message to the crew member"),
+            k("  while writing", "Tab = insert a template      Enter = send (uplink)      Esc = cancel"),
+            k("g / h", "downlink queue / system health      Esc: back to the main view"),
+            k("b", "simulate blackout on / off (queue keeps everything)"),
+            k("e", "next environment: station, cislunar, Moon, Mars surface, Mars transit"),
+            k("x  t", "export the downlink bundle (JSON)  /  run the self-test"),
+            k("PgUp/PgDn", "scroll the text panel"),
+            k("n s f", "demo: next day / solar storm / inject data fault"),
+            k("q", "quit"),
+            Line::from(""),
+            Line::from(Span::styled("Prototype for decision support - not a medical device. Follow mission medical protocols.", Style::new().fg(Color::DarkGray))),
+        ];
+        f.render_widget(Paragraph::new(l).block(Block::bordered().title(" KEYS ").border_style(Style::new().fg(Color::DarkGray))), a);
+    }
+
+    fn keys_line(&self, f: &mut Frame, a: Rect) {
+        if let Some(text) = &self.compose {
+            let sp = vec![
+                Span::styled(format!(" MESSAGE to {} ", self.crew_name()), Style::new().fg(Color::Black).bg(Color::Yellow).bold()),
+                Span::raw(format!(" {}_", text)),
+                Span::styled("   Enter=send Tab=template Esc=cancel", Style::new().fg(Color::DarkGray)),
+            ];
+            f.render_widget(Paragraph::new(Line::from(sp)), a);
+            return;
+        }
+        if let Some(e) = &self.edit {
+            let Some(info) = self.all_inds().into_iter().find(|i| i.id == e.ind) else { return };
+            let ev = e.text.replace(',', ".").parse::<f64>().ok().map(|v| self.b.evaluate(&e.ind, v));
+            let mut sp = vec![Span::styled(format!(" LOG {} [{}] ", info.name, info.unit), Style::new().fg(Color::Black).bg(Color::Cyan).bold()), Span::raw(format!(" {}_ ", e.text))];
+            if let Some(ev) = ev {
+                sp.push(Span::styled(format!(" {} ", word(ev.status)), Style::new().fg(Color::Black).bg(sc(ev.status)).bold()));
+                sp.push(Span::styled(format!(" target {} ", ev.target), Style::new().fg(Color::DarkGray)));
+            }
+            sp.push(Span::styled(" Enter=save Esc=cancel Up/Dn=step", Style::new().fg(Color::DarkGray)));
+            f.render_widget(Paragraph::new(Line::from(sp)), a);
+            return;
+        }
+        let keys: Vec<(&str, &str)> = if self.role == Role::Ground {
+            vec![("Up/Dn", "move"), ("Tab", "pane"), ("a", "ack"), ("m", "message"), ("r", "crew view"), ("g", "downlink"), ("h", "health"), ("?", "help"), ("q", "quit")]
+        } else {
+            vec![("Up/Dn", "move"), ("Tab", "pane"), ("Enter", "log"), ("c", "check-in"), ("b", "blackout"), ("e", "env"), ("r", "ground"), ("g", "comms"), ("?", "help"), ("q", "quit")]
+        };
+        let mut sp = vec![];
+        for (k, d) in keys {
+            sp.push(Span::styled(format!(" {} ", k), Style::new().fg(Color::Black).bg(Color::Gray)));
+            sp.push(Span::raw(format!("{} ", d)));
+        }
+        f.render_widget(Paragraph::new(Line::from(sp)), a);
+    }
+
+    fn status_line(&self, f: &mut Frame, a: Rect) {
+        let h = self.b.health();
+        let (q, _) = self.b.queue(0);
+        let ok = h.checks.iter().filter(|c| c.ok).count();
+        let o = self.b.overview();
+        let good = |b: bool| if b { Style::new().fg(Color::Green) } else { Style::new().fg(Color::Red).bold() };
+        let crc_ok = h.checks.iter().find(|c| c.name.contains("CRC")).map_or(true, |c| c.ok);
+        let mut sp = vec![
+            Span::styled(" DB ", Style::new().fg(Color::DarkGray)),
+            Span::styled("OK", good(h.checks.first().map_or(true, |c| c.ok))),
+            Span::styled("  CRC ", Style::new().fg(Color::DarkGray)),
+            Span::styled(if crc_ok { "OK" } else { "REPAIR" }, good(crc_ok)),
+            Span::styled("  BIT ", Style::new().fg(Color::DarkGray)),
+            Span::styled(format!("{}/{}", ok, h.checks.len()), good(ok == h.checks.len())),
+            Span::styled("  QUEUE ", Style::new().fg(Color::DarkGray)),
+            Span::raw(format!("{}q {}f {}a", q.queued, q.in_flight, q.acked)),
+            Span::styled("  DUE ", Style::new().fg(Color::DarkGray)),
+            Span::raw(format!("{}/{}", o.due_count, o.total_indicators)),
+        ];
+        if let Some((m, _)) = &self.toast {
+            sp.push(Span::styled(format!("   > {}", m), Style::new().fg(Color::Cyan).bold()));
+        }
+        f.render_widget(Paragraph::new(Line::from(sp)).style(Style::new().bg(Color::Black)), a);
+    }
+}
+
+/// Run the interface until the user quits. Redraws only when something changed.
+pub fn run<B: Backend>(b: B) -> std::io::Result<()> {
+    run_as(b, Role::Crew)
+}
+
+/// Same, starting in the given role (the user can still switch with `r`).
+pub fn run_as<B: Backend>(b: B, role: Role) -> std::io::Result<()> {
+    let mut term = ratatui::init();
+    let mut app = App::new(b);
+    app.role = role;
+    let mut last = Instant::now();
+    let res = (|| -> std::io::Result<()> {
+        loop {
+            if app.dirty {
+                term.draw(|f| app.draw(f))?;
+                app.dirty = false;
+            }
+            if event::poll(Duration::from_millis(250))? {
+                match event::read()? {
+                    Event::Key(k) => app.on_key(k),
+                    Event::Resize(..) => app.dirty = true,
+                    _ => {}
+                }
+            }
+            if last.elapsed() >= Duration::from_secs(1) {
+                app.tick();
+                last = Instant::now();
+            }
+            if app.quit {
+                return Ok(());
+            }
+        }
+    })();
+    ratatui::restore();
+    res
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::backend::TestBackend;
+    use ratatui::crossterm::event::{KeyEventKind, KeyModifiers};
+    use ui_model::DemoBackend;
+
+    fn key(c: KeyCode) -> KeyEvent {
+        KeyEvent { code: c, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: ratatui::crossterm::event::KeyEventState::NONE }
+    }
+    fn dump(app: &App<DemoBackend>, w: u16, h: u16) -> String {
+        let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
+        t.draw(|f| app.draw(f)).unwrap();
+        let buf = t.backend().buffer().clone();
+        (0..h).map(|y| (0..w).map(|x| buf[(x, y)].symbol().to_string()).collect::<String>().trim_end().to_string()).collect::<Vec<_>>().join("\n")
+    }
+
+    #[test]
+    fn ascii_figure_rows_are_symmetric_and_fit() {
+        for r in FIGURE {
+            assert!(r.chars().count() % 2 == 1, "row must have odd width to centre: {r:?}");
+            assert!(r.chars().count() <= 21);
+        }
+    }
+
+    #[test]
+    fn braille_anatomy_draws_a_body() {
+        let app = App::new(DemoBackend::new());
+        let cells = braille::render(26, 26, &|s| app.b.system_status(s), "heart");
+        let dots: usize = cells.iter().flatten().filter(|c| c.ch != ' ').count();
+        assert!(dots > 120, "body should cover many cells, got {dots}");
+        // the body is centred: the first and last columns stay empty
+        assert!(cells.iter().all(|r| r[0].ch == ' '));
+    }
+
+    #[test]
+    fn crew_view_renders_at_80x24_and_120x44() {
+        let app = App::new(DemoBackend::new());
+        let s = dump(&app, 80, 24);
+        println!("{s}\n{}", "=".repeat(80));
+        assert!(s.contains("ASTROCHECK") && s.contains("CREW") && s.contains("SYSTEMS") && s.contains("INDICATORS"));
+        let s = dump(&app, 120, 44);
+        println!("{s}");
+        assert!(s.contains("BODY"));
+    }
+
+    #[test]
+    fn ground_console_shows_roster_triage_and_clinical_table() {
+        let mut app = App::new(DemoBackend::new());
+        app.on_key(key(KeyCode::Char('r')));
+        let s = dump(&app, 110, 40);
+        println!("{s}");
+        assert!(s.contains("GROUND") && s.contains("CREW") && s.contains("ALERT TRIAGE") && s.contains("CLINICAL SUMMARY"));
+        assert!(s.contains("Eng. Chen") && s.contains("Sci. Novak"));
+        let s80 = dump(&app, 80, 24);
+        println!("{s80}");
+        assert!(s80.contains("ALERT TRIAGE"));
+    }
+
+    #[test]
+    fn ground_can_select_crew_acknowledge_and_message() {
+        let mut app = App::new(DemoBackend::new());
+        app.on_key(key(KeyCode::Char('r')));
+        app.on_key(key(KeyCode::Down));
+        app.on_key(key(KeyCode::Down)); // reyes -> okafor -> chen
+        assert_eq!(app.b.selected_crew(), "chen");
+        app.on_key(key(KeyCode::Tab));
+        let first = app.b.alerts()[0].clone();
+        assert_eq!(first.indicator, "spo2", "life-critical finding is listed first");
+        app.on_key(key(KeyCode::Char('a')));
+        assert!(app.b.alerts()[0].acked);
+        app.on_key(key(KeyCode::Char('m')));
+        app.on_key(key(KeyCode::Tab)); // insert template
+        assert!(dump(&app, 110, 40).contains("MESSAGE to Eng. Chen"));
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.b.messages().len(), 1);
+        app.on_key(key(KeyCode::Char('r')));
+        assert_eq!(app.role, Role::Crew);
+    }
+
+    #[test]
+    fn too_small_terminal_is_handled() {
+        let app = App::new(DemoBackend::new());
+        assert!(dump(&app, 60, 15).contains("too small"));
+    }
+
+    #[test]
+    fn logging_a_value_through_keys_changes_status() {
+        let mut app = App::new(DemoBackend::new());
+        for k in [KeyCode::Down, KeyCode::Tab] {
+            app.on_key(key(k));
+        } // heart -> lungs, then into its indicators
+        let before = app.b.indicator_status("spo2");
+        app.on_key(key(KeyCode::Enter)); // start editing SpO2
+        for _ in 0..3 {
+            app.on_key(key(KeyCode::Backspace));
+        }
+        for c in "88".chars() {
+            app.on_key(key(KeyCode::Char(c)));
+        }
+        let s = dump(&app, 100, 30);
+        assert!(s.contains("ACT NOW"), "live preview should show the status while typing");
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.b.indicator_status("spo2"), Status::Act);
+        assert_ne!(before, Status::Act);
+    }
+
+    #[test]
+    fn views_render() {
+        let mut app = App::new(DemoBackend::new());
+        for (k, needle) in [('g', "DOWNLINK QUEUE"), ('h', "SYSTEM HEALTH"), ('?', "KEYS")] {
+            app.on_key(key(KeyCode::Esc));
+            app.on_key(key(KeyCode::Char(k)));
+            let s = dump(&app, 100, 30);
+            assert!(s.contains(needle), "{needle}");
+        }
+    }
+
+    #[test]
+    fn blackout_key_switches_mode() {
+        let mut app = App::new(DemoBackend::new());
+        app.on_key(key(KeyCode::Char('b')));
+        assert!(dump(&app, 100, 30).contains("LINK DOWN"));
+    }
+}

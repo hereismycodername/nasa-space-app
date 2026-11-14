@@ -1,0 +1,44 @@
+﻿ ASTROCHECK  CREW  Day 15 | Score 81 | LINK OK  RTT 1 s | Space station | Lv 2  5-day streak
+┌ BODY ────────────────────────┐┌ INDICATORS  (* = due) ───────────────────────────────────────────────────────────────┐
+│             ⢀⣀⣀⡀             ││INDICATOR                                       LAST         STATUS     14-DAY        │
+│            ⢰⣿⣿⣿⣿⡆            ││Resting heart rate *                            71 bpm       ● NORMAL   ▃▄▃▁▄▁▁█▂▇▇▇█ │
+│            ⠈⠿⣿⣿⠿⠁            ││Blood pressure (systolic) *                     119 mmHg     ● NORMAL   █▃▇▁▂▄▃▅▃▆▃█▇ │
+│            ⠈⢿⣯⣽⡿⠁            │└──────────────────────────────────────────────────────────────────────────────────────┘
+│             ⠈⢠⡄⠁             │┌ Heart & Circulation ─────────────────────────────────────────────────────────────────┐
+│          ⣀⣠⡤⠤⢺⡗⠤⢤⣄⣀          ││Status: NORMAL                                                                        │
+│        ⡔⡾⠁⢠⣠⣶⣼⣧⣶⣄⡄⠈⢷⢢        ││Function: Pumps blood to the whole body and keeps blood pressure stable.              │
+│       ⢸⢸⡇⠂⣸⣿⣿⡏⣿⣿⣿⣇⠐⢸⡇⡇       ││Hazards:  Altered gravity | Space radiation | Isolation & confinement                 │
+│       ⢸⣼⠁ ⣿⣿⣿⣿⣿⣿⣿⣿ ⠈⣧⡇       ││Effect:   Without gravity about 2 litres of fluid move toward the chest and head, the │
+│       ⢀⡿⡎ ⣿⣿⣿⣿⣿⣿⣿⣿ ⢱⢿⡀       ││heart works less and gets deconditioned, and standing up after landing or on a planet │
+│       ⢸⠇⠇ ⢿⣿⣿⣿⣿⣿⣿⡿ ⠸⠸⡇       ││can cause fainting.                                                                   │
+│       ⣿⢸  ⢈⣻⣿⣇⣛⠻⠟⠁  ⡇⣿       ││Why:      Resting heart rate and blood pressure are the fastest check of circulation, │
+│      ⢸⢿⡇  ⣿⣿⣿⣿⡿⢹⣿⣷⣾ ⢸⡿⡇      ││dehydration, stress and illness.                                                      │
+│      ⣸⡾⠁ ⡴⠈⢙⣛⣉⣀⣼⣿⡟⠉ ⠈⢷⣇      ││                                                                                      │
+│      ⣿⠃  ⣇⡸⣏⣥⣤⣤⣬⣹⢇⣸  ⠘⣿      ││                                                                                      │
+│    ⢀⣴⣯⠁  ⠹⣴⣿⣿⣿⣿⣿⢻⣦⠏  ⠈⣽⣦⡀    ││                                                                                      │
+│    ⠹⣿⠋   ⡇⣾⠙⠙⠛⢿⣽⠞⣷⢸   ⠙⣿⠏    ││                                                                                      │
+│     ⠉    ⡇⣿  ⡔⢢  ⣿⢸    ⠉     ││                                                                                      │
+│          ⢠⣿  ⡇⢸  ⣿⡄          ││                                                                                      │
+│          ⢸⡏  ⡇⢸  ⢹⡇          ││                                                                                      │
+│          ⢸⡇  ⡇⢸  ⢸⡇          ││                                                                                      │
+│          ⢸⡇  ⡇⢸  ⢸⡇          ││                                                                                      │
+│          ⢸⡇  ⡇⢸  ⢸⡇          ││                                                                                      │
+│          ⣾⡇  ⡇⢸  ⢸⣷          ││                                                                                      │
+│          ⣿⡇  ⡇⢸  ⢸⣿          ││                                                                                      │
+│          ⣧⡇ ⢸  ⡇ ⢸⣼          ││                                                                                      │
+│          ⢿⡇ ⢸  ⡇ ⢸⡿          ││                                                                                      │
+│          ⢸⡇ ⢸  ⡇ ⢸⡇          ││                                                                                      │
+│          ⠈⢩⡄⢸  ⡇⢠⡍⠁          ││                                                                                      │
+│           ⢿⡿⠜  ⠣⢿⡿           ││                                                                                      │
+└──────────────────────────────┘│                                                                                      │
+┌ SYSTEMS ─────────────────────┐│                                                                                      │
+│● Brain & Mind         WATCH  ││                                                                                      │
+│● Eyes & Vision       NORMAL  ││                                                                                      │
+│● Heart               NORMAL  ││                                                                                      │
+│● Lungs               NORMAL  ││                                                                                      │
+│● Metabolism           WATCH  ││                                                                                      │
+│● Bones & Muscles      WATCH  ││                                                                                      │
+│● Whole body          NORMAL  ││                                                                                      │
+└──────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────────┘
+ Up/Dn move  Tab pane  Enter log  c check-in  b blackout  e env  r ground  g comms  ? help  q quit
+ DB OK  CRC OK  BIT 6/6  QUEUE 0q 0f 0a  DUE 16/16
