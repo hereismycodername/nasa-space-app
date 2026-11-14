@@ -1,0 +1,10 @@
+{
+  "type": "urn:space-health:error:validation-error",
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "Invalid unit or value",
+  "code": "VALIDATION_ERROR",
+  "message": "Invalid unit or value",
+  "field": "unit",
+  "error": "Invalid unit or value"
+}

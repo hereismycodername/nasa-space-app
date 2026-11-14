@@ -1,0 +1,33 @@
+{
+  "installedOn": "2026-11-14",
+  "skills": [
+    {
+      "name": "rust-best-practices",
+      "repo": "apollographql/skills",
+      "path": "skills/rust-best-practices",
+      "ref": "9dda1397730370aeb8df4ff8f2015c34c86b5003",
+      "scope": "personal"
+    },
+    {
+      "name": "vercel-react-best-practices",
+      "repo": "vercel-labs/agent-skills",
+      "path": "skills/react-best-practices",
+      "ref": "1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62",
+      "scope": "personal"
+    },
+    {
+      "name": "vitest",
+      "repo": "antfu/skills",
+      "path": "skills/vitest",
+      "ref": "d524ed287eef22757297827ce42e3cad88abd20c",
+      "scope": "personal"
+    },
+    {
+      "name": "api-designer",
+      "repo": "Jeffallan/claude-skills",
+      "path": "skills/api-designer",
+      "ref": "078a25cc5bfd8011459be7b91d004e900c1d02d3",
+      "scope": "personal"
+    }
+  ]
+}

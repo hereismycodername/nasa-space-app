@@ -1,0 +1,28 @@
+export type Metric = 'heartRate' | 'systolicPressure' | 'diastolicPressure' | 'temperature' | 'sleepHours' | 'mood'
+export type Unit = 'bpm' | 'mmHg' | '°C' | 'h' | 'score'
+export interface NewMeasurement {
+  deviceId: string
+  sessionId: string
+  sequence: number
+  metric: Metric
+  value: number
+  unit: Unit
+  measuredAt?: string | null
+}
+export interface Measurement extends Omit<NewMeasurement, 'measuredAt'> {
+  id: string
+  astronautId: string
+  measuredAt: string | null
+  receivedAt: string
+  timeBasis: 'measuredAt' | 'receivedAt'
+  source: 'manual' | 'simulator' | 'sensor'
+}
+export interface HealthAssessment {
+  status: 'no-data' | 'stale' | 'not-evaluated' | 'unknown-time'
+  explanation: string
+}
+export interface DailyTask {
+  id: string
+  title: string
+  completedAt: string | null
+}
