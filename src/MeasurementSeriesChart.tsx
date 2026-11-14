@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { TooltipContentProps } from 'recharts'
 import type { MeasurementSeries, MeasurementSeriesPoint } from './shared/types'
-import { buildSeriesChart } from './data/seriesChart'
+import { buildSeriesChart, getHoveredSeriesPoint } from './data/seriesChart'
+import type { SeriesHover } from './data/seriesChart'
 
 const axisDate = new Intl.DateTimeFormat('ru-RU', {
   timeZone: 'UTC', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
@@ -18,8 +20,8 @@ function formatInterval(milliseconds: number) {
   return `${milliseconds} мс`
 }
 
-function SeriesTooltip({ active, payload, series }: TooltipContentProps & { series: MeasurementSeries }) {
-  const point = payload?.[0]?.payload as MeasurementSeriesPoint | undefined
+function SeriesTooltip({ active, payload, series, hoveredPoint }: TooltipContentProps & { series: MeasurementSeries; hoveredPoint?: MeasurementSeriesPoint }) {
+  const point = hoveredPoint ?? payload?.[0]?.payload as MeasurementSeriesPoint | undefined
   if (!active || !point) return null
   return <div style={{ background: '#182c39', padding: 12, border: '1px solid #344755',
     maxWidth: 'min(260px, 70vw)', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
@@ -31,10 +33,25 @@ function SeriesTooltip({ active, payload, series }: TooltipContentProps & { seri
   </div>
 }
 
+function SeriesDot({ cx, cy, payload, onEnter, onLeave }: {
+  cx?: number
+  cy?: number
+  payload?: MeasurementSeriesPoint
+  onEnter: (startAt: string) => void
+  onLeave: () => void
+}) {
+  if (cx === undefined || cy === undefined || !payload?.count) return null
+  return <circle className="recharts-line-dot" cx={cx} cy={cy} r={3}
+    fill="#b5edda" stroke="#b5edda" strokeWidth={1}
+    onPointerEnter={() => onEnter(payload.startAt)} onPointerLeave={onLeave} />
+}
+
 export function MeasurementSeriesChart({ series }: { series?: MeasurementSeries }) {
+  const [hovered, setHovered] = useState<SeriesHover | null>(null)
   if (!series) return <p>Загрузка истории за 7 дней…</p>
   const chart = buildSeriesChart(series)
   const hasData = series.points.some(point => point.count > 0)
+  const hoveredPoint = getHoveredSeriesPoint(series, hovered)
   return <>
     <p className="note">Период: {periodDate.format(new Date(series.from))} – {periodDate.format(new Date(series.to))} UTC.</p>
     <p className="note">
@@ -48,9 +65,11 @@ export function MeasurementSeriesChart({ series }: { series?: MeasurementSeries 
           <XAxis dataKey="time" type="number" scale="time" domain={chart.domain} ticks={chart.ticks}
             allowDataOverflow interval="preserveStartEnd" minTickGap={32} tickFormatter={value => axisDate.format(new Date(value))} />
           <YAxis domain={['auto', 'auto']} unit={` ${series.unit}`} />
-          <Tooltip filterNull={false} content={props => <SeriesTooltip {...props} series={series} />} />
+          <Tooltip filterNull={false} active={hoveredPoint ? true : undefined}
+            content={props => <SeriesTooltip {...props} series={series} hoveredPoint={hoveredPoint} />} />
           <Line dataKey="value" name={series.aggregation === 'mean' ? 'Среднее' : 'Последнее'} stroke="#b5edda"
-            dot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />
+            dot={<SeriesDot onEnter={startAt => setHovered({ metric: series.metric, startAt })} onLeave={() => setHovered(null)} />}
+            activeDot={false} connectNulls={false} isAnimationActive={false} />
         </LineChart>
       </ResponsiveContainer>
     </div>

@@ -41,30 +41,32 @@ async function readApiError(response: Response): Promise<ApiError> {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, { ...init, signal: AbortSignal.timeout(5000) })
+  const timeout = AbortSignal.timeout(5000)
+  const signal = init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout
+  const response = await fetch(`/api${path}`, { ...init, signal })
   if (!response.ok) throw await readApiError(response)
   return response.json() as Promise<T>
 }
 
-export function getHistory(filters: HistoryFilters = {}) {
+export function getHistory(filters: HistoryFilters = {}, signal?: AbortSignal) {
   const query = new URLSearchParams()
   for (const key of ['metric', 'from', 'to', 'limit', 'cursor'] as const) {
     const value = filters[key]
     if (value !== undefined) query.set(key, String(value))
   }
-  return request<MeasurementHistory>(`/measurements${query.size ? `?${query}` : ''}`)
+  return request<MeasurementHistory>(`/measurements${query.size ? `?${query}` : ''}`, { signal })
 }
-export const getLatestMeasurements = () => request<LatestMeasurements>('/measurements/latest')
-export function getMeasurementSeries(filters: SeriesFilters) {
+export const getLatestMeasurements = (signal?: AbortSignal) => request<LatestMeasurements>('/measurements/latest', { signal })
+export function getMeasurementSeries(filters: SeriesFilters, signal?: AbortSignal) {
   const query = new URLSearchParams()
   for (const key of ['metric', 'from', 'to', 'maxPoints'] as const) {
     const value = filters[key]
     if (value !== undefined) query.set(key, String(value))
   }
-  return request<MeasurementSeries>(`/measurements/series?${query}`)
+  return request<MeasurementSeries>(`/measurements/series?${query}`, { signal })
 }
-export const getAssessment = () => request<HealthAssessment>('/assessments')
-export const getTasks = () => request<DailyTask[]>('/tasks')
+export const getAssessment = (signal?: AbortSignal) => request<HealthAssessment>('/assessments', { signal })
+export const getTasks = (signal?: AbortSignal) => request<DailyTask[]>('/tasks', { signal })
 export const saveMeasurement = (measurement: NewMeasurement) => request<Measurement>('/measurements', {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(measurement),
 })

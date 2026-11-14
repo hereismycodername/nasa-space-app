@@ -20,10 +20,20 @@ it('shows a rare known measurement separately from a newer receipt without measu
     metrics: [{ metric: 'sleepHours', latestMeasurement: unknown, latestKnownMeasurement: known, latestReceivedMeasurement: unknown }],
   }
   const html = renderToStaticMarkup(<MetricOverview latest={latest} />)
-  expect(html).toContain('7.5 h')
+  expect(html.replace(/<[^>]+>/g, '')).toContain('7,5 h')
   expect(html).toContain('6 h')
   expect(html).toContain('Время измерения неизвестно; свежесть не подтверждена.')
   expect(html.match(/<article/g)).toHaveLength(6)
+})
+
+it('filters the overview to the selected body system without inventing unavailable metrics', () => {
+  const heart = renderToStaticMarkup(<MetricOverview selectedSystem="heart" latest={{ astronautId: 'demo-astronaut', metrics: [] }} />)
+  expect(heart.match(/<article/g)).toHaveLength(3)
+  expect(heart).toContain('Пульс')
+  expect(heart).not.toContain('Самочувствие')
+  const lungs = renderToStaticMarkup(<MetricOverview selectedSystem="lungs" />)
+  expect(lungs).toContain('Показатели пока не подключены')
+  expect(lungs).not.toContain('<article')
 })
 
 it('shows missing values explicitly for all metrics when the latest response is empty', () => {
