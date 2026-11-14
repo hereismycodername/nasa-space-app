@@ -125,9 +125,38 @@ async function freePort() {
 
 async function startServer(scenario, port) {
   const base = `http://127.0.0.1:${port}`
+  // A healthy service on this port may belong to the user's working database.
+  // Refuse it before spawning, and do not use its health response as readiness.
+  const reservation = createServer()
+  try {
+    await new Promise((resolve, reject) => {
+      reservation.once('error', reject)
+      reservation.listen(port, '127.0.0.1', resolve)
+    })
+  } catch (error) {
+    if (error.code === 'EADDRINUSE') throw new Error(`127.0.0.1:${port} is already in use. Choose another --port or stop the existing service; no data was sent to it.`)
+    throw error
+  } finally {
+    if (reservation.listening) await new Promise(resolve => reservation.close(resolve))
+  }
   const child = launch(binary, [], {
     DATABASE_URL: `sqlite://demo/${scenario}.db`, BIND_ADDR: `127.0.0.1:${port}`, FRONTEND_DIST: 'dist',
     SHUTDOWN_STDIN: isWindows ? '1' : '0',
+  }, true)
+  let bound = false
+  let output = ''
+  child.stdout.setEncoding('utf8')
+  child.stdout.on('data', chunk => {
+    process.stdout.write(chunk)
+    output += chunk
+    let newline
+    while ((newline = output.indexOf('\n')) >= 0) {
+      const line = output.slice(0, newline).trim()
+      output = output.slice(newline + 1)
+      // main.rs prints this only after its own TcpListener::bind succeeds.
+      if (line === `Space Health: ${base}`) bound = true
+    }
+    output = output.slice(-4096)
   })
   for (let attempt = 0; attempt < 100; attempt++) {
     controller.signal.throwIfAborted()
@@ -136,10 +165,14 @@ async function startServer(scenario, port) {
       throw new Error('Server exited before becoming ready')
     }
     try {
-      const response = await fetch(`${base}/api/health`, {
-        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(1000)]),
-      })
-      if (response.ok) return { child, base }
+      if (bound) {
+        const response = await fetch(`${base}/api/health`, {
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(1000)]),
+        })
+        const ready = response.ok
+        await response.body?.cancel()
+        if (ready && child.exitCode === null && child.signalCode === null) return { child, base }
+      }
     } catch { /* listener not ready yet */ }
     await delay(100, undefined, { signal: controller.signal })
   }

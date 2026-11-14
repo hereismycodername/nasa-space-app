@@ -29,7 +29,7 @@ pub const NONE: Color32 = Color32::from_rgb(0x4f, 0xb0, 0xd6);
 
 pub fn status_color(s: Status) -> Color32 {
     match s {
-        Status::Normal => OK,
+        Status::Normal | Status::Unassessed => OK,
         Status::Watch => WARN,
         Status::Act => CRIT,
         Status::NoData => NONE,

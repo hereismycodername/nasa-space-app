@@ -50,7 +50,7 @@ pub fn range_text(ind: &IndDef, env: &EnvDef) -> String {
 pub fn score(statuses: &[Status]) -> Option<u8> {
     let s: Vec<u32> = statuses
         .iter()
-        .filter(|s| **s != Status::NoData)
+        .filter(|s| !matches!(s, Status::NoData | Status::Unassessed))
         .map(|s| match s {
             Status::Normal => 0,
             Status::Watch => 1,
@@ -68,6 +68,11 @@ pub fn score(statuses: &[Status]) -> Option<u8> {
 pub fn advice(ind: &IndDef, st: Status, env: &EnvDef, blackout: bool) -> Advice {
     let tgt = range_text(ind, env);
     match st {
+        Status::Unassessed => Advice {
+            headline: "Clinical assessment is not connected.".into(),
+            actions: vec![],
+            escalate: None,
+        },
         Status::Normal | Status::NoData => Advice {
             headline: format!("Normal (target {}). Keep it up.", tgt),
             actions: vec![],

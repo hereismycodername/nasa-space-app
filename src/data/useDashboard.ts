@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { DailyTask, HealthAssessment, LatestMeasurements } from '../shared/types'
+import type { DailyTask, HealthAssessment, LatestMeasurements, PreviousHealthAlerts } from '../shared/types'
 import { getAssessment, getLatestMeasurements, getTasks } from './measurements'
 
 export interface DashboardState {
@@ -12,10 +12,21 @@ export interface DashboardState {
   lastUpdated?: Date
   qualityObservedAt?: number
   qualityReceivedAt?: number
+  assessmentObservedAt?: number
+  assessmentReceivedAt?: number
+  previousHealthAlerts?: PreviousHealthAlerts
 }
 
 const initialState: DashboardState = { connected: false, loading: true, error: '' }
 const pollInterval = 5000
+
+function snapshotAnchor(timestamp: string, previousTimestamp: string | undefined, previousAnchor: number | undefined, requestStartedAt: number) {
+  const previousTime = Date.parse(previousTimestamp ?? '')
+  const nextTime = Date.parse(timestamp)
+  // An older cached snapshot has already aged at least as much as the previous one.
+  return previousAnchor !== undefined && Number.isFinite(nextTime) && nextTime <= previousTime
+    ? previousAnchor - (previousTime - nextTime) : requestStartedAt
+}
 
 function describeError(error: unknown) {
   if (error instanceof Error && error.name === 'TimeoutError') return 'Сервер не ответил за 5 секунд.'
@@ -62,9 +73,17 @@ export function startDashboardPolling(onChange: (state: DashboardState) => void)
       const [latest, assessment, tasks] = await Promise.all(requests)
       if (!requestController.signal.aborted) {
         // Repeated cached responses must not restart their freshness lifetime.
-        const qualityObservedAt = latest.evaluatedAt === state.latest?.evaluatedAt
-          ? state.qualityObservedAt ?? requestStartedAt : requestStartedAt
-        publish({ latest, assessment, tasks, connected: true, loading: false, error: '', lastUpdated: new Date(), qualityObservedAt, qualityReceivedAt: performance.now() })
+        const qualityObservedAt = snapshotAnchor(latest.evaluatedAt, state.latest?.evaluatedAt, state.qualityObservedAt, requestStartedAt)
+        const assessmentObservedAt = snapshotAnchor(assessment.evaluatedAt, state.assessment?.evaluatedAt, state.assessmentObservedAt, requestStartedAt)
+        const receivedAt = performance.now()
+        const previousHealthAlerts: PreviousHealthAlerts = state.assessment?.astronautId === assessment.astronautId ? { ...state.previousHealthAlerts } : {}
+        for (const rule of assessment.health?.rules ?? []) {
+          const previous = previousHealthAlerts[rule.metric]
+          if (previous && Date.parse(previous.evaluatedAt) > Date.parse(assessment.evaluatedAt)) continue
+          if (rule.status === 'attention' || rule.status === 'critical') previousHealthAlerts[rule.metric] = { rule, evaluatedAt: assessment.evaluatedAt }
+          else if (rule.status === 'noAlert') delete previousHealthAlerts[rule.metric]
+        }
+        publish({ latest, assessment, tasks, connected: true, loading: false, error: '', lastUpdated: new Date(), qualityObservedAt, qualityReceivedAt: receivedAt, assessmentObservedAt, assessmentReceivedAt: receivedAt, previousHealthAlerts })
       }
     } catch (error) {
       const cancelled = requestController.signal.aborted

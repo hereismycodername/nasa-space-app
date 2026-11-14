@@ -40,6 +40,20 @@ describe('check-in input', () => {
   it.each(['', 'invalid', '2026-02-31T08:30:00', '2026-11-14T25:00:00'])('rejects invalid or normalized local time %s', localTime => {
     expect(() => parseCheckIn({ ...draft, localTime })).toThrow('дату и время')
   })
+
+  it.each([
+    ['spo2', '%', 100], ['visionBlur', 'score', 10], ['exerciseMinutes', 'min', 1440],
+    ['headache', 'score', 10], ['backPain', 'score', 10],
+  ] as const)('accepts zero and fractional %s reports with the agreed unit and inclusive bounds', (metric, unit, maximum) => {
+    for (const value of [0, 0.5, maximum]) expect(parseCheckIn({ ...draft, metric, value: String(value) })).toMatchObject({ metric, value, unit })
+    for (const value of [-0.1, maximum + 0.1, Infinity, NaN]) expect(() => parseCheckIn({ ...draft, metric, value: String(value) })).toThrow()
+  })
+
+  it('requires positive finite glucose in mg/dL without inventing a clinical upper bound', () => {
+    expect(parseCheckIn({ ...draft, metric: 'glucose', value: '90.5' })).toMatchObject({ metric: 'glucose', unit: 'mg/dL', value: 90.5 })
+    for (const value of ['0', '-1', 'Infinity', 'NaN']) expect(() => parseCheckIn({ ...draft, metric: 'glucose', value })).toThrow()
+    expect(parseCheckIn({ ...draft, metric: 'glucose', value: '1000' }).value).toBe(1000)
+  })
 })
 
 describe('confirmed saves and safe retries', () => {

@@ -49,12 +49,12 @@ pub(crate) fn assess(
         },
         FreshnessStatus::Fresh => Assessment {
             status: "not-evaluated",
-            explanation: "Последнее принятое измерение достаточно свежее по демонстрационной политике показателя. Медицинские правила пока не подключены.",
+            explanation: "Последнее принятое измерение достаточно свежее по демонстрационной политике показателя. Это сводка свежести; результаты демонстрационных правил возвращаются отдельно в health.",
         },
     })
 }
 
-/// Select the compatibility summary from the same per-metric read snapshot.
+/// Select the last receipt across all metrics from the same read snapshot.
 pub(crate) fn assess_snapshot(
     metrics: &[LatestMetric],
     now: DateTime<Utc>,
@@ -162,8 +162,8 @@ mod tests {
                 ),
             ),
             entry(
-                "sleepHours",
-                sample("z", "sleepHours", None, "2026-11-14T05:00:00+05:00"),
+                "headache",
+                sample("z", "headache", None, "2026-11-14T05:00:00+05:00"),
             ),
             entry(
                 "mood",

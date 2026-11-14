@@ -1,5 +1,6 @@
-export type Metric = 'heartRate' | 'systolicPressure' | 'diastolicPressure' | 'temperature' | 'sleepHours' | 'mood'
-export type Unit = 'bpm' | 'mmHg' | '°C' | 'h' | 'score'
+export const METRIC_IDS = ['heartRate', 'systolicPressure', 'diastolicPressure', 'temperature', 'sleepHours', 'mood', 'spo2', 'glucose', 'visionBlur', 'exerciseMinutes', 'headache', 'backPain'] as const
+export type Metric = typeof METRIC_IDS[number]
+export type Unit = 'bpm' | 'mmHg' | '°C' | 'h' | 'score' | '%' | 'mg/dL' | 'min'
 export interface NewMeasurement {
   deviceId: string
   sessionId: string
@@ -87,6 +88,44 @@ export interface HealthAssessment {
   astronautId: string
   evaluatedAt: string
   metrics: MetricQuality[]
+  health?: HealthEvaluation
+}
+export type RuleStatus = 'notEvaluated' | 'insufficientData' | 'noAlert' | 'attention' | 'critical'
+export type Escalation = 'none' | 'self' | 'crew' | 'ground' | 'urgent'
+export interface HealthRule {
+  ruleId: string
+  ruleVersion: string
+  metric: Metric
+  title: string
+  status: RuleStatus
+  explanation: string
+  measurementIds: string[]
+  validUntil: string | null
+  suggestedAction: string
+  escalation: Escalation
+  flightContext: string
+  sourceUrls: string[]
+  demonstrationOnly: true
+}
+export type PreviousHealthAlerts = Partial<Record<Metric, { rule: HealthRule; evaluatedAt: string }>>
+export interface FlightEducation {
+  id: string
+  title: string
+  explanation: string
+  suggestedAction: string
+  sourceUrls: string[]
+}
+export interface HealthEvaluation {
+  ruleSetVersion: string
+  demonstrationOnly: true
+  status: RuleStatus
+  explanation: string
+  disclaimer: string
+  emergencyGuidance: string
+  evaluatedMetricCount: number
+  totalMetricCount: number
+  rules: HealthRule[]
+  education: FlightEducation[]
 }
 export interface DailyTask {
   id: string

@@ -2,6 +2,7 @@
 //! Linux console, over SSH and over a serial line. Redraws only when something changed.
 
 mod braille;
+mod live;
 
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -82,6 +83,7 @@ fn sc(s: Status) -> Color {
         Status::Watch => Color::Yellow,
         Status::Act => Color::Red,
         Status::NoData => Color::Cyan,
+        Status::Unassessed => Color::Gray,
     }
 }
 fn word(s: Status) -> &'static str {
@@ -90,6 +92,7 @@ fn word(s: Status) -> &'static str {
         Status::Watch => "WATCH",
         Status::Act => "ACT NOW",
         Status::NoData => "NO DATA",
+        Status::Unassessed => "NOT ASSESSED",
     }
 }
 fn rtt(s: f64) -> String {
@@ -1028,6 +1031,9 @@ pub fn run<B: Backend>(b: B) -> std::io::Result<()> {
 
 /// Same, starting in the given role (the user can still switch with `r`).
 pub fn run_as<B: Backend>(b: B, role: Role) -> std::io::Result<()> {
+    if !b.is_demo() {
+        return live::run(b, role);
+    }
     let mut term = ratatui::init();
     let mut app = App::new(b);
     app.role = role;
