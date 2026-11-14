@@ -129,16 +129,6 @@ pub(crate) const METRICS: &[MetricDefinition] = &[
     },
 ];
 
-/// Only these original channels participate in the deprecated summary.
-pub(crate) const LEGACY_SUMMARY_METRICS: &[&str] = &[
-    "heartRate",
-    "systolicPressure",
-    "diastolicPressure",
-    "temperature",
-    "sleepHours",
-    "mood",
-];
-
 pub(crate) fn definition_for(metric: &str) -> Option<&'static MetricDefinition> {
     METRICS.iter().find(|policy| policy.metric == metric)
 }
