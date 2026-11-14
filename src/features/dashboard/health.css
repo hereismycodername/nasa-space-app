@@ -55,3 +55,9 @@
 .system-checkin-actions > div { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .system-checkin-actions button { white-space: normal; text-align: left; font-size: 10px; justify-content: flex-start; }
 @media (max-width: 650px) { .health-panel .section-heading { flex-wrap: wrap; } .hazard-list { grid-template-columns: 1fr; } .health-panel { padding: 14px; } }
+
+/* Full explanations remain readable by scrolling; expanding details is explicit. */
+.health-overview { height: 156px; overflow: auto; scrollbar-gutter: stable; }
+.health-alerts { height: 244px; overflow: auto; scrollbar-gutter: stable; align-items: start; }
+.health-summary { height: 4.8em; overflow: auto; }
+.metric-health > .health-badge { min-height: 38px; }

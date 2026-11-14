@@ -55,77 +55,77 @@ pub(crate) const METRICS: &[MetricDefinition] = &[
         unit: "mmHg",
         bounds: InputBounds::Positive,
         aggregation: Aggregation::Mean,
-        fresh_for_seconds: 3600,
+        fresh_for_seconds: 46_800,
     },
     MetricDefinition {
         metric: "diastolicPressure",
         unit: "mmHg",
         bounds: InputBounds::Positive,
         aggregation: Aggregation::Mean,
-        fresh_for_seconds: 3600,
+        fresh_for_seconds: 46_800,
     },
     MetricDefinition {
         metric: "temperature",
         unit: "°C",
         bounds: InputBounds::Positive,
         aggregation: Aggregation::Mean,
-        fresh_for_seconds: 3600,
+        fresh_for_seconds: 46_800,
     },
     MetricDefinition {
         metric: "sleepHours",
         unit: "h",
         bounds: InputBounds::Inclusive(0.0, 24.0),
         aggregation: Aggregation::Last,
-        fresh_for_seconds: 86_400,
+        fresh_for_seconds: 93_600,
     },
     MetricDefinition {
         metric: "mood",
         unit: "score",
         bounds: InputBounds::Inclusive(1.0, 5.0),
         aggregation: Aggregation::Last,
-        fresh_for_seconds: 86_400,
+        fresh_for_seconds: 93_600,
     },
     MetricDefinition {
         metric: "spo2",
         unit: "%",
         bounds: InputBounds::Inclusive(0.0, 100.0),
         aggregation: Aggregation::Mean,
-        fresh_for_seconds: 60,
+        fresh_for_seconds: 7200,
     },
     MetricDefinition {
         metric: "glucose",
         unit: "mg/dL",
         bounds: InputBounds::Positive,
         aggregation: Aggregation::Mean,
-        fresh_for_seconds: 3600,
+        fresh_for_seconds: 93_600,
     },
     MetricDefinition {
         metric: "visionBlur",
         unit: "score",
         bounds: InputBounds::Inclusive(0.0, 10.0),
         aggregation: Aggregation::Last,
-        fresh_for_seconds: 86400,
+        fresh_for_seconds: 93_600,
     },
     MetricDefinition {
         metric: "exerciseMinutes",
         unit: "min",
         bounds: InputBounds::Inclusive(0.0, 1440.0),
         aggregation: Aggregation::Last,
-        fresh_for_seconds: 86400,
+        fresh_for_seconds: 93_600,
     },
     MetricDefinition {
         metric: "headache",
         unit: "score",
         bounds: InputBounds::Inclusive(0.0, 10.0),
         aggregation: Aggregation::Last,
-        fresh_for_seconds: 3600,
+        fresh_for_seconds: 46_800,
     },
     MetricDefinition {
         metric: "backPain",
         unit: "score",
         bounds: InputBounds::Inclusive(0.0, 10.0),
         aggregation: Aggregation::Last,
-        fresh_for_seconds: 3600,
+        fresh_for_seconds: 46_800,
     },
 ];
 
@@ -164,7 +164,10 @@ mod tests {
                 .iter()
                 .map(|policy| policy.fresh_for_seconds)
                 .collect::<Vec<_>>(),
-            [15, 3600, 3600, 3600, 86_400, 86_400, 60, 3600, 86_400, 86_400, 3600, 3600]
+            [
+                15, 46_800, 46_800, 46_800, 93_600, 93_600, 7200, 93_600, 93_600, 93_600, 46_800,
+                46_800
+            ]
         );
         assert_eq!(definition_for("not-a-metric"), None);
     }

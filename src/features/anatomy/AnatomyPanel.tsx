@@ -44,7 +44,7 @@ export const AnatomyPanel = memo(function AnatomyPanel({ selected, onSelect, ava
     </div>
     <div className={`anatomy-canvas anatomy-mode-${mode}${selected ? ' anatomy-has-selection' : ''}`}>
       {view === '3d'
-        ? <AnatomyViewer mode={mode} selected={selected} hovered={hovered} onHover={setHovered} onSelect={onSelect} fallback={diagram} />
+        ? <AnatomyViewer mode={mode} selected={selected} hovered={hovered} onHover={setHovered} onSelect={onSelect} fallback={diagram} healthStatuses={healthStatuses} />
         : diagram}
     </div>
     {view === '3d' ? <div className="anatomy-systems" role="group" aria-label="Системы организма">
@@ -62,7 +62,7 @@ export const AnatomyPanel = memo(function AnatomyPanel({ selected, onSelect, ava
     </div> : null}
     <div className="anatomy-caption">
       <span><i className="anatomy-legend-dot" aria-hidden="true" /> Наличие данных, не оценка здоровья</span>
-      {healthStatuses ? <p>Цветные подписи — оценка доступных показателей по демо-правилам, не диагноз органа. Цвет модели обозначает анатомию.</p> : null}
+      {healthStatuses ? <p>Жёлтый — требуется внимание, красный — срочная помощь по демо-правилам. Это оценка показателей системы, не диагноз органа.</p> : null}
       {selected ? <button type="button" onClick={() => onSelect(null)}>Все системы</button> : <p>Выберите орган или подпись</p>}
       <a className="anatomy-credits" href="/anatomy-credits.txt" target="_blank" rel="noreferrer">Анатомия: BodyParts3D · условия использования</a>
     </div>

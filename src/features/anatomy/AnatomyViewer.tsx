@@ -4,26 +4,28 @@ import { ArrowLeft, ArrowRight, Minus, Plus, RotateCcw } from 'lucide-react'
 import type { AnatomyMode } from './anatomySystems'
 import type { AnatomyViewerController } from './createAnatomyViewer'
 import type { SystemId } from './types'
+import type { AnatomyHealth } from './anatomyAppearance'
 
-export function AnatomyViewer({ mode, selected, hovered, onHover, onSelect, fallback }: {
+export function AnatomyViewer({ mode, selected, hovered, onHover, onSelect, fallback, healthStatuses }: {
   mode: AnatomyMode
   selected: SystemId | null
   hovered: SystemId | null
   onHover: (system: SystemId | null) => void
   onSelect: (system: SystemId | null) => void
   fallback: ReactNode
+  healthStatuses?: AnatomyHealth
 }) {
   const host = useRef<HTMLDivElement>(null)
   const viewer = useRef<AnatomyViewerController | null>(null)
-  const current = useRef({ mode, selected, hovered, onHover, onSelect })
+  const current = useRef({ mode, selected, hovered, onHover, onSelect, healthStatuses })
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [attempt, setAttempt] = useState(0)
   const helpId = useId()
 
   useEffect(() => {
-    current.current = { mode, selected, hovered, onHover, onSelect }
-    viewer.current?.setAppearance(mode, selected, hovered)
-  }, [mode, selected, hovered, onHover, onSelect])
+    current.current = { mode, selected, hovered, onHover, onSelect, healthStatuses }
+    viewer.current?.setAppearance(mode, selected, hovered, healthStatuses)
+  }, [mode, selected, hovered, onHover, onSelect, healthStatuses])
 
   useEffect(() => {
     const container = host.current!
@@ -45,7 +47,7 @@ export function AnatomyViewer({ mode, selected, hovered, onHover, onSelect, fall
         latest.onSelect(latest.selected === system ? null : system)
       }, fail, system => current.current.onHover(system))
       viewer.current = instance
-      instance.setAppearance(current.current.mode, current.current.selected, current.current.hovered)
+      instance.setAppearance(current.current.mode, current.current.selected, current.current.hovered, current.current.healthStatuses)
       return instance.ready.then(() => { if (!cancelled && !failed) setStatus('ready') })
     }).catch(fail)
     return () => {

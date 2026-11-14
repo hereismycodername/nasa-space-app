@@ -69,17 +69,17 @@
 | metric | unit | Граница ввода | series | demo freshForSeconds |
 |---|---|---|---|---:|
 | heartRate | bpm | > 0 | mean | 15 |
-| systolicPressure | mmHg | > 0 | mean | 3600 |
-| diastolicPressure | mmHg | > 0 | mean | 3600 |
-| temperature | °C | > 0 | mean | 3600 |
-| sleepHours | h | 0…24 | last | 86400 |
-| mood | score | 1…5 | last | 86400 |
-| spo2 | % | 0…100 | mean | 60 |
-| glucose | mg/dL | > 0 | mean | 3600 |
-| visionBlur | score | 0…10 | last | 86400 |
-| exerciseMinutes | min | 0…1440 | last | 86400 |
-| headache | score | 0…10 | last | 3600 |
-| backPain | score | 0…10 | last | 3600 |
+| systolicPressure | mmHg | > 0 | mean | 46800 |
+| diastolicPressure | mmHg | > 0 | mean | 46800 |
+| temperature | °C | > 0 | mean | 46800 |
+| sleepHours | h | 0…24 | last | 93600 |
+| mood | score | 1…5 | last | 93600 |
+| spo2 | % | 0…100 | mean | 7200 |
+| glucose | mg/dL | > 0 | mean | 93600 |
+| visionBlur | score | 0…10 | last | 93600 |
+| exerciseMinutes | min | 0…1440 | last | 93600 |
+| headache | score | 0…10 | last | 46800 |
+| backPain | score | 0…10 | last | 46800 |
 
 Все значения конечные; дробное значение допустимо, в том числе для mood.
 Границы являются валидацией ввода, а не медицинскими нормами.
@@ -275,7 +275,7 @@ query-параметров дают 400 `INVALID_QUERY` без `field`.
 |---|---|
 | status | missing, fresh, stale, unknownTime или clockSkew |
 | measurementId | id оцениваемой записи, null только при missing |
-| freshForSeconds | Окно свежести метрики в секундах |
+| freshForSeconds | Ожидаемый интервал между замерами с запасом в секундах (демонстрационная политика, не медицинская норма) |
 | ageSeconds | Неотрицательный возраст с дробной частью для известного небудущего времени; иначе null |
 | clockSkew | true только для status=clockSkew |
 
@@ -285,17 +285,17 @@ query-параметров дают 400 `INVALID_QUERY` без `field`.
 | metric | freshForSeconds |
 |---|---:|
 | heartRate | 15 |
-| systolicPressure | 3600 |
-| diastolicPressure | 3600 |
-| temperature | 3600 |
-| sleepHours | 86400 |
-| mood | 86400 |
-| spo2 | 60 |
-| glucose | 3600 |
-| visionBlur | 86400 |
-| exerciseMinutes | 86400 |
-| headache | 3600 |
-| backPain | 3600 |
+| systolicPressure | 46800 |
+| diastolicPressure | 46800 |
+| temperature | 46800 |
+| sleepHours | 93600 |
+| mood | 93600 |
+| spo2 | 7200 |
+| glucose | 93600 |
+| visionBlur | 93600 |
+| exerciseMinutes | 93600 |
+| headache | 46800 |
+| backPain | 46800 |
 
 | status | Условие |
 |---|---|

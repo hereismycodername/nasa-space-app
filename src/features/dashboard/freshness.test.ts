@@ -1,9 +1,26 @@
 import { expect, it } from 'vitest'
 import type { DataQuality, LatestMeasurements } from '../../shared/types'
-import { currentFreshness, nextFreshnessExpiry, qualityDescription } from './freshness'
+import { currentFreshness, formatMeasurementAge, nextFreshnessExpiry, qualityDescription } from './freshness'
+import { formatUnit, formatValue } from './metrics'
+import type { Metric, Unit } from '../../shared/types'
 
 const pulse: DataQuality = { status: 'fresh', measurementId: 'pulse', ageSeconds: 14, freshForSeconds: 15, clockSkew: false }
 const sleep: DataQuality = { ...pulse, measurementId: 'sleep', freshForSeconds: 86400 }
+
+it('formats relative measurement ages and display units in Russian without changing wire units', () => {
+  for (const [seconds, expected] of [[0, 'только что'], [59, 'только что'], [60, '1 мин назад'], [3599, '59 мин назад'], [3600, '1 ч назад'], [18000, '5 ч назад'], [86400, '1 дн. назад'], [172800, '2 дн. назад']] as const) {
+    expect(formatMeasurementAge(seconds)).toBe(`Последний замер ${expected}`)
+  }
+  expect(formatMeasurementAge(null)).toBe('Время последнего замера неизвестно')
+  const cases: [number, Unit, Metric | undefined, string][] = [
+    [2, 'score', 'mood', '2 из 5'], [2, 'score', 'headache', '2 из 10'], [3, 'score', 'visionBlur', '3 из 10'],
+    [2, 'score', undefined, '2 балла'], [4.14, 'h', 'sleepHours', '4,14 ч'], [72, 'bpm', 'heartRate', '72 уд/мин'],
+    [115, 'mmHg', 'systolicPressure', '115 мм рт. ст.'], [15, 'min', 'exerciseMinutes', '15 мин'],
+    [90.5, 'mg/dL', 'glucose', '90,5 мг/дл'], [36.7, '°C', 'temperature', '36,7 °C'], [98, '%', 'spo2', '98 %'],
+  ]
+  for (const [value, unit, metric, expected] of cases) expect(`${formatValue(value)} ${formatUnit(unit, metric)}`).toBe(expected)
+  expect(qualityDescription({ ...pulse, status: 'stale', freshForSeconds: 46800, ageSeconds: 50400 })).toContain('ожидается раз в 13 ч')
+})
 
 it('ages server-confirmed freshness independently of the client calendar and at the TTL boundary', () => {
   expect(currentFreshness(pulse, 1)).toBe('fresh')

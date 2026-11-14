@@ -349,7 +349,7 @@ async fn future_and_stale_values_remain_unassessed_even_when_severe_and_just_del
         "temperature",
         34.0,
         "°C",
-        Some(now - Duration::hours(2)),
+        Some(now - Duration::hours(14)),
     )
     .await;
     let (_, assessment) = call(&app, "GET", "/api/assessments", Value::Null).await;

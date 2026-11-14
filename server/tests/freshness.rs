@@ -76,17 +76,17 @@ async fn empty_snapshot_exposes_all_missing_metrics_with_explicit_policy() {
         assert_eq!(result["metrics"].as_array().unwrap().len(), 12);
         for (name, ttl) in [
             ("heartRate", 15),
-            ("systolicPressure", 3600),
-            ("diastolicPressure", 3600),
-            ("temperature", 3600),
-            ("sleepHours", 86400),
-            ("mood", 86400),
-            ("spo2", 60),
-            ("glucose", 3600),
-            ("visionBlur", 86400),
-            ("exerciseMinutes", 86400),
-            ("headache", 3600),
-            ("backPain", 3600),
+            ("systolicPressure", 46800),
+            ("diastolicPressure", 46800),
+            ("temperature", 46800),
+            ("sleepHours", 93600),
+            ("mood", 93600),
+            ("spo2", 7200),
+            ("glucose", 93600),
+            ("visionBlur", 93600),
+            ("exerciseMinutes", 93600),
+            ("headache", 46800),
+            ("backPain", 46800),
         ] {
             let entry = metric(&result, name);
             let expected = json!({"status":"missing","measurementId":null,"freshForSeconds":ttl,"ageSeconds":null,"clockSkew":false});
@@ -108,22 +108,27 @@ async fn each_metric_uses_its_own_measured_time_and_window_in_both_resources() {
             "systolicPressure",
             Some(now - Duration::minutes(30)),
             "fresh",
-            3600,
+            46800,
         ),
         (
             "diastolicPressure",
             Some(now + Duration::minutes(2)),
             "clockSkew",
-            3600,
+            46800,
         ),
-        ("temperature", Some(now - Duration::hours(2)), "stale", 3600),
+        (
+            "temperature",
+            Some(now - Duration::hours(14)),
+            "stale",
+            46800,
+        ),
         (
             "sleepHours",
-            Some(now - Duration::hours(25)),
+            Some(now - Duration::hours(27)),
             "stale",
-            86400,
+            93600,
         ),
-        ("mood", None, "unknownTime", 86400),
+        ("mood", None, "unknownTime", 93600),
         ("heartRate", Some(now - Duration::seconds(1)), "fresh", 15),
     ];
     for (name, measured, _, _) in cases {

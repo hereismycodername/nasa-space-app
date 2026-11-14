@@ -26,8 +26,8 @@ it('shows a rare known measurement separately from a newer receipt without measu
   }
   const latest = snapshot(known, fresh, unknown, { ...fresh, status: 'unknownTime', measurementId: unknown.id, ageSeconds: null })
   const html = renderToStaticMarkup(<MetricOverview latest={latest} connected />)
-  expect(html.replace(/<[^>]+>/g, '')).toContain('7,5 h')
-  expect(html).toContain('6 h')
+  expect(html.replace(/<[^>]+>/g, '')).toContain('7,5 ч')
+  expect(html).toContain('6 ч')
   expect(html).toContain('Время измерения неизвестно; свежесть не подтверждена.')
   expect(html).toContain('quality-fresh')
   expect(html).toContain('quality-unknownTime')
@@ -58,7 +58,7 @@ it('keeps per-metric freshness independent and expires a cached result between s
   latest.metrics = latest.metrics.map(entry => entry.metric === 'sleepHours' ? sleep : entry)
   const html = renderToStaticMarkup(<MetricOverview latest={latest} connected elapsedSeconds={2} />)
   const cards = html.match(/<article[\s\S]*?<\/article>/g)!
-  expect(cards[0]).toContain('Данные устарели')
+  expect(cards[0]).toContain('Последний замер только что')
   expect(cards[0]).toContain('Демо-срок: 15 с')
   expect(cards[4]).toContain('Свежее измерение')
   expect(cards[4]).toContain('Демо-срок: 1 сут.')
@@ -69,10 +69,10 @@ it('does not let a delayed last delivery replace the known reading or its qualit
   const latest = snapshot(known, fresh, delayed, { ...fresh, status: 'stale', measurementId: delayed.id, ageSeconds: 345600 })
   const html = renderToStaticMarkup(<MetricOverview latest={latest} connected />)
   const text = html.replace(/<[^>]+>/g, '')
-  expect(text).toContain('7,5 h')
-  expect(text).toContain('Последняя доставка: 4 h')
+  expect(text).toContain('7,5 ч')
+  expect(text).toContain('Последняя доставка: 4 ч')
   expect(text).toContain('Свежее измерение')
-  expect(text).toContain('Данные устарели')
+  expect(text).toContain('Последний замер 4 дн. назад')
 })
 
 it('identifies future measurement timestamps as clock skew without a fresh claim', () => {
@@ -85,7 +85,7 @@ it('identifies future measurement timestamps as clock skew without a fresh claim
 it('preserves the reading offline but labels previous freshness as unconfirmed', () => {
   const html = renderToStaticMarkup(<MetricOverview latest={snapshot(known, fresh)} connected={false} />)
   const text = html.replace(/<[^>]+>/g, '')
-  expect(text).toContain('7,5 h')
+  expect(text).toContain('7,5 ч')
   expect(text).toContain('Свежесть не подтверждена')
   expect(text).not.toContain('Свежее измерение')
   expect(html).toContain('Последняя оценка сервера: Свежее измерение')

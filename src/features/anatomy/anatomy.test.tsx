@@ -3,8 +3,32 @@ import { expect, it } from 'vitest'
 import { AnatomyPanel } from './AnatomyPanel'
 import { AnatomyDiagram } from './AnatomyDiagram'
 import { anatomyAppearance } from './anatomyAppearance'
+import { systemHealth } from '../dashboard/health'
+import { healthFixture } from '../dashboard/health.fixture'
 
 const noSelection = () => {}
+
+it('colors organs and skeletal regions by the worst current system status in every mode', () => {
+  for (const [sleep, mood, expected] of [
+    ['attention', 'noAlert', '#f2b632'], ['attention', 'critical', '#ff978c'],
+    ['noAlert', 'noAlert', undefined], ['notEvaluated', 'notEvaluated', undefined],
+  ] as const) {
+    const context = healthFixture()
+    context.assessment.health!.rules.find(rule => rule.metric === 'sleepHours')!.status = sleep
+    context.assessment.health!.rules.find(rule => rule.metric === 'mood')!.status = mood
+    const health = systemHealth(context)
+    for (const mode of ['organs', 'skeleton', 'xray'] as const) {
+      expect(anatomyAppearance(mode, 'brain', 'organ', null, null, health, 'Brain').color).toBe(expected)
+      expect(anatomyAppearance(mode, 'msk', 'skeleton', null, null, health, 'Skull').color).toBe(expected)
+      expect(anatomyAppearance(mode, 'msk', 'skeleton', 'msk', null, health, 'Skull')).toMatchObject({ active: true, opacity: 1 })
+      const html = renderToStaticMarkup(<AnatomyDiagram mode={mode} selected={null} onSelect={noSelection} availableSystems={[]} healthStatuses={health} />)
+      if (expected) expect(html).toContain(`fill="${expected}"`)
+    }
+    for (const invalid of [{ ...context, connected: false }, { ...context, elapsedSeconds: 86401 }, { ...context, latestElapsedSeconds: 86401 }]) {
+      expect(anatomyAppearance('skeleton', 'msk', 'skeleton', null, null, systemHealth(invalid), 'Skull').color).toBeUndefined()
+    }
+  }
+})
 
 it('keeps all seven systems navigable before WebGL has loaded without claiming measurements exist', () => {
   const html = renderToStaticMarkup(<AnatomyPanel selected={null} onSelect={noSelection} />)
