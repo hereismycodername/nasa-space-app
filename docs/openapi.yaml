@@ -1,0 +1,753 @@
+openapi: 3.1.0
+info:
+  title: Space Health Local API
+  version: 0.3.0
+  description: 'Implemented BE-03 contract for a local hackathon prototype. Measurement retries compare
+    normalized UTC instants with nanosecond parser precision and preserve the first stored record.
+    Measurements include timeBasis;
+    history is ordered by the measurement time, or receipt time when unknown, using numeric UTC milliseconds.
+    Unknown measurement time produces an unknown-time assessment. Upgrade the bundled React client with
+    this server; these semantics differ from v0.1.1. API errors use application/problem+json with
+    code/message/optional field and legacy error. No authentication, authorization or rate limiting is implemented: use only
+    synthetic data on a trusted local network. There are no 401/403/429 flows. Unknown /api routes return
+    NOT_FOUND. Data filtering, pagination, missionDate and per-metric assessments are future work, not
+    available through this specification. Requests above 2 MiB are rejected by JSON body extraction. Version
+    is a contract revision; /api paths remain unchanged.'
+servers:
+- url: http://127.0.0.1:8080
+  description: Local Rust server (also serves the built React UI)
+security: []
+tags:
+- name: Health
+  description: Server and database readiness.
+- name: Measurements
+  description: Single-record ingestion and current bounded history.
+- name: Assessments
+  description: Prototype freshness status, not clinical assessment.
+- name: Tasks
+  description: Undated persistent checklist.
+paths:
+  /api/health:
+    get:
+      summary: Check API and database readiness
+      operationId: getHealth
+      tags:
+      - Health
+      description: Executes a database probe. No authentication or query options.
+      responses:
+        '200':
+          description: API can query SQLite.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+              examples:
+                ready:
+                  externalValue: ./examples/health.response.json
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/DatabaseError'
+  /api/measurements:
+    get:
+      summary: Read the latest stored history
+      operationId: listMeasurements
+      tags:
+      - Measurements
+      description: Returns at most 500 rows across all metrics and the demo profile, ordered by effective
+        UTC milliseconds descending then id descending. Effective time is measuredAt when known, otherwise
+        receivedAt; timeBasis identifies the selected field. Sub-millisecond fractions are truncated for
+        ordering, while original timestamp strings are preserved. Receipt time does not establish measurement
+        freshness. No filtering or pagination is implemented in BE-03. Query parameters
+        are decoded but ignored; metric/from/to/limit are not effective options. Empty history returns
+        [].
+      responses:
+        '200':
+          description: Up to 500 measurement records.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 500
+                items:
+                  $ref: '#/components/schemas/Measurement'
+              examples:
+                history:
+                  externalValue: ./examples/measurements.response.json
+                empty:
+                  value: []
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/DatabaseError'
+    post:
+      summary: Ingest one measurement
+      operationId: createMeasurement
+      tags:
+      - Measurements
+      description: 'Unknown request fields are rejected. Device registration supplies astronautId/source.
+        Identity is (deviceId, sessionId, sequence). Equivalent repeats preserve id, receivedAt and the
+        original measuredAt text. measuredAt is compared as a UTC instant, so different offsets or
+        fractional zero padding do not cause conflicts. Parsing retains the first nine fractional digits;
+        finer digits are truncated. Different instants within one millisecond still conflict. Missing
+        and null mean the same unknown time; unknown and known time conflict. Leap seconds remain distinct
+        from the following ordinary second. Concurrent equivalent requests create one record: one receives
+        201 and the others 200; conflicting payloads never overwrite the winner. Database failures return
+        500, never a successful save response. Numeric milliseconds are used only for history ordering.
+        No batch ingestion. Body limit is 2 MiB.'
+      responses:
+        '201':
+          description: New record inserted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Measurement'
+              examples:
+                created:
+                  externalValue: ./examples/measurement.response.json
+                unknownTime:
+                  externalValue: ./examples/measurement.unknown-time.response.json
+        '200':
+          description: Equivalent message already exists; returns its original record, including original timestamp text.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Measurement'
+              examples:
+                repeated:
+                  externalValue: ./examples/measurement.response.json
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/SequenceConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/DatabaseError'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewMeasurement'
+            examples:
+              knownTime:
+                externalValue: ./examples/measurement.request.json
+              equivalentRetry:
+                summary: Same message and UTC instant as knownTime, with a different offset.
+                externalValue: ./examples/measurement.equivalent-retry.request.json
+              unknownTime:
+                externalValue: ./examples/measurement.unknown-time.request.json
+  /api/assessments:
+    get:
+      summary: Get the prototype data freshness status
+      operationId: getAssessment
+      tags:
+      - Assessments
+      description: 'Selects one row by numeric receipt time descending, then id descending. no-data means
+        no rows; unknown-time means the selected row has no measuredAt and no freshness conclusion is made.
+        Known measuredAt is stale when whole elapsed seconds >15; other accepted known times produce
+        not-evaluated. This is not a clinical assessment or per-metric freshness. Future accepted timestamps
+        are not separately marked clockSkew yet; that and per-metric status remain BE-06 work.'
+      responses:
+        '200':
+          description: Prototype freshness status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assessment'
+              examples:
+                empty:
+                  externalValue: ./examples/assessment.empty.response.json
+                recent:
+                  externalValue: ./examples/assessment.recent.response.json
+                stale:
+                  externalValue: ./examples/assessment.stale.response.json
+                unknownTime:
+                  externalValue: ./examples/assessment.unknown-time.response.json
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/DatabaseError'
+  /api/tasks:
+    get:
+      summary: List the current undated checklist
+      operationId: listTasks
+      tags:
+      - Tasks
+      description: Returns all tasks ordered by id ascending. No pagination or mission date selection
+        is implemented. Query parameters are decoded but ignored, including date. These are persistent
+        undated checklist entries, not daily task instances. BE-02 stores templates and dated completions
+        internally; the public dated workflow is planned for BE-07.
+      responses:
+        '200':
+          description: Checklist; empty list if no tasks.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+              examples:
+                tasks:
+                  externalValue: ./examples/tasks.response.json
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/DatabaseError'
+  /api/tasks/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      description: Existing task identifier, such as daily-check.
+      schema:
+        type: string
+    patch:
+      summary: Set task completion
+      operationId: updateTask
+      tags:
+      - Tasks
+      description: Sets completedAt to server UTC time when completed=true, or null when false. Repeating
+        true sets a new timestamp in BE-03; daily/idempotent task completion is planned for BE-07. Unknown
+        request fields, including date, are rejected. Body limit is 2 MiB.
+      responses:
+        '200':
+          description: Updated task.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              examples:
+                completed:
+                  externalValue: ./examples/task.response.json
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '500':
+          $ref: '#/components/responses/DatabaseError'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdate'
+            examples:
+              complete:
+                externalValue: ./examples/task-update.request.json
+components:
+  schemas:
+    Metric:
+      type: string
+      enum:
+      - heartRate
+      - systolicPressure
+      - diastolicPressure
+      - temperature
+      - sleepHours
+      - mood
+      description: Supported measurement indicators.
+    Unit:
+      type: string
+      enum:
+      - bpm
+      - mmHg
+      - °C
+      - h
+      - score
+      description: heartRate=bpm; systolicPressure/diastolicPressure=mmHg; temperature=°C; sleepHours=h;
+        mood=score. A mismatched pair returns VALIDATION_ERROR.
+    NewMeasurement:
+      type: object
+      additionalProperties: false
+      required:
+      - deviceId
+      - sessionId
+      - sequence
+      - metric
+      - value
+      - unit
+      properties:
+        deviceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Registered device ID, 1–128 UTF-8 bytes. Unknown ID produces UNKNOWN_DEVICE.
+          x-max-utf8-bytes: 128
+        sessionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Device boot/session identifier, 1–128 UTF-8 bytes. Retain on retry; change for
+            a new session.
+          x-max-utf8-bytes: 128
+        sequence:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+          description: Monotonic producer message number within this session. Server enforces uniqueness,
+            not monotonic arrival order.
+        metric:
+          $ref: '#/components/schemas/Metric'
+        value:
+          type: number
+          format: double
+          description: Finite number. >0 for pulse, pressures and temperature; sleepHours in [0,24]; mood
+            in [1,5]. These are input bounds, not clinical norms.
+        unit:
+          $ref: '#/components/schemas/Unit'
+        measuredAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Optional RFC3339 time of measurement. Missing/null means unknown. Accepted offsets
+            are preserved. Cannot be more than five minutes ahead of server time. Retry comparisons use
+            the UTC instant with the first nine fractional digits; finer digits are truncated.
+      allOf:
+      - if:
+          properties:
+            metric:
+              const: heartRate
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: bpm
+            value:
+              exclusiveMinimum: 0
+      - if:
+          properties:
+            metric:
+              const: systolicPressure
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: mmHg
+            value:
+              exclusiveMinimum: 0
+      - if:
+          properties:
+            metric:
+              const: diastolicPressure
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: mmHg
+            value:
+              exclusiveMinimum: 0
+      - if:
+          properties:
+            metric:
+              const: temperature
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: °C
+            value:
+              exclusiveMinimum: 0
+      - if:
+          properties:
+            metric:
+              const: sleepHours
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: h
+            value:
+              minimum: 0
+              maximum: 24
+      - if:
+          properties:
+            metric:
+              const: mood
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: score
+            value:
+              minimum: 1
+              maximum: 5
+    Measurement:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - deviceId
+      - astronautId
+      - sessionId
+      - sequence
+      - metric
+      - value
+      - unit
+      - measuredAt
+      - receivedAt
+      - timeBasis
+      - source
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        deviceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Registered device ID, 1–128 UTF-8 bytes. Unknown ID produces UNKNOWN_DEVICE.
+          x-max-utf8-bytes: 128
+        sessionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Device boot/session identifier, 1–128 UTF-8 bytes. Retain on retry; change for
+            a new session.
+          x-max-utf8-bytes: 128
+        sequence:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+          description: Monotonic producer message number within this session. Server enforces uniqueness,
+            not monotonic arrival order.
+        metric:
+          $ref: '#/components/schemas/Metric'
+        value:
+          type: number
+          format: double
+          description: Finite number. >0 for pulse, pressures and temperature; sleepHours in [0,24]; mood
+            in [1,5]. These are input bounds, not clinical norms.
+        unit:
+          $ref: '#/components/schemas/Unit'
+        measuredAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Original measurement timestamp text, or null if unknown. Equivalent retries return
+            the first stored representation even when the retry uses another offset or fractional padding.
+        astronautId:
+          type: string
+          readOnly: true
+          description: Resolved from the registered device by the server.
+        receivedAt:
+          type: string
+          format: date-time
+          readOnly: true
+          description: UTC time of first insertion. An equivalent retry preserves this value.
+        timeBasis:
+          type: string
+          enum:
+          - measuredAt
+          - receivedAt
+          readOnly: true
+          description: Field used to position the record in history. measuredAt when known; receivedAt
+            when measuredAt is null. Receipt time does not establish the freshness of a measurement.
+        source:
+          type: string
+          enum:
+          - manual
+          - simulator
+          - sensor
+          readOnly: true
+          description: Resolved from device registration; never accepted in a request.
+      allOf:
+      - if:
+          properties:
+            measuredAt:
+              type: 'null'
+          required:
+          - measuredAt
+        then:
+          properties:
+            timeBasis:
+              const: receivedAt
+        else:
+          properties:
+            timeBasis:
+              const: measuredAt
+      - if:
+          properties:
+            metric:
+              const: heartRate
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: bpm
+            value:
+              exclusiveMinimum: 0
+      - if:
+          properties:
+            metric:
+              const: systolicPressure
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: mmHg
+            value:
+              exclusiveMinimum: 0
+      - if:
+          properties:
+            metric:
+              const: diastolicPressure
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: mmHg
+            value:
+              exclusiveMinimum: 0
+      - if:
+          properties:
+            metric:
+              const: temperature
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: °C
+            value:
+              exclusiveMinimum: 0
+      - if:
+          properties:
+            metric:
+              const: sleepHours
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: h
+            value:
+              minimum: 0
+              maximum: 24
+      - if:
+          properties:
+            metric:
+              const: mood
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: score
+            value:
+              minimum: 1
+              maximum: 5
+    Health:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      - storage
+      properties:
+        status:
+          type: string
+          const: ok
+        storage:
+          type: string
+          const: sqlite
+    Assessment:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      - explanation
+      properties:
+        status:
+          type: string
+          enum:
+          - no-data
+          - unknown-time
+          - stale
+          - not-evaluated
+        explanation:
+          type: string
+    Task:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - title
+      - completedAt
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        completedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Server UTC timestamp, or null for incomplete. The BE-03 public API has no missionDate; repeated
+            completed=true updates this timestamp.
+    TaskUpdate:
+      type: object
+      additionalProperties: false
+      required:
+      - completed
+      properties:
+        completed:
+          type: boolean
+          description: true sets completedAt to server time; false clears it.
+    Problem:
+      type: object
+      description: Problem Details for API errors, including JSON/query/path extraction. code is stable
+        for client branching; message/detail/error may be improved. error is retained as a legacy alias.
+        Static asset errors are outside this contract.
+      required:
+      - type
+      - title
+      - status
+      - detail
+      - code
+      - message
+      - error
+      properties:
+        type:
+          type: string
+          format: uri
+          description: 'Stable URN: urn:space-health:error: followed by lowercase hyphenated code.'
+        title:
+          type: string
+          description: Canonical HTTP status reason.
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+          description: Same value as message.
+        code:
+          type: string
+          enum:
+          - INVALID_JSON
+          - INVALID_BODY
+          - UNSUPPORTED_MEDIA_TYPE
+          - PAYLOAD_TOO_LARGE
+          - INVALID_QUERY
+          - INVALID_PATH
+          - VALIDATION_ERROR
+          - UNKNOWN_DEVICE
+          - SEQUENCE_CONFLICT
+          - TASK_NOT_FOUND
+          - NOT_FOUND
+          - METHOD_NOT_ALLOWED
+          - DATABASE_ERROR
+          - INVALID_STORED_TIMESTAMP
+        message:
+          type: string
+        field:
+          type: string
+          description: Optional camelCase request field, when known.
+        error:
+          type: string
+          deprecated: true
+          description: Legacy alias of message. Kept for compatibility; do not use for machine branching.
+      example:
+        type: urn:space-health:error:validation-error
+        title: Bad Request
+        status: 400
+        detail: Invalid unit or value
+        code: VALIDATION_ERROR
+        message: Invalid unit or value
+        field: unit
+        error: Invalid unit or value
+  responses:
+    BadRequest:
+      description: 'Malformed JSON/query/path or invalid input. Codes depend on the operation: INVALID_JSON,
+        INVALID_QUERY, INVALID_PATH, VALIDATION_ERROR, UNKNOWN_DEVICE, INVALID_STORED_TIMESTAMP.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            validation:
+              externalValue: ./examples/validation-error.response.json
+    InvalidBody:
+      description: '422 INVALID_BODY: valid JSON cannot be decoded into the request DTO (missing/unknown
+        fields, wrong types, out-of-range integer).'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    PayloadTooLarge:
+      description: '413 PAYLOAD_TOO_LARGE: request body exceeds the default 2 MiB limit.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    UnsupportedMediaType:
+      description: '415 UNSUPPORTED_MEDIA_TYPE: missing or unsupported JSON Content-Type.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: 404 TASK_NOT_FOUND or NOT_FOUND.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    SequenceConflict:
+      description: '409 SEQUENCE_CONFLICT: existing message key has different metric, value, unit or measuredAt.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    MethodNotAllowed:
+      description: '405 METHOD_NOT_ALLOWED: the resource does not support this method.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+      headers:
+        Allow:
+          description: Methods accepted by this resource.
+          schema:
+            type: string
+    DatabaseError:
+      description: '500 DATABASE_ERROR: database operation failed; internal details are not returned.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'

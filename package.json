@@ -1,0 +1,43 @@
+{
+  "name": "space-health",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run lint && npm run test && npm run build",
+    "server": "cargo run -p space-health-server",
+    "simulator": "node simulator/sensors.mjs",
+    "check:server": "cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",
+    "check:all": "npm run check && npm run check:server",
+    "test:smoke": "npm run build && cargo build --locked && node scripts/smoke.mjs",
+    "check:api": "npx --yes @redocly/cli@2.78.0 lint docs/openapi.yaml"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "lucide-react": "^1.73.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "recharts": "^3.10.1",
+    "tailwindcss": "^4.3.5",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "oxlint": "^1.90.0",
+    "typescript": "~7.0.2",
+    "vite": "^8.3.6",
+    "vitest": "5.1.0"
+  },
+  "engines": {
+    "node": ">=24.13.1 <25"
+  }
+}
