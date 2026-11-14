@@ -1,9 +1,46 @@
 # AstroCheck UI (Rust)
 
-The main application now ports this layout and anatomy to React (`../src/features/`).
-Run the Rust API and React app from the repository root; that client uses the real
-BE-05 endpoints. The native programs in this directory remain a standalone demo
-with `DemoBackend`; they are not HTTP clients for the server yet.
+Both native programs now default to the same BE-06 HTTP API as React. Run
+`npm run demo` from the repository root, then start the window or terminal client.
+No native SQLite database or additional API server is created. A shared `ui-http`
+adapter polls real measurements, seven-day UTC series and tasks on a background
+thread. Writes are confirmed by the server before success is reported.
+
+```bash
+# From the repository root, in separate terminals:
+cargo run --locked --manifest-path ui/Cargo.toml -p ui-gui
+cargo run --locked --manifest-path ui/Cargo.toml -p ui-tui
+# Another server / LAN host:
+cargo run --locked --manifest-path ui/Cargo.toml -p ui-gui -- --api-url http://192.168.1.10:8080
+```
+
+`--api-url` overrides `ASTROCHECK_API_URL`, whose default is `http://127.0.0.1:8080`.
+`--ground` starts TUI in Ground; GUI uses `--role ground`. Both support `--help`.
+The API owns the single `demo-astronaut` profile, six metrics and task completion.
+Live clients display source, measurement/receipt time and server freshness;
+medical assessment, scores, baseline advice, uplink and ACK are not implemented
+by BE-06 and are not simulated in live mode. API failures keep the client in live
+mode with a visible error and cached data, never switch to fake measurements.
+Polling is about 2 seconds for latest/tasks and 10 seconds for series.
+Pending writes are in memory, not a durable offline outbox; await confirmation
+before closing the client. Retry attempts reuse the exact measurement payload/key.
+Task updates with a lost response are not automatically replayed: the existing
+PATCH changes the completion timestamp. The client reports an unconfirmed result
+and refreshes tasks from the server.
+The window retains a 2D body diagram; rotatable 3D belongs to the React client.
+
+Build both applications with
+`cargo build --locked --release --manifest-path ui/Cargo.toml -p ui-gui -p ui-tui`.
+Default output is `ui/target/release/astrocheck-gui` and `astrocheck-tui`
+(`.exe` on Windows). `CARGO_TARGET_DIR` can override that location.
+Run `npm run test:native-api` from the repository root for a real-API acceptance
+check using isolated SQLite, two independent adapters and browser-contract requests.
+
+## Explicit standalone demo
+
+Use `--demo` to choose the original in-memory `DemoBackend`. It is independent
+of the HTTP server. The following feature tour and reference screenshots describe
+that richer design prototype, not the implemented capabilities of BE-06.
 
 Two interfaces, one contract, for two audiences:
 
@@ -48,6 +85,7 @@ Sources: [NASA Brand Guidelines](https://www.nasa.gov/nasa-brand-center/brand-gu
 ## Layout
 
 ```
+crates/ui-http    shared BE-06 HTTP adapter, worker, DTOs and metric mapping
 crates/ui-model   the contract + data. NO UI code.
     backend.rs      trait Backend  <- implement this on the real backend
     types.rs        plain owned data types (Status, Reading, Evaluation, CrewMember, AlertRow, ...)
@@ -60,14 +98,19 @@ data/content.json   thresholds, advice texts, environments (demo only; the real 
 docs/             screenshots and terminal frames
 ```
 
-## Connecting the real backend
+## Backend extension point
+
+`ui-http::HttpBackend` implements this contract for the main server. Its live-mode
+methods expose connection state, provenance, timed series, pending sends and tasks.
+The original methods below remain the interface for standalone demo extensions.
 
 1. `impl ui_model::Backend for YourBackend` (see `crates/ui-model/src/backend.rs`, every method is documented).
    * Required: the read side (`overview`, `systems`, `indicators`, `latest`, `history`, `thresholds`, `evaluate`, ...),
      the write side (`log`, `set_environment`, `set_blackout`, ...) and `tick` / `take_messages`.
    * Optional (default no-ops): `crew`, `select_crew`, `alerts`, `ack_alert`, `send_message`, `messages` - without them
      the UI shows a single crew member and an empty ground roster; `demo_*` methods.
-2. In `crates/ui-tui/src/main.rs` and `crates/ui-gui/src/main.rs` replace `DemoBackend::new()` with your backend.
+2. Choose the backend in `crates/ui-tui/src/main.rs` or `crates/ui-gui/src/main.rs`.
+   The default is `HttpBackend`; `DemoBackend::new()` is used only with `--demo`.
 3. The interfaces never block: all `Backend` calls must be cheap and synchronous; do slow work on your own thread
    and return the cached state. The UIs call `tick()` about once per second and redraw only when needed.
 
@@ -76,12 +119,14 @@ All numbers in `evaluate` / `thresholds` / advice texts are produced by the back
 ## Build and run
 
 ```bash
-cargo run --release -p ui-tui          # terminal, needs 80x24 and a UTF-8 terminal
-cargo run --release -p ui-gui          # window,   needs OpenGL (GL 2.1 / GLES 2) and X11 or Wayland
-cargo test --locked --workspace        # model + terminal regression tests; compiles the GUI
+# From the repository root:
+cd ui
+cargo run --release -p ui-tui -- --demo # standalone terminal prototype
+cargo run --release -p ui-gui -- --demo # standalone window prototype
+cargo test --locked --workspace        # HTTP adapter, model, GUI and terminal tests
 ```
 
-Window options: `--role crew|ground`, `--env iss|orion|moon|mars|transit`, `--lite` (no animation),
+Demo window options: `--role crew|ground`, `--env iss|orion|moon|mars|transit`, `--lite` (no animation),
 `--size WxH`, and for visual checks `--screenshot out.png --metric ID --system ID --crew ID --mode organs|skeleton|xray
 --tab main|comms|system --blackout --storm`.
 Terminal on a console without braille glyphs (Linux framebuffer, `TERM=linux`): an ASCII sketch is used automatically,
@@ -93,7 +138,10 @@ Windows needs a C toolchain for Rust (MSVC Build Tools, or the GNU toolchain + M
 folder, point `CARGO_TARGET_DIR` at a short path (Windows 260-character path limit).
 `[profile.release]` is tuned for size (`opt-level = "s"`, LTO, `panic = "abort"`, stripped).
 
-## Measured (this PC, Windows 11, release builds, idle)
+## Original prototype measurements (Windows 11, release builds, idle)
+
+These historical figures describe the standalone prototype before the HTTP
+adapter was added. They are not measurements of the current shared-API binaries.
 
 | | binary | idle CPU | RAM |
 |---|---|---|---|

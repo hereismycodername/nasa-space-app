@@ -7,6 +7,8 @@ use std::collections::HashMap;
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Status {
     NoData,
+    /// Recorded data without a clinical assessment.
+    Unassessed,
     Normal,
     Watch,
     Act,
@@ -16,6 +18,7 @@ impl Status {
     pub fn name(self) -> &'static str {
         match self {
             Status::NoData => "No data",
+            Status::Unassessed => "Not assessed",
             Status::Normal => "Normal",
             Status::Watch => "Watch",
             Status::Act => "Act now",
@@ -68,6 +71,30 @@ pub struct IndicatorInfo {
 pub struct Reading {
     pub day: u32,
     pub value: f64,
+}
+
+/// A server time bucket. Missing buckets stay explicit instead of bridging chart gaps.
+#[derive(Clone, Debug)]
+pub struct TimePoint {
+    pub at_ms: i64,
+    pub value: Option<f64>,
+}
+
+/// Server-aggregated telemetry on an actual UTC time axis.
+#[derive(Clone, Debug, Default)]
+pub struct TimedSeries {
+    pub from_ms: i64,
+    pub to_ms: i64,
+    pub points: Vec<TimePoint>,
+    pub note: String,
+}
+
+/// A task in the currently deployed API (date-specific tasks are a later contract).
+#[derive(Clone, Debug)]
+pub struct TaskInfo {
+    pub id: String,
+    pub title: String,
+    pub completed_at: Option<String>,
 }
 
 /// Normal range and watch range; outside the watch range the status is `Act`.
