@@ -1,0 +1,110 @@
+{
+  "status": "clock-skew",
+  "explanation": "Время измерения находится в будущем относительно сервера. Проверьте часы источника; свежесть не подтверждена.",
+  "astronautId": "demo-astronaut",
+  "evaluatedAt": "2026-11-13T08:00:03Z",
+  "metrics": [
+    {
+      "metric": "heartRate",
+      "quality": {
+        "status": "clockSkew",
+        "measurementId": "c1000000-0000-4000-8000-000000000008",
+        "freshForSeconds": 15,
+        "ageSeconds": null,
+        "clockSkew": true
+      },
+      "latestReceivedQuality": {
+        "status": "clockSkew",
+        "measurementId": "c1000000-0000-4000-8000-000000000008",
+        "freshForSeconds": 15,
+        "ageSeconds": null,
+        "clockSkew": true
+      }
+    },
+    {
+      "metric": "systolicPressure",
+      "quality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
+    },
+    {
+      "metric": "diastolicPressure",
+      "quality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
+    },
+    {
+      "metric": "temperature",
+      "quality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
+    },
+    {
+      "metric": "sleepHours",
+      "quality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 86400,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 86400,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
+    },
+    {
+      "metric": "mood",
+      "quality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 86400,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 86400,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
+    }
+  ]
+}

@@ -78,9 +78,9 @@ impl From<ValidationError> for ApiError {
 impl From<InvalidStoredTimestamp> for ApiError {
     fn from(_: InvalidStoredTimestamp) -> Self {
         Self::new(
-            StatusCode::BAD_REQUEST,
-            "INVALID_STORED_TIMESTAMP",
-            "Invalid stored timestamp",
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "DATABASE_ERROR",
+            "Database operation failed",
         )
     }
 }

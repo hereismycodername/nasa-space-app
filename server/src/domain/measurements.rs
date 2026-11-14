@@ -1,3 +1,4 @@
+use super::metric_config::MAX_FUTURE_SKEW_SECONDS;
 use chrono::{DateTime, Utc};
 
 pub(crate) const METRICS: [&str; 6] = [
@@ -74,7 +75,7 @@ impl NewMeasurement {
                 field: "measuredAt",
                 message: "Invalid measuredAt timestamp",
             })?;
-            if parsed > now + chrono::Duration::minutes(5) {
+            if parsed > now + chrono::Duration::seconds(MAX_FUTURE_SKEW_SECONDS) {
                 return Err(ValidationError {
                     field: "measuredAt",
                     message: "measuredAt is in the future",

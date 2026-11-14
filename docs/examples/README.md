@@ -1,8 +1,13 @@
-# JSON-примеры API v0.5.0
+# JSON-примеры API v0.6.0
 
 Файлы содержат чистые JSON payload, пригодные для UI fixtures и ручных запросов.
 UUID и timestamps в ответах иллюстративные, реальные значения генерирует сервер.
 Набор синтетический. Примеры согласованы с [OpenAPI](../openapi.yaml).
+В latest/assessments качество рассчитано на фиксированный `evaluatedAt`
+`2026-11-13T08:00:03Z`; это fixtures, а не текущие показания. `quality.measurementId`
+связан с последним известным измерением (или последней доставкой, если известного
+нет), `latestReceivedQuality.measurementId` — с последней доставкой.
+Окна свежести — демонстрационные, не медицинские пороги.
 
 | Файл | Использование |
 |---|---|
@@ -15,7 +20,8 @@ UUID и timestamps в ответах иллюстративные, реальн�
 | measurements.empty.response.json | Пустая страница истории с hasMore=false |
 | measurements.page.response.json | Страница с продолжением hasMore/nextCursor |
 | measurements.latest.response.json | Latest с известным измерением и отдельной последней доставкой без времени |
-| measurements.latest.empty.response.json | Все шесть метрик без данных, явные null |
+| measurements.latest.empty.response.json | Все шесть метрик без данных, null и quality=missing |
+| measurements.latest.quality.response.json | Независимые fresh, stale, missing, unknownTime и clockSkew |
 | measurements.series.mean.response.json | Средний пульс, mixed timeBasis, пустой интервал и укороченный последний интервал |
 | measurements.series.last.response.json | Последнее значение сна; count и timeBasis учитывают все записи интервала |
 | measurements.series.empty.response.json | Пустая сетка mood за 5 ms: maxPoints=2, интервалы 3 ms и 2 ms |
@@ -24,6 +30,8 @@ UUID и timestamps в ответах иллюстративные, реальн�
 | assessment.recent.response.json | Недавняя запись, правила не подключены |
 | assessment.stale.response.json | Устаревшая запись |
 | assessment.unknown-time.response.json | Время измерения неизвестно; свежесть не установлена |
+| assessment.clock-skew.response.json | Время последней записи в будущем |
+| assessment.quality.response.json | Свежий пульс и устаревший сон: legacy status не описывает все метрики |
 | tasks.response.json | GET /api/tasks |
 | task-update.request.json | PATCH /api/tasks/daily-check |
 | task.response.json | Обновлённая задача |

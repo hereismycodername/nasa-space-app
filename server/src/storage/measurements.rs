@@ -80,18 +80,6 @@ pub(crate) async fn history(
     })
 }
 
-pub(crate) async fn latest_received(
-    pool: &SqlitePool,
-    astronaut_id: &str,
-) -> Result<Option<Measurement>, sqlx::Error> {
-    sqlx::query("SELECT * FROM measurements WHERE astronaut_id = ? ORDER BY received_at_ms DESC, id DESC LIMIT 1")
-        .bind(astronaut_id)
-        .fetch_optional(pool)
-        .await?
-        .map(decode)
-        .transpose()
-}
-
 /// Read all metrics from one SQLite snapshot, independently of history page limits.
 pub(crate) async fn latest_by_metric(
     pool: &SqlitePool,
@@ -241,10 +229,6 @@ mod tests {
             assert_eq!(ids, [expected_id]);
             assert!(!page.has_more);
             assert!(page.next_cursor.is_none());
-            assert_eq!(
-                latest_received(&pool, astronaut).await.unwrap().unwrap().id,
-                expected_id
-            );
             let metrics = latest_by_metric(&pool, astronaut).await.unwrap();
             let pulse = metrics
                 .iter()

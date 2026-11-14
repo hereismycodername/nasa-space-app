@@ -38,10 +38,11 @@ pub(crate) async fn latest_measurements(
     ApiQuery(_): ApiQuery<LatestRequest>,
 ) -> ApiResult<Json<LatestResponse>> {
     let metrics = storage::measurements::latest_by_metric(&pool, DEMO_ASTRONAUT_ID).await?;
-    Ok(Json(LatestResponse {
-        astronaut_id: DEMO_ASTRONAUT_ID,
-        metrics: metrics.into_iter().map(Into::into).collect(),
-    }))
+    Ok(Json(LatestResponse::from_data(
+        DEMO_ASTRONAUT_ID,
+        metrics,
+        Utc::now(),
+    )?))
 }
 
 pub(crate) async fn measurement_series(
@@ -101,11 +102,14 @@ pub(crate) async fn ingest(
 }
 pub(crate) async fn assessments(
     State(pool): State<SqlitePool>,
+    ApiQuery(_): ApiQuery<LatestRequest>,
 ) -> ApiResult<Json<AssessmentResponse>> {
-    let latest = storage::measurements::latest_received(&pool, DEMO_ASTRONAUT_ID).await?;
-    Ok(Json(
-        domain::assessments::assess(latest.as_ref(), Utc::now())?.into(),
-    ))
+    let metrics = storage::measurements::latest_by_metric(&pool, DEMO_ASTRONAUT_ID).await?;
+    Ok(Json(AssessmentResponse::from_data(
+        DEMO_ASTRONAUT_ID,
+        &metrics,
+        Utc::now(),
+    )?))
 }
 pub(crate) async fn tasks(
     State(pool): State<SqlitePool>,

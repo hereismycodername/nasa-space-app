@@ -1,0 +1,308 @@
+{
+  "astronautId": "demo-astronaut",
+  "metrics": [
+    {
+      "metric": "heartRate",
+      "latestMeasurement": {
+        "id": "e67c7410-8c8b-4327-8d15-6580f8e4c414",
+        "deviceId": "simulator-01",
+        "astronautId": "demo-astronaut",
+        "sessionId": "example-boot-1",
+        "sequence": 1,
+        "metric": "heartRate",
+        "value": 75,
+        "unit": "bpm",
+        "measuredAt": null,
+        "receivedAt": "2026-11-13T08:00:02+00:00",
+        "timeBasis": "receivedAt",
+        "source": "simulator"
+      },
+      "latestKnownMeasurement": {
+        "id": "be0a62c3-e5c0-4677-98fa-5bea1d4cf430",
+        "deviceId": "simulator-01",
+        "astronautId": "demo-astronaut",
+        "sessionId": "example-boot-1",
+        "sequence": 0,
+        "metric": "heartRate",
+        "value": 72,
+        "unit": "bpm",
+        "measuredAt": "2026-11-13T08:00:00Z",
+        "receivedAt": "2026-11-13T08:00:01+00:00",
+        "timeBasis": "measuredAt",
+        "source": "simulator"
+      },
+      "latestReceivedMeasurement": {
+        "id": "e67c7410-8c8b-4327-8d15-6580f8e4c414",
+        "deviceId": "simulator-01",
+        "astronautId": "demo-astronaut",
+        "sessionId": "example-boot-1",
+        "sequence": 1,
+        "metric": "heartRate",
+        "value": 75,
+        "unit": "bpm",
+        "measuredAt": null,
+        "receivedAt": "2026-11-13T08:00:02+00:00",
+        "timeBasis": "receivedAt",
+        "source": "simulator"
+      },
+      "quality": {
+        "status": "fresh",
+        "measurementId": "be0a62c3-e5c0-4677-98fa-5bea1d4cf430",
+        "freshForSeconds": 15,
+        "ageSeconds": 3.0,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "unknownTime",
+        "measurementId": "e67c7410-8c8b-4327-8d15-6580f8e4c414",
+        "freshForSeconds": 15,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
+    },
+    {
+      "metric": "systolicPressure",
+      "latestMeasurement": null,
+      "latestKnownMeasurement": null,
+      "latestReceivedMeasurement": null,
+      "quality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "missing",
+        "measurementId": null,
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
+    },
+    {
+      "metric": "diastolicPressure",
+      "latestMeasurement": {
+        "id": "c1000000-0000-4000-8000-000000000002",
+        "deviceId": "simulator-01",
+        "astronautId": "demo-astronaut",
+        "sessionId": "example-boot-1",
+        "sequence": 2,
+        "metric": "diastolicPressure",
+        "value": 80,
+        "unit": "mmHg",
+        "measuredAt": "2026-11-13T07:00:02Z",
+        "receivedAt": "2026-11-13T08:00:02Z",
+        "timeBasis": "measuredAt",
+        "source": "simulator"
+      },
+      "latestKnownMeasurement": {
+        "id": "c1000000-0000-4000-8000-000000000002",
+        "deviceId": "simulator-01",
+        "astronautId": "demo-astronaut",
+        "sessionId": "example-boot-1",
+        "sequence": 2,
+        "metric": "diastolicPressure",
+        "value": 80,
+        "unit": "mmHg",
+        "measuredAt": "2026-11-13T07:00:02Z",
+        "receivedAt": "2026-11-13T08:00:02Z",
+        "timeBasis": "measuredAt",
+        "source": "simulator"
+      },
+      "latestReceivedMeasurement": {
+        "id": "c1000000-0000-4000-8000-000000000002",
+        "deviceId": "simulator-01",
+        "astronautId": "demo-astronaut",
+        "sessionId": "example-boot-1",
+        "sequence": 2,
+        "metric": "diastolicPressure",
+        "value": 80,
+        "unit": "mmHg",
+        "measuredAt": "2026-11-13T07:00:02Z",
+        "receivedAt": "2026-11-13T08:00:02Z",
+        "timeBasis": "measuredAt",
+        "source": "simulator"
+      },
+      "quality": {
+        "status": "stale",
+        "measurementId": "c1000000-0000-4000-8000-000000000002",
+        "freshForSeconds": 3600,
+        "ageSeconds": 3601.0,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "stale",
+        "measurementId": "c1000000-0000-4000-8000-000000000002",
+        "freshForSeconds": 3600,
+        "ageSeconds": 3601.0,
+        "clockSkew": false
+      }
+    },
+    {
+      "metric": "temperature",
+      "latestMeasurement": {
+        "id": "c1000000-0000-4000-8000-000000000003",
+        "deviceId": "simulator-01",
+        "astronautId": "demo-astronaut",
+        "sessionId": "example-boot-1",
+        "sequence": 3,
+        "metric": "temperature",
+        "value": 36.7,
+        "unit": "°C",
+        "measuredAt": "2026-11-13T08:05:02Z",
+        "receivedAt": "2026-11-13T08:00:02Z",
+        "timeBasis": "measuredAt",
+        "source": "simulator"
+      },
+      "latestKnownMeasurement": {
+        "id": "c1000000-0000-4000-8000-000000000003",
+        "deviceId": "simulator-01",
+        "astronautId": "demo-astronaut",
+        "sessionId": "example-boot-1",
+        "sequence": 3,
+        "metric": "temperature",
+        "value": 36.7,
+        "unit": "°C",
+        "measuredAt": "2026-11-13T08:05:02Z",
+        "receivedAt": "2026-11-13T08:00:02Z",
+        "timeBasis": "measuredAt",
+        "source": "simulator"
+      },
+      "latestReceivedMeasurement": {
+        "id": "c1000000-0000-4000-8000-000000000003",
+        "deviceId": "simulator-01",
+        "astronautId": "demo-astronaut",
+        "sessionId": "example-boot-1",
+        "sequence": 3,
+        "metric": "temperature",
+        "value": 36.7,
+        "unit": "°C",
+        "measuredAt": "2026-11-13T08:05:02Z",
+        "receivedAt": "2026-11-13T08:00:02Z",
+        "timeBasis": "measuredAt",
+        "source": "simulator"
+      },
+      "quality": {
+        "status": "clockSkew",
+        "measurementId": "c1000000-0000-4000-8000-000000000003",
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": true
+      },
+      "latestReceivedQuality": {
+        "status": "clockSkew",
+        "measurementId": "c1000000-0000-4000-8000-000000000003",
+        "freshForSeconds": 3600,
+        "ageSeconds": null,
+        "clockSkew": true
+      }
+    },
+    {
+      "metric": "sleepHours",
+      "latestMeasurement": {
+        "id": "c1000000-0000-4000-8000-000000000004",
+        "deviceId": "simulator-01",
+        "astronautId": "demo-astronaut",
+        "sessionId": "example-boot-1",
+        "sequence": 4,
+        "metric": "sleepHours",
+        "value": 7.5,
+        "unit": "h",
+        "measuredAt": "2026-11-12T07:59:59Z",
+        "receivedAt": "2026-11-13T08:00:02Z",
+        "timeBasis": "measuredAt",
+        "source": "simulator"
+      },
+      "latestKnownMeasurement": {
+        "id": "c1000000-0000-4000-8000-000000000004",
+        "deviceId": "simulator-01",
+        "astronautId": "demo-astronaut",
+        "sessionId": "example-boot-1",
+        "sequence": 4,
+        "metric": "sleepHours",
+        "value": 7.5,
+        "unit": "h",
+        "measuredAt": "2026-11-12T07:59:59Z",
+        "receivedAt": "2026-11-13T08:00:02Z",
+        "timeBasis": "measuredAt",
+        "source": "simulator"
+      },
+      "latestReceivedMeasurement": {
+        "id": "c1000000-0000-4000-8000-000000000004",
+        "deviceId": "simulator-01",
+        "astronautId": "demo-astronaut",
+        "sessionId": "example-boot-1",
+        "sequence": 4,
+        "metric": "sleepHours",
+        "value": 7.5,
+        "unit": "h",
+        "measuredAt": "2026-11-12T07:59:59Z",
+        "receivedAt": "2026-11-13T08:00:02Z",
+        "timeBasis": "measuredAt",
+        "source": "simulator"
+      },
+      "quality": {
+        "status": "stale",
+        "measurementId": "c1000000-0000-4000-8000-000000000004",
+        "freshForSeconds": 86400,
+        "ageSeconds": 86404.0,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "stale",
+        "measurementId": "c1000000-0000-4000-8000-000000000004",
+        "freshForSeconds": 86400,
+        "ageSeconds": 86404.0,
+        "clockSkew": false
+      }
+    },
+    {
+      "metric": "mood",
+      "latestMeasurement": {
+        "id": "c1000000-0000-4000-8000-000000000005",
+        "deviceId": "simulator-01",
+        "astronautId": "demo-astronaut",
+        "sessionId": "example-boot-1",
+        "sequence": 5,
+        "metric": "mood",
+        "value": 4,
+        "unit": "score",
+        "measuredAt": null,
+        "receivedAt": "2026-11-13T08:00:02Z",
+        "timeBasis": "receivedAt",
+        "source": "simulator"
+      },
+      "latestKnownMeasurement": null,
+      "latestReceivedMeasurement": {
+        "id": "c1000000-0000-4000-8000-000000000005",
+        "deviceId": "simulator-01",
+        "astronautId": "demo-astronaut",
+        "sessionId": "example-boot-1",
+        "sequence": 5,
+        "metric": "mood",
+        "value": 4,
+        "unit": "score",
+        "measuredAt": null,
+        "receivedAt": "2026-11-13T08:00:02Z",
+        "timeBasis": "receivedAt",
+        "source": "simulator"
+      },
+      "quality": {
+        "status": "unknownTime",
+        "measurementId": "c1000000-0000-4000-8000-000000000005",
+        "freshForSeconds": 86400,
+        "ageSeconds": null,
+        "clockSkew": false
+      },
+      "latestReceivedQuality": {
+        "status": "unknownTime",
+        "measurementId": "c1000000-0000-4000-8000-000000000005",
+        "freshForSeconds": 86400,
+        "ageSeconds": null,
+        "clockSkew": false
+      }
+    }
+  ],
+  "evaluatedAt": "2026-11-13T08:00:03Z"
+}

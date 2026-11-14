@@ -58,19 +58,35 @@ export interface MeasurementSeries {
   timeBasis: SeriesTimeBasis
   points: MeasurementSeriesPoint[]
 }
-export interface LatestMetric {
+export type FreshnessStatus = 'missing' | 'fresh' | 'stale' | 'unknownTime' | 'clockSkew'
+export interface DataQuality {
+  status: FreshnessStatus
+  measurementId: string | null
+  freshForSeconds: number
+  ageSeconds: number | null
+  clockSkew: boolean
+}
+export interface MetricQuality {
   metric: Metric
+  quality: DataQuality
+  latestReceivedQuality: DataQuality
+}
+export interface LatestMetric extends MetricQuality {
   latestMeasurement: Measurement | null
   latestKnownMeasurement: (Measurement & { measuredAt: string; timeBasis: 'measuredAt' }) | null
   latestReceivedMeasurement: Measurement | null
 }
 export interface LatestMeasurements {
   astronautId: string
+  evaluatedAt: string
   metrics: LatestMetric[]
 }
 export interface HealthAssessment {
-  status: 'no-data' | 'stale' | 'not-evaluated' | 'unknown-time'
+  status: 'no-data' | 'stale' | 'not-evaluated' | 'unknown-time' | 'clock-skew'
   explanation: string
+  astronautId: string
+  evaluatedAt: string
+  metrics: MetricQuality[]
 }
 export interface DailyTask {
   id: string
