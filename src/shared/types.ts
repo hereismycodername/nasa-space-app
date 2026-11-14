@@ -127,6 +127,13 @@ export interface HealthEvaluation {
   rules: HealthRule[]
   education: FlightEducation[]
 }
+export interface TaskList {
+  missionDate: string
+  tasks: DailyTask[]
+}
+export interface DatedTask extends DailyTask {
+  missionDate: string
+}
 export interface DailyTask {
   id: string
   title: string
