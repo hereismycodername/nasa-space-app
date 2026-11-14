@@ -1,5 +1,5 @@
 //! In-memory demo backend: lets the interfaces run today, before the real backend exists.
-//! Mimics the behaviour the real one is expected to have (due dates, XP, streak, blackout,
+//! Mimics the behaviour the real one is expected to have (due dates, blackout,
 //! store-and-forward queue with priorities, corruption detection) but stores nothing on disk.
 
 use crate::backend::Backend;
@@ -36,9 +36,6 @@ struct QItem {
 /// State of a crew member who is not the currently selected one.
 struct Stash {
     hist: HashMap<String, Vec<Reading>>,
-    xp: u32,
-    user_logs: u32,
-    bonus: Vec<u32>,
 }
 struct Member {
     id: &'static str,
@@ -57,11 +54,8 @@ pub struct DemoBackend {
     c: Content,
     day: u32,
     env: usize,
-    xp: u32,
     blackout: bool,
     hist: HashMap<String, Vec<Reading>>,
-    bonus: Vec<u32>,
-    user_logs: u32,
     queue: Vec<QItem>,
     next_qid: u64,
     events: Vec<String>,
@@ -78,7 +72,7 @@ fn seed_values(ind: &IndDef, env_dose: f64, day: u32, rng: &mut Rng) -> Vec<Read
         n = b * 0.1;
     }
     let days: Vec<u32> = if ind.freq == 1 {
-        (1..day).filter(|d| *d != 9).collect() // one missed day -> streak of 5
+        (1..day).filter(|d| *d != 9).collect() // one missed day
     } else {
         let mut v = vec![];
         let mut d = day as i64 - ind.freq as i64;
@@ -116,11 +110,8 @@ impl DemoBackend {
             c: Content::load(),
             day: 15,
             env: 0,
-            xp: 120,
             blackout: false,
             hist: HashMap::new(),
-            bonus: vec![],
-            user_logs: 0,
             queue: vec![],
             next_qid: 1,
             events: vec![],
@@ -185,7 +176,7 @@ impl DemoBackend {
             }
             _ => {}
         }
-        Stash { hist, xp: 100 + 40 * i as u32, user_logs: 3, bonus: vec![] }
+        Stash { hist }
     }
 
     fn contact_age(&self, m: &Member) -> u64 {
@@ -213,22 +204,8 @@ impl DemoBackend {
     fn rtt_real(&self) -> f64 {
         (self.envd().rtt / 60.0).max(1.5) // demo clock x60
     }
-    fn logged_today(&self, id: &str) -> bool {
-        self.hist.get(id).map_or(false, |h| h.iter().any(|r| r.day == self.day))
-    }
     fn due_count(&self) -> usize {
         self.c.inds.iter().filter(|i| self.is_due(&i.id)).count()
-    }
-    fn streak(&self) -> u32 {
-        let daily: Vec<&IndDef> = self.c.inds.iter().filter(|i| i.freq == 1).collect();
-        let full = |d: u32| daily.iter().all(|i| self.hist[&i.id].iter().any(|r| r.day == d));
-        let mut d = if full(self.day) { self.day } else { self.day.saturating_sub(1) };
-        let mut n = 0;
-        while d >= 1 && full(d) {
-            n += 1;
-            d -= 1;
-        }
-        n
     }
     fn all_statuses(&self) -> Vec<Status> {
         self.c.inds.iter().map(|i| self.indicator_status(&i.id)).collect()
@@ -243,9 +220,6 @@ impl Backend for DemoBackend {
             env_id: e.id.clone(),
             env_name: e.name.clone(),
             score: rules::score(&self.all_statuses()),
-            xp: self.xp,
-            level: self.xp / 100 + 1,
-            streak: self.streak(),
             link_up: !self.blackout,
             autonomous: self.blackout || e.rtt >= 60.0,
             rtt_s: e.rtt,
@@ -344,24 +318,6 @@ impl Backend for DemoBackend {
         self.c.hazards.get(key).map(|s| plain(s)).unwrap_or_else(|| key.to_string())
     }
 
-    fn badges(&self) -> Vec<Badge> {
-        let lastn = |id: &str, n: usize| -> Vec<f64> {
-            self.hist[id].iter().rev().take(n).map(|r| r.value).collect()
-        };
-        let ex = lastn("exercise", 3);
-        let ur = lastn("urine", 3);
-        let pv = lastn("pvt", 1);
-        let b = |name: &str, on: bool| Badge { name: name.into(), unlocked: on };
-        vec![
-            b("First entry", self.user_logs > 0),
-            b("3-day streak", self.streak() >= 3),
-            b("Iron bones: 90+ min x3", ex.len() == 3 && ex.iter().all(|v| *v >= 90.0)),
-            b("Hydration hero: <=3 x3", ur.len() == 3 && ur.iter().all(|v| *v <= 3.0)),
-            b("Sharp mind: PVT <=300 ms", pv.first().map_or(false, |v| *v <= 300.0)),
-            b("Full check today", self.due_count() == 0),
-        ]
-    }
-
     fn queue(&self, max_rows: usize) -> (QueueSummary, Vec<QueueRow>) {
         let mut s = QueueSummary::default();
         for q in &self.queue {
@@ -428,7 +384,6 @@ impl Backend for DemoBackend {
             Status::Watch => Priority::Watch,
             _ => Priority::Routine,
         };
-        let first = !self.logged_today(id);
         let day = self.day;
         let h = self.hist.entry(id.to_string()).or_default();
         if let Some(r) = h.iter_mut().find(|r| r.day == day) {
@@ -441,21 +396,7 @@ impl Backend for DemoBackend {
         if self.queue.len() > 200 {
             self.queue.remove(0);
         }
-        self.user_logs += 1;
-        let mut gained = 0;
-        if first {
-            self.xp += 5;
-            gained += 5;
-        }
-        let mut bonus = false;
-        if self.due_count() == 0 && !self.bonus.contains(&day) {
-            self.bonus.push(day);
-            self.xp += 25;
-            gained += 25;
-            bonus = true;
-            self.msgs.push("Daily check complete! +25 XP".into());
-        }
-        LogResult { status: st, value: v, xp_gained: gained, bonus }
+        LogResult { status: st, value: v }
     }
 
     fn set_environment(&mut self, env_id: &str) {
@@ -570,13 +511,10 @@ impl Backend for DemoBackend {
         if i == self.cur {
             return;
         }
-        let out = Stash { hist: std::mem::take(&mut self.hist), xp: self.xp, user_logs: self.user_logs, bonus: std::mem::take(&mut self.bonus) };
+        let out = Stash { hist: std::mem::take(&mut self.hist) };
         self.members[self.cur].stash = Some(out);
         let s = self.members[i].stash.take().expect("stash present");
         self.hist = s.hist;
-        self.xp = s.xp;
-        self.user_logs = s.user_logs;
-        self.bonus = s.bonus;
         self.cur = i;
     }
 
@@ -680,7 +618,6 @@ mod tests {
         let b = DemoBackend::new();
         let o = b.overview();
         assert_eq!(o.mission_day, 15);
-        assert_eq!(o.streak, 5);
         assert!(o.due_count > 0);
         assert_eq!(b.systems().len(), 7);
         assert_eq!(b.environments().len(), 5);
@@ -704,17 +641,13 @@ mod tests {
     }
 
     #[test]
-    fn full_check_gives_bonus_once() {
+    fn full_check_clears_due_list() {
         let mut b = DemoBackend::new();
         let ids: Vec<String> = b.c.inds.iter().filter(|i| b.is_due(&i.id)).map(|i| i.id.clone()).collect();
-        let mut bonus = 0;
         for id in ids {
             let t = b.thresholds(&id);
-            if b.log(&id, (t.ok.0 + t.ok.1) / 2.0).bonus {
-                bonus += 1;
-            }
+            b.log(&id, (t.ok.0 + t.ok.1) / 2.0);
         }
-        assert_eq!(bonus, 1);
         assert_eq!(b.overview().due_count, 0);
     }
 

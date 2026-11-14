@@ -21,7 +21,6 @@ pub trait Backend {
     fn environments(&self) -> Vec<EnvInfo>;
     fn environment(&self) -> EnvInfo;
     fn hazard_label(&self, key: &str) -> String;
-    fn badges(&self) -> Vec<Badge>;
     fn queue(&self, max_rows: usize) -> (QueueSummary, Vec<QueueRow>);
     fn health(&self) -> Health;
     fn blackout(&self) -> bool;
@@ -55,10 +54,45 @@ pub trait Backend {
         vec![]
     }
 
+    /// Event log for the selected crew member: findings (most urgent first) followed by messages (newest first).
+    /// The default builds it from `alerts()` and `messages()`; a real backend may add its own events.
+    fn events(&self, max: usize) -> Vec<Event> {
+        let mut v: Vec<Event> = self
+            .alerts()
+            .into_iter()
+            .map(|a| Event {
+                day: a.day,
+                kind: EventKind::Finding,
+                severity: a.status,
+                source: a.indicator_name,
+                text: a.headline,
+                value: Some(format!("{} {}", crate::fmt_num(a.value), a.unit)),
+                alert_id: Some(a.id),
+                indicator: Some(a.indicator),
+                acked: a.acked,
+            })
+            .collect();
+        for m in self.messages().into_iter().rev() {
+            v.push(Event {
+                day: m.day,
+                kind: if m.from_ground { EventKind::Uplink } else { EventKind::Crew },
+                severity: Status::Normal,
+                source: if m.from_ground { "Uplink".into() } else { "Crew".into() },
+                text: m.text,
+                value: None,
+                alert_id: None,
+                indicator: None,
+                acked: true,
+            });
+        }
+        v.truncate(max);
+        v
+    }
+
     // ---- housekeeping --------------------------------------------------------------
     /// Call about once per second. Returns true when anything visible may have changed.
     fn tick(&mut self) -> bool;
-    /// One-shot notifications ("Daily check complete! +25 XP", "Data corruption repaired", ...).
+    /// One-shot notifications ("Data corruption repaired", "Downlink bundle delivered", ...).
     fn take_messages(&mut self) -> Vec<String>;
 
     // ---- demo only (default: not supported) ---------------------------------------

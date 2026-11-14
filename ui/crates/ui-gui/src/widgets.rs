@@ -24,7 +24,7 @@ pub fn baseline(hist: &[Reading]) -> Option<f64> {
 }
 
 pub fn caption(ui: &mut Ui, t: &str) {
-    ui.label(RichText::new(t.to_uppercase()).size(10.5).color(MUT).strong());
+    ui.label(RichText::new(t.to_uppercase()).font(mono(10.0)).color(MUT));
 }
 
 pub fn pill(ui: &mut Ui, text: &str, col: Color32) {
@@ -34,7 +34,7 @@ pub fn pill(ui: &mut Ui, text: &str, col: Color32) {
         .corner_radius(CornerRadius::same(10))
         .inner_margin(Margin::symmetric(9, 2))
         .show(ui, |ui| {
-            ui.label(RichText::new(text.to_uppercase()).color(col).size(10.5).strong());
+            ui.label(RichText::new(text.to_uppercase()).color(col).font(mono(10.0)));
         });
 }
 
@@ -162,10 +162,10 @@ pub fn tile(ui: &mut Ui, size: Vec2, ind: &IndicatorInfo, hist: &[Reading], th: 
     }
     let latest = hist.last();
     let val = latest.map(|r| fmt_num(r.value)).unwrap_or("-".into());
-    let vg = ui.fonts(|f| f.layout_no_wrap(val.clone(), FontId::proportional(26.0), TXT));
+    let vg = ui.fonts(|f| f.layout_no_wrap(val.clone(), mono(26.0), TXT));
     let vy = rect.top() + 46.0;
-    p.text(pos2(rect.left() + 14.0, vy), Align2::LEFT_CENTER, &val, FontId::proportional(26.0), TXT);
-    p.text(pos2(rect.left() + 18.0 + vg.size().x, vy + 5.0), Align2::LEFT_CENTER, &ind.unit, FontId::proportional(11.0), MUT);
+    p.text(pos2(rect.left() + 14.0, vy), Align2::LEFT_CENTER, &val, mono(26.0), TXT);
+    p.text(pos2(rect.left() + 18.0 + vg.size().x, vy + 5.0), Align2::LEFT_CENTER, &ind.unit, mono(10.5), MUT);
     // delta vs baseline
     let (dtxt, dcol) = match (latest, baseline(hist)) {
         (Some(l), Some(b)) => {
@@ -174,12 +174,17 @@ pub fn tile(ui: &mut Ui, size: Vec2, ind: &IndicatorInfo, hist: &[Reading], th: 
         }
         _ => ("no data".into(), MUT),
     };
-    p.text(rect.min + vec2(14.0, size.y - 16.0), Align2::LEFT_CENTER, dtxt, FontId::proportional(10.5), dcol);
-    p.text(pos2(rect.right() - 12.0, rect.bottom() - 16.0), Align2::RIGHT_CENTER, st.name().to_uppercase(), FontId::proportional(9.0), col);
+    p.text(rect.min + vec2(14.0, size.y - 16.0), Align2::LEFT_CENTER, dtxt, mono(10.0), dcol);
+    if st != Status::Normal {
+        p.text(pos2(rect.right() - 12.0, rect.bottom() - 16.0), Align2::RIGHT_CENTER, st.name().to_uppercase(), mono(9.0), col);
+    }
     // sparkline
     let sr = Rect::from_min_size(pos2(rect.right() - 108.0, rect.top() + 30.0), vec2(94.0, 34.0));
     spark(&p, sr, hist, th, col);
-    p.rect_filled(Rect::from_min_size(rect.min + vec2(0.0, 14.0), vec2(3.0, size.y - 28.0)), CornerRadius::same(2), col);
+    if st != Status::Normal {
+        // quiet display: the status bar appears only when something departs from normal
+        p.rect_filled(Rect::from_min_size(rect.min + vec2(0.0, 14.0), vec2(3.0, size.y - 28.0)), CornerRadius::same(2), col);
+    }
     resp
 }
 
@@ -218,7 +223,7 @@ pub fn chart(ui: &mut Ui, hist: &[Reading], th: Thresholds, min: f64, max: f64, 
     band(th.warn.0, th.ok.0, alpha(WARN, 0.13));
     band(th.ok.1, th.warn.1, alpha(WARN, 0.13));
     band(th.ok.0, th.ok.1, alpha(OK, 0.14));
-    let small = FontId::proportional(9.5);
+    let small = mono(9.5);
     let lab = |v: f64| if hi - lo > 20.0 { format!("{:.0}", v) } else { format!("{:.1}", v) };
     for (i, v) in [lo, (lo + hi) / 2.0, hi].into_iter().enumerate() {
         let yy = y(v);
@@ -243,13 +248,13 @@ pub fn chart(ui: &mut Ui, hist: &[Reading], th: Thresholds, min: f64, max: f64, 
             p.line_segment([pos2(pt.x, plot.top()), pos2(pt.x, plot.bottom())], stroke(1.0, alpha(TXT, 0.35)));
             p.circle_stroke(pt, 6.0, stroke(1.5, TXT));
             let txt = format!("day {}   {} {}", r.day, fmt_num(r.value), unit);
-            let g = ui.fonts(|f| f.layout_no_wrap(txt.clone(), FontId::proportional(11.5), TXT));
+            let g = ui.fonts(|f| f.layout_no_wrap(txt.clone(), mono(11.0), TXT));
             let w = g.size().x + 16.0;
             let tx = (pt.x - w / 2.0).clamp(rect.left() + 4.0, rect.right() - w - 4.0);
             let box_r = Rect::from_min_size(pos2(tx, (pt.y - 34.0).max(rect.top() + 2.0)), vec2(w, 22.0));
             p.rect_filled(box_r, CornerRadius::same(5), SURFACE2);
             p.rect_stroke(box_r, CornerRadius::same(5), stroke(1.0, LINE), StrokeKind::Inside);
-            p.text(box_r.center(), Align2::CENTER_CENTER, txt, FontId::proportional(11.5), TXT);
+            p.text(box_r.center(), Align2::CENTER_CENTER, txt, mono(11.0), TXT);
         }
     }
 }

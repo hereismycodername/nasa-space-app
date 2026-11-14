@@ -14,18 +14,18 @@ pub struct Cell {
 
 fn bright(s: Status) -> Color {
     match s {
-        Status::Normal => Color::LightGreen,
+        Status::Normal => Color::White,
         Status::Watch => Color::LightYellow,
         Status::Act => Color::LightRed,
-        Status::NoData => Color::Gray,
+        Status::NoData => Color::LightCyan,
     }
 }
 fn normal(s: Status) -> Color {
     match s {
-        Status::Normal => Color::Green,
+        Status::Normal => Color::Gray,
         Status::Watch => Color::Yellow,
         Status::Act => Color::Red,
-        Status::NoData => Color::DarkGray,
+        Status::NoData => Color::Cyan,
     }
 }
 
@@ -49,8 +49,8 @@ pub fn use_braille() -> bool {
 
 pub fn render(wc: usize, hc: usize, status_of: &dyn Fn(&str) -> Status, selected: &str) -> Vec<Vec<Cell>> {
     let (wd, hd) = (wc * 2, hc * 4);
-    let s = (wd as f32 / 176.0).min(hd as f32 / anatomy::H);
-    let ox = (wd as f32 - 172.0 * s) / 2.0 - 34.0 * s;
+    let s = (wd as f32 / (anatomy::BODY_W + 4.0)).min(hd as f32 / anatomy::H);
+    let ox = (wd as f32 - anatomy::BODY_W * s) / 2.0 - anatomy::BODY_X0 * s;
     let parts = anatomy::parts();
     // owner[y][x][layer] = part index + 1 (0 = nothing)
     let mut owner = vec![vec![[0u16; 3]; wd]; hd];

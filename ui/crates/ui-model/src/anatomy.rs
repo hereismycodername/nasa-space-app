@@ -1,16 +1,21 @@
 //! Human anatomy (frontal view, anatomical position) as plain vector data.
 //!
-//! Design space is 240 x 500 units, body axis at x = 120. Everything is authored as smooth
-//! splines (skin, skeleton, organs) so any front end can draw it: the window UI fills it with
-//! shaded meshes, the terminal UI rasterises it into braille dots.
+//! Design space is 240 x 500 units, body axis at x = 120. The outlines are real: a frontal
+//! projection of the CT-based adult male meshes of BodyParts3D (see `anatomy_data.rs` and
+//! `tools/gen_anatomy.py`), so organ and bone sizes and positions are measured, not drawn.
+//! Any front end can draw it: the window UI fills it with shaded meshes, the terminal UI
+//! rasterises it into braille dots. `schematic_parts()` keeps the older hand-drawn figure.
 //!
-//! This is a schematic medical illustration, not a licensed atlas. To use official artwork,
-//! replace `parts()` - nothing else depends on how the shapes were made.
+//! BodyParts3D, (c) The Database Center for Life Science, licensed under CC Attribution 4.0
+//! International (mesh files: CC Attribution-Share Alike 2.1 Japan).
 
 use std::f32::consts::TAU;
 
 pub const W: f32 = 240.0;
 pub const H: f32 = 500.0;
+/// horizontal extent of the body (arms down), for fitting the figure into a view
+pub const BODY_X0: f32 = 18.0;
+pub const BODY_W: f32 = 204.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct P {
@@ -74,15 +79,43 @@ pub struct Callout {
 }
 
 pub fn callouts() -> Vec<Callout> {
+    let at = |sys: &str| -> P {
+        crate::anatomy_data::ANCHORS.iter().find(|a| a.0 == sys).map_or(p(120.0, 250.0), |a| p(a.1, a.2))
+    };
+    let c = |sys: &'static str, label: &'static str, side: Side, label_y: f32| Callout { sys, label, anchor: at(sys), side, label_y };
     vec![
-        Callout { sys: "brain", label: "Brain", anchor: p(136.0, 24.0), side: Side::Right, label_y: 24.0 },
-        Callout { sys: "eyes", label: "Eyes", anchor: p(106.0, 43.0), side: Side::Left, label_y: 43.0 },
-        Callout { sys: "lungs", label: "Lungs", anchor: p(96.0, 140.0), side: Side::Left, label_y: 128.0 },
-        Callout { sys: "heart", label: "Heart", anchor: p(136.0, 158.0), side: Side::Right, label_y: 150.0 },
-        Callout { sys: "gut", label: "Metabolism", anchor: p(98.0, 208.0), side: Side::Left, label_y: 214.0 },
-        Callout { sys: "msk", label: "Skeletal", anchor: p(153.0, 330.0), side: Side::Right, label_y: 318.0 },
-        Callout { sys: "immune", label: "Immune", anchor: p(81.0, 300.0), side: Side::Left, label_y: 304.0 },
+        c("brain", "Brain", Side::Right, 24.0),
+        c("eyes", "Eyes", Side::Left, 43.0),
+        c("lungs", "Lungs", Side::Left, 122.0),
+        c("immune", "Immune", Side::Right, 100.0),
+        c("heart", "Heart", Side::Right, 136.0),
+        c("gut", "Metabolism", Side::Right, 178.0),
+        c("msk", "Skeletal", Side::Right, 318.0),
     ]
+}
+
+/// All parts in drawing order (back to front): real anatomy from BodyParts3D.
+pub fn parts() -> Vec<Part> {
+    crate::anatomy_data::PARTS
+        .iter()
+        .map(|r| Part {
+            sys: r.sys,
+            name: r.name,
+            layer: match r.layer {
+                0 => Layer::Skin,
+                1 => Layer::Skeleton,
+                _ => Layer::Organ,
+            },
+            tissue: r.tissue,
+            geo: Geo::Fill(r.pts.chunks_exact(2).map(|c| p(c[0] as f32 / 10.0, c[1] as f32 / 10.0)).collect()),
+            pulse: match r.pulse {
+                1 => Pulse::Heart,
+                2 => Pulse::Lung,
+                _ => Pulse::None,
+            },
+            hit: r.hit,
+        })
+        .collect()
 }
 
 // ------------------------------------------------------------------------------ geometry helpers
@@ -243,8 +276,8 @@ const BONE: [u8; 3] = [0xd9, 0xd4, 0xc6];
 const BONE_DK: [u8; 3] = [0xbd, 0xb7, 0xa6];
 const HOLE: [u8; 3] = [0x0e, 0x14, 0x1c];
 
-/// All parts in drawing order (back to front).
-pub fn parts() -> Vec<Part> {
+/// The older hand-drawn schematic figure (kept as a fallback / reference).
+pub fn schematic_parts() -> Vec<Part> {
     let mut v: Vec<Part> = Vec::new();
     let mut add = |sys: &'static str, name: &'static str, layer: Layer, tissue: [u8; 3], geo: Geo, pulse: Pulse, hit: bool| {
         v.push(Part { sys, name, layer, tissue, geo, pulse, hit });
@@ -425,13 +458,13 @@ mod tests {
         let ps = parts();
         let heart = ps.iter().find(|p| p.name == "Heart").unwrap();
         if let Geo::Fill(poly) = &heart.geo {
-            assert!(contains(poly, p(128.0, 160.0)));
-            assert!(!contains(poly, p(60.0, 160.0)));
+            assert!(contains(poly, p(130.0, 130.0)));
+            assert!(!contains(poly, p(60.0, 130.0)));
         }
         let skin = ps.iter().find(|p| p.name == "Skin").unwrap();
         if let Geo::Fill(poly) = &skin.geo {
-            assert!(contains(poly, p(120.0, 160.0)));
-            assert!(!contains(poly, p(20.0, 160.0)));
+            assert!(contains(poly, p(120.0, 250.0)));
+            assert!(!contains(poly, p(5.0, 250.0)));
         }
     }
 

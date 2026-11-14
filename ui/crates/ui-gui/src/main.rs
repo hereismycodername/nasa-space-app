@@ -1,9 +1,13 @@
+// Windows release build: a window program, no console (otherwise Windows Terminal opens an extra tab)
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod figure;
+mod ground;
 mod theme;
 mod widgets;
 
-use eframe::egui::{self, pos2, vec2, Align, Align2, Color32, CornerRadius, FontId, Frame, Layout, Margin, Rect, RichText, Sense, Ui};
-use std::collections::HashMap;
+use eframe::egui::{self, pos2, vec2, Align, Align2, Color32, CornerRadius, FontId, Frame, Layout, Margin, Rect, RichText, Sense, Stroke, Ui};
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 use theme::*;
 use ui_model::*;
@@ -73,11 +77,16 @@ struct GuiApp<B: Backend> {
     fig: figure::Figure,
     mode: figure::Mode,
     compose: String,
+    show_all: bool,
     checkin_open: bool,
     pvt_open: bool,
     pvt: Pvt,
     pvt_trials: Vec<f64>,
     rng: u64,
+    watch: Vec<String>,
+    watch_crew: String,
+    watch_touched: bool,
+    flipped: HashSet<String>,
 }
 
 // ------------------------------------------------------------------------------ small helpers
@@ -104,8 +113,8 @@ fn short_name(full: &str) -> String {
 
 fn readiness(score: Option<u8>) -> (&'static str, Color32) {
     match score {
-        Some(s) if s >= 90 => ("Optimal", OK),
-        Some(s) if s >= 75 => ("Good", OK),
+        Some(s) if s >= 90 => ("Optimal", ACCENT),
+        Some(s) if s >= 75 => ("Good", ACCENT),
         Some(s) if s >= 55 => ("Fair", WARN),
         Some(_) => ("Attention", CRIT),
         None => ("No data", NONE),
@@ -136,11 +145,16 @@ impl<B: Backend> GuiApp<B> {
             fig: figure::Figure::new(),
             mode: figure::Mode::Organs,
             compose: String::new(),
+            show_all: false,
             checkin_open: false,
             pvt_open: false,
             pvt: Pvt::Idle,
             pvt_trials: vec![],
             rng: 0x2545_F491_4F6C_DD1D,
+            watch: vec![],
+            watch_crew: String::new(),
+            watch_touched: false,
+            flipped: HashSet::new(),
         };
         if let Some(e) = app.opts.env.clone() {
             app.b.set_environment(&e);
@@ -261,7 +275,7 @@ impl<B: Backend> GuiApp<B> {
             .frame(Frame::new().fill(SURFACE).stroke(stroke(1.0, LINE)).inner_margin(Margin::symmetric(14, 0)))
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
-                    ui.label(RichText::new("ASTROCHECK").size(15.0).strong().color(TXT));
+                    ui.label(RichText::new("ASTROCHECK").font(display(15.0)).strong().color(TXT));
                     ui.add_space(4.0);
                     ui.separator();
                     let envs = self.b.environments();
@@ -322,9 +336,6 @@ impl<B: Backend> GuiApp<B> {
                             self.role = role;
                             self.tab = Tab::Main;
                             self.nav = Nav::Overview;
-                        }
-                        if self.role == Role::Crew && ctx.screen_rect().width() >= 1180.0 {
-                            ui.label(RichText::new(format!("Lv {}  {}-day streak", o.level, o.streak)).size(11.5).color(MUT));
                         }
                     });
                 });
@@ -505,43 +516,37 @@ impl<B: Backend> GuiApp<B> {
             ui.spacing_mut().item_spacing.x = gap;
             // readiness
             vcard(ui, cw, 150.0, |ui| {
-                caption(ui, "Readiness");
+                caption(ui, "Readiness index");
                 ui.horizontal(|ui| {
                     let (rect, _) = ui.allocate_exact_size(vec2(108.0, 108.0), Sense::hover());
                     let (label, col) = readiness(o.score);
                     ring(ui.painter(), rect.center(), 46.0, 9.0, o.score.unwrap_or(0) as f32 / 100.0, col);
-                    ui.painter().text(rect.center() + vec2(0.0, -4.0), Align2::CENTER_CENTER, o.score.map(|s| s.to_string()).unwrap_or("-".into()), FontId::proportional(30.0), TXT);
-                    ui.painter().text(rect.center() + vec2(0.0, 20.0), Align2::CENTER_CENTER, label.to_uppercase(), FontId::proportional(9.5), col);
+                    ui.painter().text(rect.center() + vec2(0.0, -4.0), Align2::CENTER_CENTER, o.score.map(|s| s.to_string()).unwrap_or("-".into()), mono(30.0), TXT);
+                    ui.painter().text(rect.center() + vec2(0.0, 20.0), Align2::CENTER_CENTER, label.to_uppercase(), mono(9.0), col);
                     ui.vertical(|ui| {
-                        ui.label(RichText::new("Compared with your own baseline").size(12.0).color(MUT));
+                        ui.label(RichText::new("Relative to personal baseline").size(12.0).color(MUT));
                         ui.label(RichText::new(format!("{} of {} indicators in range", self.inds.len() - self.issues().len(), self.inds.len())).size(12.5));
                     });
                 });
             });
-            // activity rings
+            // daily tasks: plain list, no rings
             vcard(ui, cw, 150.0, |ui| {
-                caption(ui, "Today");
+                caption(ui, "Daily tasks");
                 let val = |id: &str| self.b.latest(id).map(|r| r.value).unwrap_or(0.0);
                 let (ex, sl) = (val("exercise"), val("sleep"));
-                let done = (o.total_indicators - o.due_count) as f32 / o.total_indicators.max(1) as f32;
-                ui.horizontal(|ui| {
-                    let (rect, _) = ui.allocate_exact_size(vec2(108.0, 108.0), Sense::hover());
-                    ring(ui.painter(), rect.center(), 46.0, 8.0, (ex / 120.0) as f32, Color32::from_rgb(0xe5, 0x6b, 0x4a));
-                    ring(ui.painter(), rect.center(), 35.0, 8.0, (sl / 8.0) as f32, Color32::from_rgb(0x8a, 0x7b, 0xe8));
-                    ring(ui.painter(), rect.center(), 24.0, 8.0, done, ACCENT);
-                    ui.vertical(|ui| {
-                        for (c, t) in [
-                            (Color32::from_rgb(0xe5, 0x6b, 0x4a), format!("Exercise  {} / 120 min", fmt_num(ex))),
-                            (Color32::from_rgb(0x8a, 0x7b, 0xe8), format!("Sleep  {} / 8 h", fmt_num(sl))),
-                            (ACCENT, format!("Check-in  {} / {}", o.total_indicators - o.due_count, o.total_indicators)),
-                        ] {
-                            ui.horizontal(|ui| {
-                                led(ui, c);
-                                ui.add(egui::Label::new(RichText::new(t).size(12.0)).truncate());
-                            });
-                        }
+                let done = o.total_indicators - o.due_count;
+                for (k, v, ok) in [
+                    ("Check-in", format!("{} / {}", done, o.total_indicators), o.due_count == 0),
+                    ("Exercise", format!("{} / 120 min", fmt_num(ex)), ex >= 120.0),
+                    ("Sleep", format!("{} / 8 h", fmt_num(sl)), sl >= 7.0),
+                ] {
+                    ui.horizontal(|ui| {
+                        ui.add_sized([86.0, 18.0], egui::Label::new(RichText::new(k).size(12.0).color(MUT)));
+                        ui.label(RichText::new(v).font(mono(12.5)).color(if ok { OK } else { TXT }));
                     });
-                });
+                }
+                ui.add_space(4.0);
+                ui.label(RichText::new(format!("{} due now", o.due_count)).size(11.5).color(MUT));
             });
             // mission
             vcard(ui, cw, 150.0, |ui| {
@@ -561,7 +566,7 @@ impl<B: Backend> GuiApp<B> {
         ui.columns(2, |cols| {
             card().show(&mut cols[0], |ui| {
                 ui.set_width(ui.available_width());
-                caption(ui, "Contributors");
+                caption(ui, "Body systems");
                 ui.add_space(4.0);
                 for s in &self.systems {
                     let st = self.b.system_status(&s.id);
@@ -584,10 +589,10 @@ impl<B: Backend> GuiApp<B> {
             });
             card().show(&mut cols[1], |ui| {
                 ui.set_width(ui.available_width());
-                caption(ui, "Insights");
+                caption(ui, "Findings");
                 ui.add_space(4.0);
                 if issues.is_empty() {
-                    ui.label(RichText::new("Everything is within your normal range. Keep up your exercise, sleep and hydration routine.").size(12.5).color(MUT));
+                    ui.label(RichText::new("No findings. All indicators are within range.").size(12.5).color(MUT));
                 }
                 for (ind, st, v) in issues.iter().take(5) {
                     let ev = self.b.evaluate(&ind.id, *v);
@@ -614,7 +619,7 @@ impl<B: Backend> GuiApp<B> {
         if !msgs.is_empty() {
             card().show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                caption(ui, "Messages from the flight surgeon");
+                caption(ui, "Messages from flight surgeon");
                 for m in msgs.iter().rev().take(3) {
                     ui.label(RichText::new(format!("Day {}   {}", m.day, m.text)).size(12.5));
                 }
@@ -622,9 +627,18 @@ impl<B: Backend> GuiApp<B> {
             ui.add_space(10.0);
         }
 
-        caption(ui, "All metrics");
+        // quiet display: by default show only what needs attention (or is due); everything else is one click away
+        let attention: Vec<String> = self.inds.iter().filter(|i| self.b.indicator_status(&i.id) >= Status::Watch).map(|i| i.id.clone()).collect();
+        ui.horizontal(|ui| {
+            caption(ui, if self.show_all { "All metrics" } else { "Needs attention" });
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui.small_button(if self.show_all { "Show only attention" } else { "Show all metrics" }).clicked() {
+                    self.show_all = !self.show_all;
+                }
+            });
+        });
         ui.add_space(4.0);
-        let ids: Vec<String> = self.inds.iter().map(|i| i.id.clone()).collect();
+        let ids: Vec<String> = if self.show_all || attention.is_empty() { self.inds.iter().map(|i| i.id.clone()).collect() } else { attention };
         self.tiles(ui, &ids);
         if let Some(n) = go {
             self.nav = n;
@@ -657,7 +671,7 @@ impl<B: Backend> GuiApp<B> {
         let st = self.b.system_status(&sys.id);
         let env = self.b.environment();
         ui.horizontal(|ui| {
-            ui.label(RichText::new(&sys.name).size(22.0).strong());
+            ui.label(RichText::new(&sys.name).font(display(22.0)));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| pill(ui, st.name(), status_color(st)));
         });
         ui.add_space(4.0);
@@ -702,7 +716,7 @@ impl<B: Backend> GuiApp<B> {
         let col = status_color(if crew { ev.status } else { st });
 
         ui.horizontal(|ui| {
-            ui.label(RichText::new(&ind.name).size(22.0).strong());
+            ui.label(RichText::new(&ind.name).font(display(22.0)));
             pill(ui, if crew { ev.status.name() } else { st.name() }, col);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let mut r = self.range;
@@ -712,8 +726,8 @@ impl<B: Backend> GuiApp<B> {
             });
         });
         ui.horizontal(|ui| {
-            ui.label(RichText::new(latest.map(|r| fmt_num(r.value)).unwrap_or("-".into())).size(40.0).strong());
-            ui.label(RichText::new(&ind.unit).size(15.0).color(MUT));
+            ui.label(RichText::new(latest.map(|r| fmt_num(r.value)).unwrap_or("-".into())).font(mono(40.0)));
+            ui.label(RichText::new(&ind.unit).font(mono(14.0)).color(MUT));
             ui.add_space(8.0);
             ui.vertical(|ui| {
                 ui.label(RichText::new(format!("target {}", ev.target)).size(12.0).color(MUT));
@@ -757,7 +771,7 @@ impl<B: Backend> GuiApp<B> {
                 for (k, val) in stats {
                     vcard(ui, w, 0.0, |ui| {
                         caption(ui, k);
-                        ui.label(RichText::new(format!("{} {}", val, ind.unit)).size(16.0).strong());
+                        ui.label(RichText::new(format!("{} {}", val, ind.unit)).font(mono(14.0)));
                     });
                 }
             });
@@ -790,7 +804,7 @@ impl<B: Backend> GuiApp<B> {
                     if ui.add(primary("Log today")).clicked() {
                         log_clicked = true;
                     }
-                    if id == "pvt" && ui.button("Play game").clicked() {
+                    if id == "pvt" && ui.button("Run test").clicked() {
                         self.pvt_open = true;
                     }
                 });
@@ -842,7 +856,7 @@ impl<B: Backend> GuiApp<B> {
         if log_clicked {
             let r = self.b.log(id, v);
             self.inputs.insert(id.to_string(), r.value);
-            self.say(format!("{}: {} {} - {}{}", ind.name, fmt_num(r.value), ind.unit, r.status.name(), if r.xp_gained > 0 { format!("  +{} XP", r.xp_gained) } else { String::new() }));
+            self.say(format!("{}: {} {} - {}{}", ind.name, fmt_num(r.value), ind.unit, r.status.name(), String::new()));
         }
         if let Some(a) = ack {
             self.b.ack_alert(a);
@@ -855,147 +869,6 @@ impl<B: Backend> GuiApp<B> {
     }
 
     // ------------------------------------------------------------------ ground console
-    fn ground_console(&mut self, ui: &mut Ui) {
-        let crew = self.b.crew();
-        let sel = self.b.selected_crew();
-        let o = self.b.overview();
-        if crew.is_empty() {
-            ui.label(RichText::new("This backend reports a single crew member.").color(MUT));
-        }
-        // roster
-        let gap = 8.0;
-        let n = crew.len().max(1) as f32;
-        let w = (ui.available_width() - gap * (n - 1.0)) / n - 1.0;
-        let mut pick: Option<String> = None;
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = gap;
-            for c in &crew {
-                let (rect, resp) = ui.allocate_exact_size(vec2(w, 92.0), Sense::click());
-                let p = ui.painter_at(rect);
-                let selected = c.id == sel;
-                p.rect_filled(rect, CornerRadius::same(10), if resp.hovered() { SURFACE2 } else { SURFACE });
-                p.rect_stroke(rect, CornerRadius::same(10), stroke(if selected { 1.6 } else { 1.0 }, if selected { ACCENT } else { LINE }), egui::StrokeKind::Inside);
-                let col = status_color(c.status);
-                p.rect_filled(Rect::from_min_size(rect.min + vec2(0.0, 12.0), vec2(3.0, 68.0)), CornerRadius::same(2), col);
-                p.text(rect.min + vec2(14.0, 18.0), Align2::LEFT_CENTER, &c.name, FontId::proportional(14.0), TXT);
-                p.text(rect.min + vec2(14.0, 36.0), Align2::LEFT_CENTER, &c.title, FontId::proportional(11.0), MUT);
-                let stale = c.last_contact_s > 3600;
-                let ct = if stale { format!("STALE  {}", age_text(c.last_contact_s)) } else { format!("contact {}", age_text(c.last_contact_s)) };
-                p.text(rect.min + vec2(14.0, 56.0), Align2::LEFT_CENTER, ct, FontId::proportional(10.5), if stale { WARN } else { MUT });
-                p.text(rect.min + vec2(14.0, 74.0), Align2::LEFT_CENTER, if c.open_alerts == 0 { "no open findings".to_string() } else { format!("{} open finding{}", c.open_alerts, if c.open_alerts == 1 { "" } else { "s" }) }, FontId::proportional(10.5), if c.open_alerts == 0 { MUT } else { col });
-                let rc = pos2(rect.right() - 32.0, rect.top() + 34.0);
-                ring(&p, rc, 20.0, 5.0, c.score.unwrap_or(0) as f32 / 100.0, col);
-                p.text(rc, Align2::CENTER_CENTER, c.score.map(|s| s.to_string()).unwrap_or("-".into()), FontId::proportional(13.0), TXT);
-                if resp.clicked() {
-                    pick = Some(c.id.clone());
-                }
-            }
-        });
-        if let Some(id) = pick {
-            self.b.select_crew(&id);
-            self.reset_inputs();
-        }
-        ui.add_space(10.0);
-
-        let alerts = self.b.alerts();
-        let mut ack: Option<u64> = None;
-        let mut open: Option<String> = None;
-        ui.columns(2, |cols| {
-            // triage
-            card().show(&mut cols[0], |ui| {
-                ui.set_width(ui.available_width());
-                caption(ui, "Alert triage");
-                ui.add_space(4.0);
-                if alerts.is_empty() {
-                    ui.label(RichText::new("No open findings for this crew member.").size(12.5).color(MUT));
-                }
-                for a in &alerts {
-                    let c = status_color(a.status);
-                    ui.horizontal(|ui| {
-                        led(ui, c);
-                        if ui.add(egui::Label::new(RichText::new(&a.indicator_name).size(12.5).strong()).sense(Sense::click())).clicked() {
-                            open = Some(a.indicator.clone());
-                        }
-                        ui.label(RichText::new(format!("{} {}", fmt_num(a.value), a.unit)).size(12.5).color(c));
-                        ui.label(RichText::new(format!("day {}", a.day)).size(11.0).color(MUT));
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if ui.add_enabled(!a.acked, egui::Button::new(if a.acked { "ACK'D" } else { "Acknowledge" })).clicked() {
-                                ack = Some(a.id);
-                            }
-                        });
-                    });
-                }
-            });
-            // clinical table
-            card().show(&mut cols[1], |ui| {
-                ui.set_width(ui.available_width());
-                caption(ui, "Clinical summary");
-                ui.add_space(4.0);
-                egui::Grid::new("clinical").num_columns(5).spacing([14.0, 7.0]).striped(true).show(ui, |ui| {
-                    for h in ["Indicator", "Latest", "Baseline", "Delta", "Status"] {
-                        ui.label(RichText::new(h.to_uppercase()).size(9.5).color(MUT).strong());
-                    }
-                    ui.end_row();
-                    for i in &self.inds {
-                        let st = self.b.indicator_status(&i.id);
-                        let c = status_color(st);
-                        let hist = self.b.history(&i.id);
-                        if ui.add(egui::Label::new(RichText::new(&i.name).size(12.0)).sense(Sense::click())).clicked() {
-                            open = Some(i.id.clone());
-                        }
-                        let latest = hist.last().map(|r| r.value);
-                        ui.label(RichText::new(latest.map(fmt_num).unwrap_or("-".into())).size(12.0).strong());
-                        let b = baseline(&hist);
-                        ui.label(RichText::new(b.map(|v| fmt_num((v * 100.0).round() / 100.0)).unwrap_or("-".into())).size(12.0).color(MUT));
-                        let d = latest.zip(b).map(|(l, b)| l - b);
-                        ui.label(RichText::new(d.map(|d| format!("{}{}", if d >= 0.0 { "+" } else { "" }, fmt_num((d * 100.0).round() / 100.0))).unwrap_or("-".into())).size(12.0).color(if st == Status::Normal { MUT } else { c }));
-                        ui.label(RichText::new(st.name().to_uppercase()).size(10.0).color(c).strong());
-                        ui.end_row();
-                    }
-                });
-            });
-        });
-        if let Some(a) = ack {
-            self.b.ack_alert(a);
-        }
-        if let Some(i) = open {
-            self.go_metric(&i);
-        }
-        ui.add_space(10.0);
-
-        // composer
-        let name = self.crew_name();
-        let msgs = self.b.messages();
-        let mut compose = std::mem::take(&mut self.compose);
-        let mut send = false;
-        card().show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            caption(ui, &format!("Message to {}", name));
-            ui.horizontal_wrapped(|ui| {
-                for t in ["Repeat the measurement in 1 hour.", "Check cabin CO2 and ventilation.", "Rest, hydrate, and re-test later today.", "Schedule a private medical conference."] {
-                    if ui.small_button(t).clicked() {
-                        compose = t.to_string();
-                    }
-                }
-            });
-            ui.add(egui::TextEdit::multiline(&mut compose).desired_rows(2).desired_width(f32::INFINITY).hint_text("Type guidance for the crew member"));
-            ui.horizontal(|ui| {
-                if ui.add_enabled(!compose.trim().is_empty(), primary("Send (uplink)")).clicked() {
-                    send = true;
-                }
-                ui.label(RichText::new(format!("Estimated delivery: about {} (one-way light time).", rtt_text(o.rtt_s / 2.0))).size(11.5).color(MUT));
-            });
-            for m in msgs.iter().rev().take(4) {
-                ui.label(RichText::new(format!("Day {}   {}", m.day, m.text)).size(12.0).color(MUT));
-            }
-        });
-        if send {
-            self.b.send_message(compose.trim());
-            compose.clear();
-        }
-        self.compose = compose;
-    }
-
     // ------------------------------------------------------------------ comms / system tabs
     fn comms_tab(&mut self, ui: &mut Ui) {
         let o = self.b.overview();
@@ -1166,8 +1039,8 @@ impl<B: Backend> GuiApp<B> {
             let (txt, bg) = match &self.pvt {
                 Pvt::Idle => (if self.pvt_trials.is_empty() { "Press to start".to_string() } else { format!("{} ms  -  press for next trial", self.pvt_trials.last().unwrap().round()) }, Color32::from_rgb(0x1b, 0x2a, 0x5e)),
                 Pvt::Wait { .. } => (format!("Trial {}/5  -  wait for green...", self.pvt_trials.len() + 1), Color32::from_rgb(0x5b, 0x22, 0x30)),
-                Pvt::Go { .. } => ("NOW!".to_string(), Color32::from_rgb(0x1f, 0x9d, 0x68)),
-                Pvt::Early => ("Too early! Press to retry this trial".to_string(), Color32::from_rgb(0x1b, 0x2a, 0x5e)),
+                Pvt::Go { .. } => ("RESPOND".to_string(), Color32::from_rgb(0x1f, 0x9d, 0x68)),
+                Pvt::Early => ("Early response - press to repeat this trial".to_string(), Color32::from_rgb(0x1b, 0x2a, 0x5e)),
                 Pvt::Done { mean } => (format!("Average {} ms", mean.round()), Color32::from_rgb(0x1b, 0x2a, 0x5e)),
             };
             let (rect, resp) = ui.allocate_exact_size(vec2(480.0, 170.0), Sense::click());
@@ -1270,7 +1143,12 @@ impl<B: Backend> eframe::App for GuiApp<B> {
         }
         self.top_bar(ctx);
         self.status_bar(ctx);
-        self.left_panel(ctx);
+        if self.role == Role::Ground {
+            self.tree_panel(ctx);
+            self.right_panel(ctx);
+        } else {
+            self.left_panel(ctx);
+        }
         self.central(ctx);
         self.modals(ctx);
         // Repaint budget: 10 fps while focused and animating, otherwise once a second.

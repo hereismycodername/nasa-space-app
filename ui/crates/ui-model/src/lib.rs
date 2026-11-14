@@ -1,5 +1,6 @@
 //! AstroCheck interface model: the `Backend` contract, plain data types and a demo backend.
 
+mod anatomy_data;
 mod content;
 mod rules;
 
