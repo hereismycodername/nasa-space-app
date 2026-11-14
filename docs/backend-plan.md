@@ -427,11 +427,39 @@ HTTP 200, points=200, gaps=0, samples=2016. Оба сервера заверши
 
 **Владелец:** iwbhappy. **Зависимости:** BE-10 и зелёные проверки.
 
+Доработка PR #4 после ревью: ветка перебазирована на BE-09 `19be3c1`.
+`run.mjs` собирает `--bins` в debug/release, отдельно распознаёт executable
+серверного и admin compiler-artifact и после release-сборки печатает путь admin.
+Пути custom target и отдельные marker-файлы сохранены. README описывает оба
+бинарника с dist и запуск admin из release-папки с абсолютным DATABASE_URL.
+Новых тестов и зависимостей в этой доработке нет; расширены существующие проверки.
+
+Ручная проверка на пустом target:
+`CARGO_TARGET_DIR=.../space-health-clean-release-review-8PPKwI/target`
+(до запуска каталога не было), `CARGO_BUILD_TARGET=x86_64-pc-windows-msvc`,
+`npm run release`:
+
+```text
+Finished `release` profile [optimized] target(s) in 1m 20s
+Both clean-target exe files exist=true
+Admin --help exit=0: {"commands":["register-device <id>","list-devices"],"databaseEnvironment":"DATABASE_URL","defaultDatabaseUrl":"sqlite://space-health.db"}
+Admin from release directory: {"created":true,"device":{"astronautId":"demo-astronaut","deviceId":"review-sensor-01","source":"sensor"}}
+Clean release UI=200; API=200
+Server stopped gracefully.
+Custom-target marker reused with --no-build; persisted sensor records=1
+Server stopped gracefully.
+```
+
+Оба artifact находятся в `<CARGO_TARGET_DIR>/x86_64-pc-windows-msvc/release/`.
+На обеих ветках после доработки проходят check, rustfmt, locked Clippy/test,
+test:tools, smoke, demo-smoke, check:api; на Windows остаются два обоснованных
+skip, описанные в BE-09. Фактический Linux CI запуск в этой сессии не выполнен.
+
 Реализован `npm run release` (`run.mjs --release`): сборка dist, locked Cargo
 release, путь из compiler-artifact, отдельный marker для повторного запуска
 release/debug. По умолчанию без симулятора; `--simulator` включает его.
-Лаунчеры останавливают производителей перед сервером через stdin с таймаутом
-10 секунд и fallback; Unix process groups и SIGINT/SIGTERM сервера сохранены,
+Лаунчеры останавливают производителей перед сервером через stdin на Windows
+или сигнал Unix process group, с таймаутом 10 секунд и fallback; SIGINT/SIGTERM сохранены,
 systemd-юнит не менялся. Сервер явно пишет о штатной остановке.
 
 Middleware `axum::middleware::from_fn` пишет одну строку запроса API с методом,
