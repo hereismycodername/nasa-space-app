@@ -1,7 +1,7 @@
 //! Persistent backend for the AstroCheck interfaces.
 //!
 //! * Storage and rules of ingestion are the team backend's (`be/`: validation, idempotent insert keyed by
-//!   device/session/sequence, SQLite schema and migrations 0001/0002), extended by migration 0003 (crew, acknowledged
+//!   device/session/sequence, SQLite schema and migrations 0001/0002 and the query indexes as 0004), extended by migration 0003 (crew, acknowledged
 //!   findings, messages, settings) and by the metrics of the interface (`metrics.rs`).
 //! * Status, thresholds and advice come from the rules engine of `ui-model` (the team backend has no medical rules yet).
 //!   The downlink queue and self-test shown by the interfaces are still simulated by that engine.

@@ -1,4 +1,4 @@
-// Taken unchanged from the team backend (branch main, commit 8c53fce, server/src/domain/tasks.rs) unless noted below.
+// Taken from the team backend (branch codex/team-integration, commit 2c3d1db, server/src/domain/tasks.rs) unless noted below.
 use chrono::{DateTime, Utc};
 
 #[derive(Debug)]
