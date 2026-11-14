@@ -163,3 +163,12 @@ impl Series {
 pub(crate) fn now_text() -> String {
     Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Assessment {
+    pub astronaut_id: String,
+    pub evaluated_at: String,
+    #[serde(default)]
+    pub health: Option<ui_model::HealthEvaluation>,
+}

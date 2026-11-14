@@ -22,6 +22,7 @@ jobs:
       - run: cargo build --locked
       - run: node scripts/smoke.mjs
       - run: npm run test:demo
+      - run: npm run test:assessment
       - name: Verify generated anatomy and markers
         run: |
           rustc scripts/export-anatomy.rs -o /tmp/export-anatomy

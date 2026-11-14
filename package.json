@@ -21,6 +21,7 @@
     "test:tools": "npm run test:tooling && npm run test:bridge",
     "test:demo": "node scripts/demo-smoke.mjs",
     "test:native-api": "node scripts/native-http-smoke.mjs",
+    "test:assessment": "node scripts/assessment-smoke.mjs",
     "demo:prepare": "node scripts/demo.mjs prepare",
     "demo:start": "node scripts/demo.mjs start",
     "check:server": "cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",

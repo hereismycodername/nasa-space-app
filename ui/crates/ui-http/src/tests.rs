@@ -1,4 +1,5 @@
 use super::*;
+use crate::catalog::METRICS;
 use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -91,7 +92,7 @@ fn manual_submission_uses_api_units_and_unique_keys_without_optimistic_values() 
         ("sleep", 24.1),
         ("mood", 0.5),
         ("temp", f64::NAN),
-        ("spo2", 98.0),
+        ("spo2", 100.1),
     ] {
         assert!(backend.submit_measurement(id, value).is_err());
     }
@@ -429,4 +430,279 @@ fn wait_for(mut predicate: impl FnMut() -> bool) {
         );
         thread::sleep(Duration::from_millis(20));
     }
+}
+
+fn health_latest() -> Value {
+    let mut latest = latest_json();
+    for (index, metric) in METRICS.iter().enumerate() {
+        let value = match metric.id {
+            "sleep" => 8.0,
+            "mood" => 4.0,
+            "temp" => 36.5,
+            "visionBlur" | "headache" | "backPain" => 2.5,
+            _ => 75.0,
+        };
+        let mut measurement = record(
+            &format!("known-{}", metric.api),
+            value,
+            Some("2026-11-15T00:59:59Z"),
+        );
+        measurement["metric"] = json!(metric.api);
+        measurement["unit"] = json!(metric.unit);
+        latest["metrics"][index]["latestKnownMeasurement"] = measurement.clone();
+        latest["metrics"][index]["latestReceivedMeasurement"] = measurement;
+        latest["metrics"][index]["quality"] = quality("fresh");
+        latest["metrics"][index]["latestReceivedQuality"] = quality("fresh");
+    }
+    latest
+}
+
+fn assessment_json() -> Value {
+    json!({"astronautId":"demo-astronaut","evaluatedAt":"2026-11-15T01:00:00Z", "health":{
+        "ruleSetVersion":"be08-demo-1","demonstrationOnly":true,"status":"noAlert",
+        "explanation":"No configured rules triggered","disclaimer":"Prototype, not a diagnosis",
+        "emergencyGuidance":"Involve crew immediately for urgent symptoms", "evaluatedMetricCount":METRICS.len(),"totalMetricCount":METRICS.len(),
+        "rules":METRICS.iter().map(|metric| json!({"ruleId":format!("be08-{}",metric.api),"ruleVersion":"be08-demo-1","metric":metric.api,
+            "title":metric.name,"status":"noAlert","explanation":"Reference rule explanation","measurementIds":[format!("known-{}",metric.api)],
+            "validUntil":"2026-11-15T01:00:15Z","suggestedAction":"Follow the mission routine","escalation":"none",
+            "flightContext":"A flight-context explanation","sourceUrls":["https://www.nasa.gov/hrp/hazards/"],"demonstrationOnly":true})).collect::<Vec<_>>(),
+        "education":(["gravity","isolation","radiation","distance","environment"].iter().map(|id| json!({"id":id,"title":id,"explanation":"Flight hazard","suggestedAction":"Follow the mission procedure","sourceUrls":["https://www.nasa.gov/hrp/hazards/"]})).collect::<Vec<_>>())}})
+}
+
+fn assessed_backend(assessment: Value) -> HttpBackend {
+    let (backend, _) = cached_backend(health_latest());
+    let value = serde_json::from_value(assessment).unwrap();
+    assert!(health::validate(&value).is_ok());
+    {
+        let mut state = lock(&backend.state);
+        state.assessment = Some(value);
+        state.assessment_at = Some(Instant::now());
+    }
+    backend
+}
+
+#[test]
+fn health_statuses_and_actions_come_from_the_server_with_sources_and_all_hazards() {
+    let mut assessment = assessment_json();
+    // The client deliberately does not re-implement a numeric threshold for 75 bpm.
+    assessment["health"]["rules"][0]["status"] = json!("critical");
+    assessment["health"]["rules"][0]["escalation"] = json!("urgent");
+    assessment["health"]["status"] = json!("critical");
+    let backend = assessed_backend(assessment);
+    assert_eq!(backend.health_report().status, HealthStatus::Critical);
+    assert_eq!(backend.indicator_status("hr"), Status::Act);
+    assert_eq!(backend.system_status("heart"), Status::Act);
+    let rule = backend.health_rule("hr").unwrap();
+    assert!(rule.current);
+    assert_eq!(rule.escalation, Escalation::Urgent);
+    assert!(rule.detail_text().contains("Flight context"));
+    assert!(rule.detail_text().contains("https://www.nasa.gov"));
+    assert_eq!(
+        backend.health_report().evaluation.unwrap().education.len(),
+        5
+    );
+    assert_eq!(backend.overview().score, None);
+}
+
+#[test]
+fn expired_mismatched_offline_and_failed_assessments_never_keep_a_current_green_result() {
+    let backend = assessed_backend(assessment_json());
+    assert_eq!(backend.health_report().status, HealthStatus::NoAlert);
+    assert_eq!(backend.indicator_status("hr"), Status::Normal);
+    lock(&backend.state).assessment_at = Some(Instant::now() - Duration::from_secs(16));
+    assert_eq!(
+        backend.health_report().status,
+        HealthStatus::InsufficientData
+    );
+    assert_eq!(backend.indicator_status("hr"), Status::Unassessed);
+    assert!(!backend.health_rule("hr").unwrap().current);
+
+    lock(&backend.state).assessment_at = Some(Instant::now());
+    lock(&backend.state).latest.as_mut().unwrap().metrics[0]
+        .latest_known_measurement
+        .as_mut()
+        .unwrap()
+        .id = "replacement".into();
+    assert_eq!(backend.indicator_status("hr"), Status::Unassessed);
+    assert!(backend
+        .health_rule("hr")
+        .unwrap()
+        .unavailable_reason
+        .unwrap()
+        .contains("Measurement changed"));
+    // Other matched current values retain their own valid assessment.
+    assert_eq!(backend.indicator_status("sleep"), Status::Normal);
+
+    lock(&backend.state).online = false;
+    assert_eq!(backend.health_report().status, HealthStatus::NotEvaluated);
+    assert_eq!(backend.indicator_status("sleep"), Status::Unassessed);
+    assert!(backend
+        .health_rule("sleep")
+        .unwrap()
+        .detail_text()
+        .contains("Historical / not current"));
+    lock(&backend.state).online = true;
+    lock(&backend.state).assessment_error = Some("HTTP 503".into());
+    assert_eq!(backend.health_report().status, HealthStatus::NotEvaluated);
+    assert!(backend.health_report().message.contains("refresh failed"));
+}
+
+#[test]
+fn old_be06_response_without_health_remains_supported_and_unassessed() {
+    let assessment: dto::Assessment = serde_json::from_value(json!({"astronautId":"demo-astronaut","evaluatedAt":"2026-11-15T01:00:00Z","metrics":[],"status":"not-evaluated"})).unwrap();
+    assert!(health::validate(&assessment).is_ok());
+    let (backend, _) = cached_backend(health_latest());
+    lock(&backend.state).assessment = Some(assessment);
+    assert_eq!(backend.health_report().status, HealthStatus::NotEvaluated);
+    assert!(backend
+        .health_report()
+        .message
+        .contains("does not publish health rules"));
+    assert_eq!(backend.indicator_status("hr"), Status::Unassessed);
+}
+
+#[test]
+fn invalid_health_linkage_is_rejected_before_it_can_be_displayed_as_current() {
+    let mut value = assessment_json();
+    value["health"]["rules"][0]["measurementIds"] = json!([]);
+    let invalid: dto::Assessment = serde_json::from_value(value).unwrap();
+    assert!(health::validate(&invalid).is_err());
+    let mut value = assessment_json();
+    value["health"]["rules"][0]["validUntil"] = json!("invalid");
+    assert!(health::validate(&serde_json::from_value(value).unwrap()).is_err());
+}
+
+#[test]
+fn optional_metrics_use_server_capabilities_and_fractional_input_bounds() {
+    let mut core = latest_json();
+    core["metrics"].as_array_mut().unwrap().retain(|entry| {
+        METRICS
+            .iter()
+            .any(|metric| metric.required && metric.api == entry["metric"])
+    });
+    assert!(worker::test_validate_latest(
+        &serde_json::from_value(core.clone()).unwrap()
+    ));
+    let (mut old, _) = cached_backend(core);
+    assert_eq!(old.overview().total_indicators, 6);
+    assert_eq!(old.systems().len(), 3);
+    assert!(old.indicators("lungs").is_empty());
+    assert!(old
+        .submit_measurement("spo2", 98.0)
+        .unwrap_err()
+        .contains("not available"));
+
+    let full = health_latest();
+    assert!(worker::test_validate_latest(
+        &serde_json::from_value(full.clone()).unwrap()
+    ));
+    let (mut backend, receiver) = cached_backend(full);
+    assert_eq!(backend.overview().total_indicators, 12);
+    assert_eq!(backend.systems().len(), 7);
+    for (id, value, unit) in [
+        ("spo2", 0.0, "%"),
+        ("spo2", 98.5, "%"),
+        ("glucose", 94.25, "mg/dL"),
+        ("visionBlur", 0.0, "score"),
+        ("exerciseMinutes", 15.5, "min"),
+        ("headache", 3.5, "score"),
+        ("backPain", 0.0, "score"),
+    ] {
+        backend.submit_measurement(id, value).unwrap();
+        let Command::Measurement(payload) = receiver.try_recv().unwrap() else {
+            panic!("measurement expected")
+        };
+        assert_eq!(payload.metric, id);
+        assert_eq!(payload.value, value);
+        assert_eq!(payload.unit, unit);
+        lock(&backend.state).pending = 0;
+    }
+    for (id, value) in [
+        ("spo2", 100.1),
+        ("glucose", 0.0),
+        ("visionBlur", 10.1),
+        ("exerciseMinutes", 1440.1),
+        ("headache", -0.1),
+        ("backPain", f64::INFINITY),
+    ] {
+        assert!(backend.submit_measurement(id, value).is_err());
+    }
+}
+
+#[test]
+fn optional_unimplemented_rules_remain_neutral_despite_fresh_data() {
+    let mut assessment = assessment_json();
+    for rule in assessment["health"]["rules"].as_array_mut().unwrap() {
+        if METRICS
+            .iter()
+            .any(|metric| !metric.required && metric.api == rule["metric"])
+        {
+            rule["status"] = json!("notEvaluated");
+            rule["measurementIds"] = json!([]);
+            rule["validUntil"] = Value::Null;
+        }
+    }
+    assessment["health"]["evaluatedMetricCount"] = json!(6);
+    assessment["health"]["status"] = json!("insufficientData");
+    let backend = assessed_backend(assessment);
+    assert_eq!(
+        backend.health_report().status,
+        HealthStatus::InsufficientData
+    );
+    for metric in METRICS.iter().filter(|metric| !metric.required) {
+        assert_eq!(
+            backend.health_rule(metric.id).unwrap().current_status(),
+            HealthStatus::NotEvaluated
+        );
+        assert_eq!(backend.indicator_status(metric.id), Status::Unassessed);
+    }
+    assert_eq!(backend.system_status("msk"), Status::Unassessed);
+}
+
+#[test]
+fn old_six_metric_server_receives_only_supported_history_queries() {
+    let requests = Arc::new(Mutex::new(Vec::<String>::new()));
+    let observed = Arc::clone(&requests);
+    let server = MockServer::start(move |_, path, _| match path {
+        "/api/health" => Some((200, json!({"status":"ok","storage":"sqlite"}))),
+        "/api/measurements/latest" => {
+            let mut value = latest_json();
+            value["metrics"].as_array_mut().unwrap().retain(|entry| {
+                METRICS
+                    .iter()
+                    .any(|m| m.required && m.api == entry["metric"])
+            });
+            Some((200, value))
+        }
+        "/api/tasks" => Some((200, json!([]))),
+        "/api/assessments" => Some((
+            200,
+            json!({"astronautId":"demo-astronaut","evaluatedAt":"2026-11-15T01:00:00Z"}),
+        )),
+        _ if path.starts_with("/api/measurements/series?") => {
+            let url = reqwest::Url::parse(&format!("http://local{path}")).unwrap();
+            let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
+            let metric = METRICS
+                .iter()
+                .find(|metric| metric.api == query["metric"])
+                .unwrap();
+            observed.lock().unwrap().push(metric.api.into());
+            assert!(metric.required, "Optional query sent to an older server");
+            Some((
+                200,
+                json!({"metric":metric.api,"unit":metric.unit,"aggregation":"mean","from":query["from"],"to":query["to"],"timeBasis":"mixed","points":[]}),
+            ))
+        }
+        _ => Some((404, json!({"message":"not available"}))),
+    });
+    let backend = HttpBackend::connect(&server.url).unwrap();
+    wait_for(|| backend.data_series("mood").to_ms > 0);
+    assert!(backend.overview().link_up);
+    assert_eq!(backend.overview().total_indicators, 6);
+    assert_eq!(requests.lock().unwrap().len(), 6);
+    assert_eq!(backend.health_report().status, HealthStatus::NotEvaluated);
+    assert!(backend
+        .health_report()
+        .message
+        .contains("does not publish health rules"));
 }

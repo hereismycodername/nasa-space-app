@@ -10,7 +10,7 @@ use ratatui::{
     },
 };
 use std::time::{Duration, Instant};
-use ui_model::{Backend, IndicatorInfo, Role, TimedSeries};
+use ui_model::{Backend, HealthReport, HealthStatus, IndicatorInfo, Role, TimedSeries};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Focus {
@@ -28,6 +28,9 @@ struct LiveApp<B: Backend> {
     notice: String,
     help: bool,
     details: bool,
+    health: bool,
+    flight_only: bool,
+    last_health_status: HealthStatus,
     details_scroll: u16,
     quit: bool,
 }
@@ -41,9 +44,12 @@ impl<B: Backend> LiveApp<B> {
             metric: 0,
             task: 0,
             edit: None,
-            notice: "Waiting for shared server data. No clinical assessment is performed.".into(),
+            notice: String::new(),
             help: false,
             details: false,
+            health: false,
+            flight_only: false,
+            last_health_status: HealthStatus::NotEvaluated,
             details_scroll: 0,
             quit: false,
         }
@@ -59,6 +65,13 @@ impl<B: Backend> LiveApp<B> {
 
     fn tick(&mut self) {
         self.backend.tick();
+        let status = self.backend.health_report().status;
+        if status == HealthStatus::Critical && self.last_health_status != HealthStatus::Critical {
+            self.health = true;
+            self.flight_only = false;
+            self.details_scroll = 0;
+        }
+        self.last_health_status = status;
         let notifications = self.backend.take_messages();
         if !notifications.is_empty() {
             self.notice = notifications.join(" | ");
@@ -96,15 +109,20 @@ impl<B: Backend> LiveApp<B> {
             self.help = false;
             return;
         }
-        if self.details {
+        if self.details || self.health {
             match key.code {
-                KeyCode::Down | KeyCode::PageDown => {
-                    self.details_scroll = self.details_scroll.saturating_add(1).min(100)
+                KeyCode::Down => {
+                    self.details_scroll = self.details_scroll.saturating_add(1).min(2000)
                 }
-                KeyCode::Up | KeyCode::PageUp => {
-                    self.details_scroll = self.details_scroll.saturating_sub(1)
+                KeyCode::PageDown => {
+                    self.details_scroll = self.details_scroll.saturating_add(10).min(2000)
                 }
-                _ => self.details = false,
+                KeyCode::Up => self.details_scroll = self.details_scroll.saturating_sub(1),
+                KeyCode::PageUp => self.details_scroll = self.details_scroll.saturating_sub(10),
+                _ => {
+                    self.details = false;
+                    self.health = false;
+                }
             }
             return;
         }
@@ -115,6 +133,16 @@ impl<B: Backend> LiveApp<B> {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
             KeyCode::Char('?') => self.help = true,
+            KeyCode::Char('f') => {
+                self.health = true;
+                self.flight_only = true;
+                self.details_scroll = 0;
+            }
+            KeyCode::Char('h') => {
+                self.health = true;
+                self.flight_only = false;
+                self.details_scroll = 0;
+            }
             KeyCode::Char('i') => {
                 self.details = true;
                 self.details_scroll = 0;
@@ -224,9 +252,9 @@ impl<B: Backend> LiveApp<B> {
         }
         let layout = Layout::vertical([
             Constraint::Length(3),
-            Constraint::Min(12),
+            Constraint::Min(11),
             Constraint::Length(5),
-            Constraint::Length(3),
+            Constraint::Length(4),
             Constraint::Length(1),
         ])
         .split(area);
@@ -252,21 +280,50 @@ impl<B: Backend> LiveApp<B> {
         );
         self.draw_measurements(frame, layout[1]);
         self.draw_tasks(frame, layout[2]);
+        let report = self.backend.health_report();
         let pending = self.backend.pending_writes();
-        let status = if pending > 0 {
-            format!("Pending writes: {pending}. {}", self.notice)
+        let notice = if self.notice.is_empty() {
+            if report.message.is_empty() {
+                self.backend.connection_label()
+            } else {
+                report.message.clone()
+            }
         } else {
             self.notice.clone()
         };
+        let notice = if pending > 0 {
+            format!("Pending writes: {pending}. {notice}")
+        } else {
+            notice
+        };
+        let mut lines = Vec::new();
+        if let Some(rule) = report.evaluation.as_ref().and_then(|health| {
+            health
+                .rules
+                .iter()
+                .find(|rule| rule.current_status() == HealthStatus::Critical)
+        }) {
+            // Keep the action separate from delivery notices, including while a write is pending.
+            lines.push(Line::styled(
+                format!("Next step: {}", rule.suggested_action),
+                Style::new().fg(Color::Red),
+            ));
+        }
+        lines.push(Line::raw(notice));
         frame.render_widget(
-            Paragraph::new(status)
-                .block(Block::bordered().title(" Server notifications "))
-                .wrap(Wrap { trim: false }),
+            Paragraph::new(lines).block(
+                Block::bordered()
+                    .title(format!(
+                        " {} / h: health & flight guidance ",
+                        report.status.label()
+                    ))
+                    .border_style(Style::new().fg(health_color(report.status))),
+            ),
             layout[3],
         );
         frame.render_widget(
             Paragraph::new(
-                " Arrows select  Enter input  Tab tasks  Space toggle  i details  ? help  q quit",
+                " Arrows select  Enter edit  Tab tasks  Space toggle  i detail  h health  f flight  q quit",
             )
             .style(Style::new().fg(Color::Gray)),
             layout[4],
@@ -279,7 +336,7 @@ impl<B: Backend> LiveApp<B> {
                 area.height.saturating_sub(6),
             );
             frame.render_widget(Clear, help);
-            frame.render_widget(Paragraph::new("Shared Rust API\n\nUp/Down or j/k: choose a measurement or task.\nEnter on a measurement: enter its measured value; Enter again sends.\nTab: switch between measurements and tasks.\nSpace or Enter on a task: request completion/undo.\ni: full measurement details and history description; arrows scroll.\nr: switch Crew/Ground. Both see the same server profile.\n\nA pending message is not a saved measurement. Success appears only after the server replies.\nOffline data is a cached view; reconnect is automatic.\nChart gaps are missing samples, not zero values. Dates are UTC.\nClinical assessment and simulated demo tools are unavailable here.\n\nAny key closes help. Ctrl+C always exits.").block(Block::bordered().title(" Controls ")).wrap(Wrap { trim: false }), help);
+            frame.render_widget(Paragraph::new("Shared Rust API\n\nUp/Down or j/k: choose a measurement or task.\nEnter on a measurement: enter its measured value; Enter again sends.\nTab: switch between measurements and tasks.\nSpace or Enter on a task: request completion/undo.\ni: full measurement details and history description; arrows scroll.\nr: switch Crew/Ground. Both see the same server profile.\n\nA pending message is not a saved measurement. Success appears only after the server replies.\nOffline data is a cached view; reconnect is automatic.\nChart gaps are missing samples, not zero values. Dates are UTC.\nHealth rules run on the server; h shows guidance, flight hazards and sources. A rule alert is not a diagnosis. Simulated demo tools are unavailable here.\n\nAny key closes help. Ctrl+C always exits.").block(Block::bordered().title(" Controls ")).wrap(Wrap { trim: false }), help);
         }
         if self.details {
             let popup = Rect::new(
@@ -292,9 +349,17 @@ impl<B: Backend> LiveApp<B> {
             let detail = indicators
                 .get(self.metric)
                 .map(|indicator| {
+                    let rule = self
+                        .backend
+                        .health_rule(&indicator.id)
+                        .map(|rule| rule.detail_text())
+                        .unwrap_or_else(|| {
+                            "No health guidance received for this measurement".into()
+                        });
                     format!(
-                        "{}\n\n{}\n\n{}",
+                        "{}\n\n{}\n\nData quality: {}\n\n{}",
                         indicator.name,
+                        rule,
                         self.backend.measurement_detail(&indicator.id),
                         self.backend.data_series(&indicator.id).note
                     )
@@ -309,6 +374,30 @@ impl<B: Backend> LiveApp<B> {
                     )
                     .wrap(Wrap { trim: false })
                     .scroll((self.details_scroll, 0)),
+                popup,
+            );
+        }
+        if self.health {
+            let popup = Rect::new(
+                area.x + 2,
+                area.y + 1,
+                area.width.saturating_sub(4),
+                area.height.saturating_sub(2),
+            );
+            frame.render_widget(Clear, popup);
+            frame.render_widget(
+                Paragraph::new(if self.flight_only {
+                    flight_text(&report)
+                } else {
+                    health_text(&report)
+                })
+                .block(
+                    Block::bordered()
+                        .title(" Health & flight guidance / arrows scroll / other key closes ")
+                        .border_style(Style::new().fg(health_color(report.status))),
+                )
+                .wrap(Wrap { trim: false })
+                .scroll((self.details_scroll, 0)),
                 popup,
             );
         }
@@ -329,6 +418,14 @@ impl<B: Backend> LiveApp<B> {
                 ),
                 Cell::from(indicator.unit.clone()),
             ])
+            .style(
+                Style::new().fg(health_color(
+                    self.backend
+                        .health_rule(&indicator.id)
+                        .map(|rule| rule.current_status())
+                        .unwrap_or_default(),
+                )),
+            )
         });
         let mut selected =
             TableState::default().with_selected((!indicators.is_empty()).then_some(self.metric));
@@ -341,7 +438,7 @@ impl<B: Backend> LiveApp<B> {
             ],
         )
         .header(Row::new(["Measurement", "Latest", "Unit"]).style(Style::new().fg(Color::Gray)))
-        .row_highlight_style(Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .row_highlight_style(Style::new().add_modifier(Modifier::BOLD))
         .highlight_symbol(if self.focus == Focus::Metrics {
             "> "
         } else {
@@ -382,9 +479,16 @@ impl<B: Backend> LiveApp<B> {
             );
         }
         frame.render_widget(
-            Paragraph::new(self.backend.measurement_detail(&indicator.id))
-                .block(Block::bordered().title(" Time/source/quality / i: full details "))
-                .wrap(Wrap { trim: false }),
+            Paragraph::new(format!(
+                "Health guidance: {}\nData quality: {}",
+                self.backend
+                    .health_rule(&indicator.id)
+                    .map(|rule| rule.current_status().label())
+                    .unwrap_or("Not evaluated"),
+                self.backend.measurement_detail(&indicator.id)
+            ))
+            .block(Block::bordered().title(" Time/source/quality / i: full details "))
+            .wrap(Wrap { trim: false }),
             rows[1],
         );
         draw_chart(
@@ -448,6 +552,66 @@ impl<B: Backend> LiveApp<B> {
         });
         frame.render_stateful_widget(table, area, &mut selected);
     }
+}
+
+fn health_color(status: HealthStatus) -> Color {
+    match status {
+        HealthStatus::NoAlert => Color::Green,
+        HealthStatus::Attention => Color::Yellow,
+        HealthStatus::Critical => Color::Red,
+        HealthStatus::InsufficientData | HealthStatus::NotEvaluated => Color::Gray,
+    }
+}
+
+fn health_text(report: &HealthReport) -> String {
+    let mut text = format!(
+        "{}\n{}\nEvaluated at: {}\n",
+        report.status.label(),
+        report.message,
+        report.evaluated_at.as_deref().unwrap_or("not received")
+    );
+    let Some(health) = &report.evaluation else {
+        return text;
+    };
+    text.push_str(&format!("\nURGENT SYMPTOMS / WHEN TO GET HELP\n{}\nThe application does not send a message automatically.\n\n", health.emergency_guidance));
+    text.push_str(&health.disclaimer);
+    text.push_str(&format!(
+        "\nRule set: {} (demonstration)\n\n",
+        health.rule_set_version
+    ));
+    // Highest-priority current results are readable before routine education.
+    let mut rules: Vec<_> = health.rules.iter().collect();
+    rules.sort_by_key(|rule| match rule.current_status() {
+        HealthStatus::Critical => 0,
+        HealthStatus::Attention => 1,
+        _ => 2,
+    });
+    for rule in rules {
+        text.push_str(&rule.detail_text());
+        text.push_str("\n\n");
+    }
+    text.push_str("Press f after closing this panel for all five spaceflight hazards.\n");
+    text
+}
+
+fn flight_text(report: &HealthReport) -> String {
+    let Some(health) = &report.evaluation else {
+        return report.message.clone();
+    };
+    let mut text = format!(
+        "SPACEFLIGHT HAZARDS AND PREVENTION\n\n{}\n\n",
+        health.disclaimer
+    );
+    for topic in &health.education {
+        text.push_str(&format!(
+            "{}\n{}\nNext step: {}\nSources:\n{}\n\n",
+            topic.title,
+            topic.explanation,
+            topic.suggested_action,
+            topic.source_urls.join("\n")
+        ));
+    }
+    text
 }
 
 fn number(value: f64) -> String {
@@ -589,6 +753,7 @@ mod tests {
         messages: Vec<String>,
         fail: bool,
         latest: f64,
+        report: HealthReport,
     }
 
     impl FakeBackend {
@@ -605,6 +770,7 @@ mod tests {
                 messages: vec![],
                 fail: false,
                 latest: 72.0,
+                report: HealthReport::default(),
             }
         }
     }
@@ -612,6 +778,12 @@ mod tests {
     impl Backend for FakeBackend {
         fn is_demo(&self) -> bool {
             false
+        }
+        fn health_report(&self) -> HealthReport {
+            self.report.clone()
+        }
+        fn health_rule(&self, _: &str) -> Option<HealthRule> {
+            self.report.evaluation.as_ref()?.rules.first().cloned()
         }
         fn connection_label(&self) -> String {
             "Connected to http://shared:8080".into()
@@ -863,6 +1035,105 @@ mod tests {
         assert!(
             timestamp(series.from_ms).contains(':'),
             "Chart labels must contain actual UTC time"
+        );
+    }
+    #[test]
+    fn new_urgent_guidance_opens_with_actions_and_all_flight_topics_are_accessible() {
+        let mut app = LiveApp::new(FakeBackend::new(), Role::Crew);
+        app.backend.report = HealthReport {
+            evaluated_at: Some("2026-11-15T01:00:00Z".into()),
+            status: HealthStatus::Critical,
+            message: "1/6 evaluated".into(),
+            evaluation: Some(HealthEvaluation {
+                rule_set_version: "be08-demo-1".into(),
+                demonstration_only: true,
+                status: HealthStatus::Critical,
+                explanation: "Server rule triggered".into(),
+                disclaimer: "Prototype, not a diagnosis".into(),
+                emergency_guidance: "Involve crew now; do not wait for ground response".into(),
+                evaluated_metric_count: 1,
+                total_metric_count: 6,
+                rules: vec![HealthRule {
+                    rule_id: "test-rule".into(),
+                    rule_version: "be08-demo-1".into(),
+                    metric: "heartRate".into(),
+                    title: "Test criterion".into(),
+                    status: HealthStatus::Critical,
+                    explanation: "Server explanation".into(),
+                    measurement_ids: vec!["id".into()],
+                    valid_until: Some("2026-11-15T01:00:15Z".into()),
+                    suggested_action: "Contact crew medical officer".into(),
+                    escalation: Escalation::Urgent,
+                    flight_context: "Distance delays support".into(),
+                    source_urls: vec!["https://www.nasa.gov/hrp/hazards/".into()],
+                    demonstration_only: true,
+                    current: true,
+                    unavailable_reason: None,
+                }],
+                education: [
+                    "Gravity",
+                    "Isolation",
+                    "Radiation",
+                    "Distance",
+                    "Environment",
+                ]
+                .into_iter()
+                .map(|title| FlightEducation {
+                    id: title.into(),
+                    title: title.into(),
+                    explanation: "Spaceflight context".into(),
+                    suggested_action: "Follow the mission prevention plan".into(),
+                    source_urls: vec!["https://www.nasa.gov/hrp/hazards/".into()],
+                })
+                .collect(),
+            }),
+        };
+        app.tick();
+        assert!(app.health);
+        let screen = render(&app, 100, 40);
+        assert!(screen.contains("Urgent action"));
+        assert!(screen.contains("Involve crew now"));
+        assert!(screen.contains("Contact crew medical officer"));
+        app.on_key(key(KeyCode::Esc));
+        app.tick();
+        assert!(!app.health, "Dismissed alert must not reopen every refresh");
+        let main = render(&app, 80, 24);
+        assert!(main.contains("Next step: Contact crew medical officer"));
+        assert!(!main.contains("Waiting for server measurements"));
+        app.backend.pending = 1;
+        app.backend
+            .messages
+            .push("Sending measurement; awaiting server confirmation.".into());
+        app.tick();
+        let sending = render(&app, 80, 24);
+        assert!(sending.contains("Next step: Contact crew medical officer"));
+        assert!(sending.contains("Pending writes: 1"));
+        app.backend.pending = 0;
+        app.backend.report.status = HealthStatus::InsufficientData;
+        app.backend.report.evaluation.as_mut().unwrap().rules[0].current = false;
+        assert!(!render(&app, 80, 24).contains("Next step: Contact crew medical officer"));
+        app.on_key(key(KeyCode::Char('f')));
+        let topics = flight_text(&app.backend.report);
+        for title in [
+            "Gravity",
+            "Isolation",
+            "Radiation",
+            "Distance",
+            "Environment",
+        ] {
+            assert!(topics.contains(title));
+        }
+        assert!(topics.contains("https://www.nasa.gov/hrp/hazards/"));
+        assert_eq!(health_color(HealthStatus::NoAlert), Color::Green);
+        assert_eq!(health_color(HealthStatus::Attention), Color::Yellow);
+        assert_eq!(health_color(HealthStatus::Critical), Color::Red);
+        assert_eq!(health_color(HealthStatus::NotEvaluated), Color::Gray);
+        for _ in 0..15 {
+            app.on_key(key(KeyCode::PageDown));
+        }
+        assert!(
+            app.details_scroll > 100,
+            "Long source/action text must remain reachable"
         );
     }
 }

@@ -5,9 +5,10 @@
 
 mod catalog;
 mod dto;
+mod health;
 mod worker;
 
-use catalog::{metric, METRICS};
+use catalog::metric;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -21,6 +22,9 @@ pub(crate) struct State {
     online: bool,
     error: Option<String>,
     latest: Option<dto::Latest>,
+    assessment: Option<dto::Assessment>,
+    assessment_at: Option<Instant>,
+    assessment_error: Option<String>,
     snapshot_at: Option<Instant>,
     tasks: Vec<dto::Task>,
     series: HashMap<String, TimedSeries>,
@@ -36,6 +40,9 @@ impl State {
             online: false,
             error: None,
             latest: None,
+            assessment: None,
+            assessment_at: None,
+            assessment_error: None,
             snapshot_at: None,
             tasks: vec![],
             series: HashMap::new(),
@@ -178,6 +185,19 @@ impl Backend for HttpBackend {
         false
     }
 
+    fn health_report(&self) -> HealthReport {
+        health::report(&lock(&self.state))
+    }
+
+    fn health_rule(&self, indicator: &str) -> Option<HealthRule> {
+        let api = metric(indicator)?.api;
+        self.health_report()
+            .evaluation?
+            .rules
+            .into_iter()
+            .find(|rule| rule.metric == api)
+    }
+
     fn connection_label(&self) -> String {
         let state = lock(&self.state);
         if state.online {
@@ -247,7 +267,7 @@ impl Backend for HttpBackend {
                 ));
             }
         }
-        label.push_str("; no clinical assessment");
+        label.push_str("; data quality is separate from health guidance");
         label
     }
 
@@ -273,6 +293,9 @@ impl Backend for HttpBackend {
     fn submit_measurement(&mut self, indicator: &str, value: f64) -> Result<(), String> {
         let metric = metric(indicator).ok_or_else(|| "Unsupported measurement".to_string())?;
         metric.validate(value)?;
+        if lock(&self.state).entry(indicator).is_none() {
+            return Err("This measurement is not available on the connected server".into());
+        }
         let next = self
             .next_sequence
             .checked_add(1)
@@ -318,31 +341,59 @@ impl Backend for HttpBackend {
             autonomous: false,
             rtt_s: 0.0,
             due_count: 0,
-            total_indicators: METRICS.len(),
+            total_indicators: catalog::available(state.latest.as_ref()).len(),
         }
     }
     fn systems(&self) -> Vec<SystemInfo> {
+        let state = lock(&self.state);
+        let available = catalog::available(state.latest.as_ref());
         catalog::systems()
+            .into_iter()
+            .filter(|system| available.iter().any(|metric| metric.system == system.id))
+            .collect()
     }
     fn indicators(&self, system: &str) -> Vec<IndicatorInfo> {
-        METRICS
-            .iter()
+        catalog::available(lock(&self.state).latest.as_ref())
+            .into_iter()
             .filter(|item| item.system == system)
             .map(|item| item.info())
             .collect()
     }
     fn system_status(&self, system: &str) -> Status {
-        if self
-            .indicators(system)
+        let indicators = self.indicators(system);
+        let statuses: Vec<_> = indicators
             .iter()
-            .any(|item| self.latest(&item.id).is_some())
-        {
+            .map(|item| self.indicator_status(&item.id))
+            .collect();
+        if statuses.contains(&Status::Act) {
+            Status::Act
+        } else if statuses.contains(&Status::Watch) {
+            Status::Watch
+        } else if !statuses.is_empty() && statuses.iter().all(|status| *status == Status::Normal) {
+            Status::Normal
+        } else if statuses.iter().any(|status| *status != Status::NoData) {
             Status::Unassessed
         } else {
             Status::NoData
         }
     }
     fn indicator_status(&self, indicator: &str) -> Status {
+        let Some(metric) = metric(indicator) else {
+            return Status::NoData;
+        };
+        let report = self.health_report();
+        if let Some(rule) = report
+            .evaluation
+            .as_ref()
+            .and_then(|health| health.rules.iter().find(|rule| rule.metric == metric.api))
+        {
+            match rule.current_status() {
+                HealthStatus::NoAlert => return Status::Normal,
+                HealthStatus::Attention => return Status::Watch,
+                HealthStatus::Critical => return Status::Act,
+                _ => {}
+            }
+        }
         if self.latest(indicator).is_some() {
             Status::Unassessed
         } else {
@@ -372,9 +423,9 @@ impl Backend for HttpBackend {
     fn evaluate(&self, _indicator: &str, _value: f64) -> Evaluation {
         Evaluation {
             status: Status::Unassessed,
-            target: "No clinical assessment".into(),
+            target: "Only recorded measurements are evaluated".into(),
             advice: Advice {
-                headline: "Medical rules are not connected".into(),
+                headline: "Save the measurement and read the matching server health result".into(),
                 actions: vec![],
                 escalate: None,
             },

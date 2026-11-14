@@ -1,9 +1,13 @@
-# JSON-примеры API v0.6.0
+# JSON-примеры API v0.8.0 (с совместимыми fixtures BE-06)
 
 Файлы содержат чистые JSON payload, пригодные для UI fixtures и ручных запросов.
 UUID и timestamps в ответах иллюстративные, реальные значения генерирует сервер.
 Набор синтетический. Примеры согласованы с [OpenAPI](../openapi.yaml).
-В latest/assessments качество рассчитано на фиксированный `evaluatedAt`
+Примеры `assessment.rules-*` получены из настоящего BE-08 API на временной БД:
+они включают `health`, версию правил, действия и источники. Их timestamps —
+время приёмочного прогона, а не актуальные показания. `assessment.*` без `rules-`
+сохранены как fixtures старого BE-06 без `health`, которые клиенты ещё умеют читать.
+В старых latest/assessments качество рассчитано на фиксированный `evaluatedAt`
 `2026-11-13T08:00:03Z`; это fixtures, а не текущие показания. `quality.measurementId`
 связан с последним известным измерением (или последней доставкой, если известного
 нет), `latestReceivedQuality.measurementId` — с последней доставкой.
@@ -32,6 +36,9 @@ UUID и timestamps в ответах иллюстративные, реальн�
 | assessment.unknown-time.response.json | Время измерения неизвестно; свежесть не установлена |
 | assessment.clock-skew.response.json | Время последней записи в будущем |
 | assessment.quality.response.json | Свежий пульс и устаревший сон: legacy status не описывает все метрики |
+| assessment.rules-normal.response.json | Свежие показатели без срабатывания заданных правил; не заключение о здоровье |
+| assessment.rules-attention.response.json | Сон, настроение и пульс требуют внимания; причины, действия и источники |
+| assessment.rules-critical.response.json | Высокое систолическое давление; срочный маршрут помощи и evidence ID |
 | tasks.response.json | GET /api/tasks |
 | task-update.request.json | PATCH /api/tasks/daily-check |
 | task.response.json | Обновлённая задача |
