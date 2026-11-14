@@ -73,6 +73,7 @@ struct GuiApp<B: Backend> {
     fig: figure::Figure,
     mode: figure::Mode,
     compose: String,
+    show_all: bool,
     checkin_open: bool,
     pvt_open: bool,
     pvt: Pvt,
@@ -104,8 +105,8 @@ fn short_name(full: &str) -> String {
 
 fn readiness(score: Option<u8>) -> (&'static str, Color32) {
     match score {
-        Some(s) if s >= 90 => ("Optimal", OK),
-        Some(s) if s >= 75 => ("Good", OK),
+        Some(s) if s >= 90 => ("Optimal", ACCENT),
+        Some(s) if s >= 75 => ("Good", ACCENT),
         Some(s) if s >= 55 => ("Fair", WARN),
         Some(_) => ("Attention", CRIT),
         None => ("No data", NONE),
@@ -136,6 +137,7 @@ impl<B: Backend> GuiApp<B> {
             fig: figure::Figure::new(),
             mode: figure::Mode::Organs,
             compose: String::new(),
+            show_all: false,
             checkin_open: false,
             pvt_open: false,
             pvt: Pvt::Idle,
@@ -261,7 +263,7 @@ impl<B: Backend> GuiApp<B> {
             .frame(Frame::new().fill(SURFACE).stroke(stroke(1.0, LINE)).inner_margin(Margin::symmetric(14, 0)))
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
-                    ui.label(RichText::new("ASTROCHECK").size(15.0).strong().color(TXT));
+                    ui.label(RichText::new("ASTROCHECK").font(display(15.0)).strong().color(TXT));
                     ui.add_space(4.0);
                     ui.separator();
                     let envs = self.b.environments();
@@ -322,9 +324,6 @@ impl<B: Backend> GuiApp<B> {
                             self.role = role;
                             self.tab = Tab::Main;
                             self.nav = Nav::Overview;
-                        }
-                        if self.role == Role::Crew && ctx.screen_rect().width() >= 1180.0 {
-                            ui.label(RichText::new(format!("Lv {}  {}-day streak", o.level, o.streak)).size(11.5).color(MUT));
                         }
                     });
                 });
@@ -505,43 +504,37 @@ impl<B: Backend> GuiApp<B> {
             ui.spacing_mut().item_spacing.x = gap;
             // readiness
             vcard(ui, cw, 150.0, |ui| {
-                caption(ui, "Readiness");
+                caption(ui, "Readiness index");
                 ui.horizontal(|ui| {
                     let (rect, _) = ui.allocate_exact_size(vec2(108.0, 108.0), Sense::hover());
                     let (label, col) = readiness(o.score);
                     ring(ui.painter(), rect.center(), 46.0, 9.0, o.score.unwrap_or(0) as f32 / 100.0, col);
-                    ui.painter().text(rect.center() + vec2(0.0, -4.0), Align2::CENTER_CENTER, o.score.map(|s| s.to_string()).unwrap_or("-".into()), FontId::proportional(30.0), TXT);
-                    ui.painter().text(rect.center() + vec2(0.0, 20.0), Align2::CENTER_CENTER, label.to_uppercase(), FontId::proportional(9.5), col);
+                    ui.painter().text(rect.center() + vec2(0.0, -4.0), Align2::CENTER_CENTER, o.score.map(|s| s.to_string()).unwrap_or("-".into()), mono(30.0), TXT);
+                    ui.painter().text(rect.center() + vec2(0.0, 20.0), Align2::CENTER_CENTER, label.to_uppercase(), mono(9.0), col);
                     ui.vertical(|ui| {
-                        ui.label(RichText::new("Compared with your own baseline").size(12.0).color(MUT));
+                        ui.label(RichText::new("Relative to personal baseline").size(12.0).color(MUT));
                         ui.label(RichText::new(format!("{} of {} indicators in range", self.inds.len() - self.issues().len(), self.inds.len())).size(12.5));
                     });
                 });
             });
-            // activity rings
+            // daily tasks: plain list, no rings
             vcard(ui, cw, 150.0, |ui| {
-                caption(ui, "Today");
+                caption(ui, "Daily tasks");
                 let val = |id: &str| self.b.latest(id).map(|r| r.value).unwrap_or(0.0);
                 let (ex, sl) = (val("exercise"), val("sleep"));
-                let done = (o.total_indicators - o.due_count) as f32 / o.total_indicators.max(1) as f32;
-                ui.horizontal(|ui| {
-                    let (rect, _) = ui.allocate_exact_size(vec2(108.0, 108.0), Sense::hover());
-                    ring(ui.painter(), rect.center(), 46.0, 8.0, (ex / 120.0) as f32, Color32::from_rgb(0xe5, 0x6b, 0x4a));
-                    ring(ui.painter(), rect.center(), 35.0, 8.0, (sl / 8.0) as f32, Color32::from_rgb(0x8a, 0x7b, 0xe8));
-                    ring(ui.painter(), rect.center(), 24.0, 8.0, done, ACCENT);
-                    ui.vertical(|ui| {
-                        for (c, t) in [
-                            (Color32::from_rgb(0xe5, 0x6b, 0x4a), format!("Exercise  {} / 120 min", fmt_num(ex))),
-                            (Color32::from_rgb(0x8a, 0x7b, 0xe8), format!("Sleep  {} / 8 h", fmt_num(sl))),
-                            (ACCENT, format!("Check-in  {} / {}", o.total_indicators - o.due_count, o.total_indicators)),
-                        ] {
-                            ui.horizontal(|ui| {
-                                led(ui, c);
-                                ui.add(egui::Label::new(RichText::new(t).size(12.0)).truncate());
-                            });
-                        }
+                let done = o.total_indicators - o.due_count;
+                for (k, v, ok) in [
+                    ("Check-in", format!("{} / {}", done, o.total_indicators), o.due_count == 0),
+                    ("Exercise", format!("{} / 120 min", fmt_num(ex)), ex >= 120.0),
+                    ("Sleep", format!("{} / 8 h", fmt_num(sl)), sl >= 7.0),
+                ] {
+                    ui.horizontal(|ui| {
+                        ui.add_sized([86.0, 18.0], egui::Label::new(RichText::new(k).size(12.0).color(MUT)));
+                        ui.label(RichText::new(v).font(mono(12.5)).color(if ok { OK } else { TXT }));
                     });
-                });
+                }
+                ui.add_space(4.0);
+                ui.label(RichText::new(format!("{} due now", o.due_count)).size(11.5).color(MUT));
             });
             // mission
             vcard(ui, cw, 150.0, |ui| {
@@ -561,7 +554,7 @@ impl<B: Backend> GuiApp<B> {
         ui.columns(2, |cols| {
             card().show(&mut cols[0], |ui| {
                 ui.set_width(ui.available_width());
-                caption(ui, "Contributors");
+                caption(ui, "Body systems");
                 ui.add_space(4.0);
                 for s in &self.systems {
                     let st = self.b.system_status(&s.id);
@@ -584,10 +577,10 @@ impl<B: Backend> GuiApp<B> {
             });
             card().show(&mut cols[1], |ui| {
                 ui.set_width(ui.available_width());
-                caption(ui, "Insights");
+                caption(ui, "Findings");
                 ui.add_space(4.0);
                 if issues.is_empty() {
-                    ui.label(RichText::new("Everything is within your normal range. Keep up your exercise, sleep and hydration routine.").size(12.5).color(MUT));
+                    ui.label(RichText::new("No findings. All indicators are within range.").size(12.5).color(MUT));
                 }
                 for (ind, st, v) in issues.iter().take(5) {
                     let ev = self.b.evaluate(&ind.id, *v);
@@ -614,7 +607,7 @@ impl<B: Backend> GuiApp<B> {
         if !msgs.is_empty() {
             card().show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                caption(ui, "Messages from the flight surgeon");
+                caption(ui, "Messages from flight surgeon");
                 for m in msgs.iter().rev().take(3) {
                     ui.label(RichText::new(format!("Day {}   {}", m.day, m.text)).size(12.5));
                 }
@@ -622,9 +615,18 @@ impl<B: Backend> GuiApp<B> {
             ui.add_space(10.0);
         }
 
-        caption(ui, "All metrics");
+        // quiet display: by default show only what needs attention (or is due); everything else is one click away
+        let attention: Vec<String> = self.inds.iter().filter(|i| self.b.indicator_status(&i.id) >= Status::Watch).map(|i| i.id.clone()).collect();
+        ui.horizontal(|ui| {
+            caption(ui, if self.show_all { "All metrics" } else { "Needs attention" });
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui.small_button(if self.show_all { "Show only attention" } else { "Show all metrics" }).clicked() {
+                    self.show_all = !self.show_all;
+                }
+            });
+        });
         ui.add_space(4.0);
-        let ids: Vec<String> = self.inds.iter().map(|i| i.id.clone()).collect();
+        let ids: Vec<String> = if self.show_all || attention.is_empty() { self.inds.iter().map(|i| i.id.clone()).collect() } else { attention };
         self.tiles(ui, &ids);
         if let Some(n) = go {
             self.nav = n;
@@ -657,7 +659,7 @@ impl<B: Backend> GuiApp<B> {
         let st = self.b.system_status(&sys.id);
         let env = self.b.environment();
         ui.horizontal(|ui| {
-            ui.label(RichText::new(&sys.name).size(22.0).strong());
+            ui.label(RichText::new(&sys.name).font(display(22.0)));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| pill(ui, st.name(), status_color(st)));
         });
         ui.add_space(4.0);
@@ -702,7 +704,7 @@ impl<B: Backend> GuiApp<B> {
         let col = status_color(if crew { ev.status } else { st });
 
         ui.horizontal(|ui| {
-            ui.label(RichText::new(&ind.name).size(22.0).strong());
+            ui.label(RichText::new(&ind.name).font(display(22.0)));
             pill(ui, if crew { ev.status.name() } else { st.name() }, col);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let mut r = self.range;
@@ -712,8 +714,8 @@ impl<B: Backend> GuiApp<B> {
             });
         });
         ui.horizontal(|ui| {
-            ui.label(RichText::new(latest.map(|r| fmt_num(r.value)).unwrap_or("-".into())).size(40.0).strong());
-            ui.label(RichText::new(&ind.unit).size(15.0).color(MUT));
+            ui.label(RichText::new(latest.map(|r| fmt_num(r.value)).unwrap_or("-".into())).font(mono(40.0)));
+            ui.label(RichText::new(&ind.unit).font(mono(14.0)).color(MUT));
             ui.add_space(8.0);
             ui.vertical(|ui| {
                 ui.label(RichText::new(format!("target {}", ev.target)).size(12.0).color(MUT));
@@ -757,7 +759,7 @@ impl<B: Backend> GuiApp<B> {
                 for (k, val) in stats {
                     vcard(ui, w, 0.0, |ui| {
                         caption(ui, k);
-                        ui.label(RichText::new(format!("{} {}", val, ind.unit)).size(16.0).strong());
+                        ui.label(RichText::new(format!("{} {}", val, ind.unit)).font(mono(14.0)));
                     });
                 }
             });
@@ -790,7 +792,7 @@ impl<B: Backend> GuiApp<B> {
                     if ui.add(primary("Log today")).clicked() {
                         log_clicked = true;
                     }
-                    if id == "pvt" && ui.button("Play game").clicked() {
+                    if id == "pvt" && ui.button("Run test").clicked() {
                         self.pvt_open = true;
                     }
                 });
@@ -842,7 +844,7 @@ impl<B: Backend> GuiApp<B> {
         if log_clicked {
             let r = self.b.log(id, v);
             self.inputs.insert(id.to_string(), r.value);
-            self.say(format!("{}: {} {} - {}{}", ind.name, fmt_num(r.value), ind.unit, r.status.name(), if r.xp_gained > 0 { format!("  +{} XP", r.xp_gained) } else { String::new() }));
+            self.say(format!("{}: {} {} - {}{}", ind.name, fmt_num(r.value), ind.unit, r.status.name(), String::new()));
         }
         if let Some(a) = ack {
             self.b.ack_alert(a);
@@ -885,7 +887,7 @@ impl<B: Backend> GuiApp<B> {
                 p.text(rect.min + vec2(14.0, 74.0), Align2::LEFT_CENTER, if c.open_alerts == 0 { "no open findings".to_string() } else { format!("{} open finding{}", c.open_alerts, if c.open_alerts == 1 { "" } else { "s" }) }, FontId::proportional(10.5), if c.open_alerts == 0 { MUT } else { col });
                 let rc = pos2(rect.right() - 32.0, rect.top() + 34.0);
                 ring(&p, rc, 20.0, 5.0, c.score.unwrap_or(0) as f32 / 100.0, col);
-                p.text(rc, Align2::CENTER_CENTER, c.score.map(|s| s.to_string()).unwrap_or("-".into()), FontId::proportional(13.0), TXT);
+                p.text(rc, Align2::CENTER_CENTER, c.score.map(|s| s.to_string()).unwrap_or("-".into()), mono(13.0), TXT);
                 if resp.clicked() {
                     pick = Some(c.id.clone());
                 }
@@ -944,11 +946,11 @@ impl<B: Backend> GuiApp<B> {
                             open = Some(i.id.clone());
                         }
                         let latest = hist.last().map(|r| r.value);
-                        ui.label(RichText::new(latest.map(fmt_num).unwrap_or("-".into())).size(12.0).strong());
+                        ui.label(RichText::new(latest.map(fmt_num).unwrap_or("-".into())).font(mono(12.0)));
                         let b = baseline(&hist);
-                        ui.label(RichText::new(b.map(|v| fmt_num((v * 100.0).round() / 100.0)).unwrap_or("-".into())).size(12.0).color(MUT));
+                        ui.label(RichText::new(b.map(|v| fmt_num((v * 100.0).round() / 100.0)).unwrap_or("-".into())).font(mono(12.0)).color(MUT));
                         let d = latest.zip(b).map(|(l, b)| l - b);
-                        ui.label(RichText::new(d.map(|d| format!("{}{}", if d >= 0.0 { "+" } else { "" }, fmt_num((d * 100.0).round() / 100.0))).unwrap_or("-".into())).size(12.0).color(if st == Status::Normal { MUT } else { c }));
+                        ui.label(RichText::new(d.map(|d| format!("{}{}", if d >= 0.0 { "+" } else { "" }, fmt_num((d * 100.0).round() / 100.0))).unwrap_or("-".into())).font(mono(12.0)).color(if st == Status::Normal { MUT } else { c }));
                         ui.label(RichText::new(st.name().to_uppercase()).size(10.0).color(c).strong());
                         ui.end_row();
                     }
@@ -1166,8 +1168,8 @@ impl<B: Backend> GuiApp<B> {
             let (txt, bg) = match &self.pvt {
                 Pvt::Idle => (if self.pvt_trials.is_empty() { "Press to start".to_string() } else { format!("{} ms  -  press for next trial", self.pvt_trials.last().unwrap().round()) }, Color32::from_rgb(0x1b, 0x2a, 0x5e)),
                 Pvt::Wait { .. } => (format!("Trial {}/5  -  wait for green...", self.pvt_trials.len() + 1), Color32::from_rgb(0x5b, 0x22, 0x30)),
-                Pvt::Go { .. } => ("NOW!".to_string(), Color32::from_rgb(0x1f, 0x9d, 0x68)),
-                Pvt::Early => ("Too early! Press to retry this trial".to_string(), Color32::from_rgb(0x1b, 0x2a, 0x5e)),
+                Pvt::Go { .. } => ("RESPOND".to_string(), Color32::from_rgb(0x1f, 0x9d, 0x68)),
+                Pvt::Early => ("Early response - press to repeat this trial".to_string(), Color32::from_rgb(0x1b, 0x2a, 0x5e)),
                 Pvt::Done { mean } => (format!("Average {} ms", mean.round()), Color32::from_rgb(0x1b, 0x2a, 0x5e)),
             };
             let (rect, resp) = ui.allocate_exact_size(vec2(480.0, 170.0), Sense::click());

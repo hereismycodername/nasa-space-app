@@ -21,7 +21,6 @@ pub trait Backend {
     fn environments(&self) -> Vec<EnvInfo>;
     fn environment(&self) -> EnvInfo;
     fn hazard_label(&self, key: &str) -> String;
-    fn badges(&self) -> Vec<Badge>;
     fn queue(&self, max_rows: usize) -> (QueueSummary, Vec<QueueRow>);
     fn health(&self) -> Health;
     fn blackout(&self) -> bool;
@@ -58,7 +57,7 @@ pub trait Backend {
     // ---- housekeeping --------------------------------------------------------------
     /// Call about once per second. Returns true when anything visible may have changed.
     fn tick(&mut self) -> bool;
-    /// One-shot notifications ("Daily check complete! +25 XP", "Data corruption repaired", ...).
+    /// One-shot notifications ("Data corruption repaired", "Downlink bundle delivered", ...).
     fn take_messages(&mut self) -> Vec<String>;
 
     // ---- demo only (default: not supported) ---------------------------------------

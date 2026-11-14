@@ -57,10 +57,11 @@ pub struct App<B: Backend> {
 
 fn sc(s: Status) -> Color {
     match s {
-        Status::Normal => Color::Green,
+        // quiet display: normal is neutral, colour is reserved for departures from normal
+        Status::Normal => Color::Gray,
         Status::Watch => Color::Yellow,
         Status::Act => Color::Red,
-        Status::NoData => Color::DarkGray,
+        Status::NoData => Color::Cyan,
     }
 }
 fn word(s: Status) -> &'static str {
@@ -404,7 +405,7 @@ impl<B: Backend> App<B> {
                 if let Ok(v) = e.text.replace(',', ".").parse::<f64>() {
                     self.edit = None;
                     let r = self.b.log(&ind, v);
-                    self.say(format!("{}: {} {} - {}{}", info.name, fmt_num(r.value), info.unit, word(r.status), if r.xp_gained > 0 { format!("  +{} XP", r.xp_gained) } else { String::new() }));
+                    self.say(format!("{}: {} {} - {}{}", info.name, fmt_num(r.value), info.unit, word(r.status), String::new()));
                     for m in self.b.take_messages() {
                         self.say(m);
                     }
@@ -454,7 +455,7 @@ impl<B: Backend> App<B> {
             _ => Color::Red,
         };
         let ground = self.role == Role::Ground;
-        let who = if ground { self.crew_name() } else { format!("Lv {}  {}-day streak", o.level, o.streak) };
+        let who = if ground { self.crew_name() } else { format!("Mission day {}", o.mission_day) };
         let line = Line::from(vec![
             Span::styled(" ASTROCHECK ", Style::new().fg(Color::Black).bg(Color::Cyan).bold()),
             Span::styled(if ground { " GROUND " } else { " CREW " }, Style::new().fg(Color::Black).bg(if ground { Color::Yellow } else { Color::Green }).bold()),
