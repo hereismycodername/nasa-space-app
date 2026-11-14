@@ -1,5 +1,14 @@
 use chrono::{DateTime, Utc};
 
+pub(crate) const METRICS: [&str; 6] = [
+    "heartRate",
+    "systolicPressure",
+    "diastolicPressure",
+    "temperature",
+    "sleepHours",
+    "mood",
+];
+
 #[derive(Debug, thiserror::Error)]
 #[error("{message}")]
 pub(crate) struct ValidationError {

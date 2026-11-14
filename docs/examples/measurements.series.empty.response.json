@@ -1,0 +1,34 @@
+{
+  "astronautId": "demo-astronaut",
+  "metric": "mood",
+  "unit": "score",
+  "aggregation": "last",
+  "from": "2026-11-13T08:00:00.000Z",
+  "to": "2026-11-13T08:00:00.005Z",
+  "intervalMs": 3,
+  "timeBasis": null,
+  "points": [
+    {
+      "startAt": "2026-11-13T08:00:00.000Z",
+      "endAt": "2026-11-13T08:00:00.003Z",
+      "value": null,
+      "min": null,
+      "max": null,
+      "count": 0,
+      "measuredCount": 0,
+      "receivedCount": 0,
+      "timeBasis": null
+    },
+    {
+      "startAt": "2026-11-13T08:00:00.003Z",
+      "endAt": "2026-11-13T08:00:00.005Z",
+      "value": null,
+      "min": null,
+      "max": null,
+      "count": 0,
+      "measuredCount": 0,
+      "receivedCount": 0,
+      "timeBasis": null
+    }
+  ]
+}

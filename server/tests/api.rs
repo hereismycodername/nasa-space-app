@@ -68,7 +68,7 @@ async fn ingestion_is_idempotent_and_rejects_sequence_conflicts() {
         StatusCode::CONFLICT
     );
     let (_, history) = call(&app, "GET", "/api/measurements", Value::Null).await;
-    assert_eq!(history.as_array().unwrap().len(), 1);
+    assert_eq!(history["items"].as_array().unwrap().len(), 1);
 }
 #[tokio::test]
 async fn validation_and_server_owned_identity() {
@@ -266,7 +266,10 @@ async fn validation_exposes_a_stable_code_and_field_without_writing_data() {
     assert_problem(&response, StatusCode::BAD_REQUEST, "VALIDATION_ERROR");
     assert_eq!(response.2["field"], "unit");
     let (_, history) = call(&app, "GET", "/api/measurements", Value::Null).await;
-    assert_eq!(history, json!([]));
+    assert_eq!(
+        history,
+        json!({"items": [], "hasMore": false, "nextCursor": null})
+    );
 }
 
 #[tokio::test]
@@ -403,6 +406,7 @@ async fn history_uses_received_time_when_measurement_time_is_unknown() {
         .unwrap();
     let (status, history) = call(&app, "GET", "/api/measurements", Value::Null).await;
     assert_eq!(status, StatusCode::OK);
+    let history = &history["items"];
     assert_eq!(history[0]["id"], second["id"]);
     assert_eq!(history[1]["id"], first["id"]);
     assert_eq!(history[0]["deviceId"], "simulator-01");
@@ -465,7 +469,7 @@ async fn history_orders_by_utc_measurement_time_with_explicit_reception_fallback
         saved[0]["id"].as_str().unwrap(),
         saved[3]["id"].as_str().unwrap(),
     ];
-    let ids: Vec<_> = rows
+    let ids: Vec<_> = rows["items"]
         .as_array()
         .unwrap()
         .iter()

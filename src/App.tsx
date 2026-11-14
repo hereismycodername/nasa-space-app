@@ -1,10 +1,43 @@
 import { useEffect, useState } from 'react'
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { getAssessment, getHistory, saveMeasurement } from './data/measurements'
-import type { HealthAssessment, Measurement } from './shared/types'
+import { getAssessment, getLatestMeasurements, getMeasurementSeries, saveMeasurement } from './data/measurements'
+import { MeasurementSeriesChart } from './MeasurementSeriesChart'
+import type { HealthAssessment, LatestMeasurements, MeasurementSeries, Metric } from './shared/types'
+
+const metricNames: { metric: Metric; label: string }[] = [
+  { metric: 'heartRate', label: 'Пульс' },
+  { metric: 'systolicPressure', label: 'Систолическое давление' },
+  { metric: 'diastolicPressure', label: 'Диастолическое давление' },
+  { metric: 'temperature', label: 'Температура' },
+  { metric: 'sleepHours', label: 'Сон' },
+  { metric: 'mood', label: 'Самочувствие' },
+]
+
+export function MetricOverview({ latest }: { latest?: LatestMeasurements }) {
+  return <div className="metric-grid">
+    {metricNames.map(({ metric, label }) => {
+      const entry = latest?.metrics.find(row => row.metric === metric)
+      const known = entry?.latestKnownMeasurement
+      const received = entry?.latestReceivedMeasurement
+      const unknown = received?.measuredAt === null ? received : undefined
+      return <article className="metric-card" key={metric}>
+        <h3>{label}</h3>
+        {known ? <>
+          <p className="metric-value">{known.value} {known.unit}</p>
+          <p className="note">Измерено {new Date(known.measuredAt).toLocaleString()}</p>
+          <p className="note">Источник: {known.source}</p>
+        </> : <p>{latest ? (unknown ? 'Нет измерения с известным временем' : 'Нет данных') : 'Загрузка…'}</p>}
+        {unknown ? <p className="unknown-time">
+          Получено {new Date(unknown.receivedAt).toLocaleString()}: {unknown.value} {unknown.unit}.
+          {' '}Время измерения неизвестно; свежесть не подтверждена.
+        </p> : null}
+      </article>
+    })}
+  </div>
+}
 
 export default function App() {
-  const [history, setHistory] = useState<Measurement[]>([])
+  const [series, setSeries] = useState<MeasurementSeries>()
+  const [latest, setLatest] = useState<LatestMeasurements>()
   const [assessment, setAssessment] = useState<HealthAssessment>()
   const [connected, setConnected] = useState(false)
   const [message, setMessage] = useState('')
@@ -14,8 +47,13 @@ export default function App() {
     let timer: ReturnType<typeof setTimeout>
     async function poll() {
       try {
-        const [rows, result] = await Promise.all([getHistory(), getAssessment()])
-        if (active) { setHistory(rows); setAssessment(result); setConnected(true) }
+        const to = new Date()
+        const from = new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000)
+        const [history, overview, result] = await Promise.all([
+          getMeasurementSeries({ metric: 'heartRate', from: from.toISOString(), to: to.toISOString(), maxPoints: 168 }),
+          getLatestMeasurements(), getAssessment(),
+        ])
+        if (active) { setSeries(history); setLatest(overview); setAssessment(result); setConnected(true) }
       } catch { if (active) setConnected(false) }
       finally { if (active) timer = setTimeout(poll, 2000) }
     }
@@ -33,27 +71,23 @@ export default function App() {
     } catch { setMessage('Сохранить не удалось. Проверьте Rust-сервер.') }
     finally { setSaving(false) }
   }
-  const pulse = history.filter(row => row.metric === 'heartRate')
-  const displayedPulse = pulse.slice(0, 60)
-  const chart = [...displayedPulse].reverse().map(row => ({
-    time: `${new Date(row.measuredAt ?? row.receivedAt).toLocaleTimeString()}${row.timeBasis === 'receivedAt' ? ' *' : ''}`, value: row.value,
-  }))
   return <main>
     <p className="eyebrow">SPACE HEALTH · RUST + REACT</p>
     <h1>Поток измерений</h1>
     <p role="status">{connected ? 'API подключён · SQLite' : 'API недоступен · показаны последние полученные данные'}</p>
     <section>
-      <h2>Пульс: {pulse[0] ? `${pulse[0].value} bpm` : 'нет данных'}</h2>
+      <h2>Обзор показателей</h2>
+      <p className="note">Последние измерения с известным временем. Полученные записи без времени показаны отдельно.</p>
+      <MetricOverview latest={latest} />
+    </section>
+    <section>
+      <h2>Последнее принятое сообщение</h2>
+      <p className="note">Эта оценка относится к одному сообщению, а не ко всем показателям обзора.</p>
       <p>{connected ? assessment?.explanation : 'Связь с сервером потеряна. Свежесть показателей не подтверждена.'}</p>
-      {pulse[0] && <p>Источник: {pulse[0].source} · получено {new Date(pulse[0].receivedAt).toLocaleTimeString()}</p>}
-      <div style={{ height: 240, marginTop: 24 }}>
-        {chart.length > 0 ? <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chart}><CartesianGrid stroke="#344755" /><XAxis dataKey="time" minTickGap={40} />
-            <YAxis domain={['auto', 'auto']} unit=" bpm" /><Tooltip /><Line dataKey="value" stroke="#b5edda" dot={false} isAnimationActive={false} />
-          </LineChart>
-        </ResponsiveContainer> : <p>Запустите npm run simulator в отдельном терминале.</p>}
-      </div>
-      {displayedPulse.some(row => row.timeBasis === 'receivedAt') && <p className="note">* Показано время получения: время самого измерения неизвестно, его свежесть не подтверждена.</p>}
+    </section>
+    <section>
+      <h2>История пульса за 7 дней</h2>
+      <MeasurementSeriesChart series={series} />
       <button onClick={addManualSample} disabled={saving}>{saving ? 'Сохранение…' : 'Добавить тестовые 70 bpm вручную'}</button>
       <p role="status">{message}</p>
     </section>

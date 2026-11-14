@@ -1,11 +1,13 @@
 use super::{
     dto::{
-        AssessmentResponse, HealthResponse, MeasurementResponse, NewMeasurementRequest,
+        AssessmentResponse, HealthResponse, HistoryRequest, HistoryResponse, LatestRequest,
+        LatestResponse, MeasurementResponse, NewMeasurementRequest, SeriesRequest, SeriesResponse,
         TaskResponse, TaskUpdateRequest,
     },
     error::{ApiError, ApiResult},
     extractors::{ApiJson, ApiPath, ApiQuery},
 };
+use crate::domain::history::{HistoryQuery, DEMO_ASTRONAUT_ID};
 use crate::{domain, storage};
 use axum::{extract::State, http::StatusCode, Json};
 use chrono::Utc;
@@ -21,15 +23,38 @@ pub(crate) async fn health(State(pool): State<SqlitePool>) -> ApiResult<Json<Hea
 }
 pub(crate) async fn history(
     State(pool): State<SqlitePool>,
-    ApiQuery(_): ApiQuery<HashMap<String, String>>,
-) -> ApiResult<Json<Vec<MeasurementResponse>>> {
+    ApiQuery(request): ApiQuery<HistoryRequest>,
+) -> ApiResult<Json<HistoryResponse>> {
+    let query = HistoryQuery::try_from(request)?;
     Ok(Json(
-        storage::measurements::history(&pool)
+        storage::measurements::history(&pool, DEMO_ASTRONAUT_ID, &query)
             .await?
-            .into_iter()
-            .map(Into::into)
-            .collect(),
+            .into(),
     ))
+}
+
+pub(crate) async fn latest_measurements(
+    State(pool): State<SqlitePool>,
+    ApiQuery(_): ApiQuery<LatestRequest>,
+) -> ApiResult<Json<LatestResponse>> {
+    let metrics = storage::measurements::latest_by_metric(&pool, DEMO_ASTRONAUT_ID).await?;
+    Ok(Json(LatestResponse {
+        astronaut_id: DEMO_ASTRONAUT_ID,
+        metrics: metrics.into_iter().map(Into::into).collect(),
+    }))
+}
+
+pub(crate) async fn measurement_series(
+    State(pool): State<SqlitePool>,
+    ApiQuery(request): ApiQuery<SeriesRequest>,
+) -> ApiResult<Json<SeriesResponse>> {
+    let query = domain::series::SeriesQuery::try_from(request)?;
+    let buckets = storage::series::aggregate(&pool, DEMO_ASTRONAUT_ID, &query).await?;
+    Ok(Json(SeriesResponse::from_data(
+        DEMO_ASTRONAUT_ID,
+        query,
+        buckets,
+    )?))
 }
 pub(crate) async fn ingest(
     State(pool): State<SqlitePool>,
@@ -77,7 +102,7 @@ pub(crate) async fn ingest(
 pub(crate) async fn assessments(
     State(pool): State<SqlitePool>,
 ) -> ApiResult<Json<AssessmentResponse>> {
-    let latest = storage::measurements::latest_received(&pool).await?;
+    let latest = storage::measurements::latest_received(&pool, DEMO_ASTRONAUT_ID).await?;
     Ok(Json(
         domain::assessments::assess(latest.as_ref(), Utc::now())?.into(),
     ))

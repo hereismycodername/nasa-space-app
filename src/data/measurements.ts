@@ -1,4 +1,4 @@
-import type { DailyTask, HealthAssessment, Measurement, NewMeasurement } from '../shared/types'
+import type { DailyTask, HealthAssessment, HistoryFilters, LatestMeasurements, Measurement, MeasurementHistory, MeasurementSeries, NewMeasurement, SeriesFilters } from '../shared/types'
 
 /** HTTP failure with the server's stable error code and optional input field. */
 export class ApiError extends Error {
@@ -46,7 +46,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
-export const getHistory = () => request<Measurement[]>('/measurements')
+export function getHistory(filters: HistoryFilters = {}) {
+  const query = new URLSearchParams()
+  for (const key of ['metric', 'from', 'to', 'limit', 'cursor'] as const) {
+    const value = filters[key]
+    if (value !== undefined) query.set(key, String(value))
+  }
+  return request<MeasurementHistory>(`/measurements${query.size ? `?${query}` : ''}`)
+}
+export const getLatestMeasurements = () => request<LatestMeasurements>('/measurements/latest')
+export function getMeasurementSeries(filters: SeriesFilters) {
+  const query = new URLSearchParams()
+  for (const key of ['metric', 'from', 'to', 'maxPoints'] as const) {
+    const value = filters[key]
+    if (value !== undefined) query.set(key, String(value))
+  }
+  return request<MeasurementSeries>(`/measurements/series?${query}`)
+}
 export const getAssessment = () => request<HealthAssessment>('/assessments')
 export const getTasks = () => request<DailyTask[]>('/tasks')
 export const saveMeasurement = (measurement: NewMeasurement) => request<Measurement>('/measurements', {

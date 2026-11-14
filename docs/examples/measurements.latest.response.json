@@ -1,0 +1,80 @@
+{
+  "astronautId": "demo-astronaut",
+  "metrics": [
+    {
+      "metric": "heartRate",
+      "latestMeasurement": {
+        "id": "e67c7410-8c8b-4327-8d15-6580f8e4c414",
+        "deviceId": "simulator-01",
+        "astronautId": "demo-astronaut",
+        "sessionId": "example-boot-1",
+        "sequence": 1,
+        "metric": "heartRate",
+        "value": 75,
+        "unit": "bpm",
+        "measuredAt": null,
+        "receivedAt": "2026-11-13T08:00:02+00:00",
+        "timeBasis": "receivedAt",
+        "source": "simulator"
+      },
+      "latestKnownMeasurement": {
+        "id": "be0a62c3-e5c0-4677-98fa-5bea1d4cf430",
+        "deviceId": "simulator-01",
+        "astronautId": "demo-astronaut",
+        "sessionId": "example-boot-1",
+        "sequence": 0,
+        "metric": "heartRate",
+        "value": 72,
+        "unit": "bpm",
+        "measuredAt": "2026-11-13T08:00:00Z",
+        "receivedAt": "2026-11-13T08:00:01+00:00",
+        "timeBasis": "measuredAt",
+        "source": "simulator"
+      },
+      "latestReceivedMeasurement": {
+        "id": "e67c7410-8c8b-4327-8d15-6580f8e4c414",
+        "deviceId": "simulator-01",
+        "astronautId": "demo-astronaut",
+        "sessionId": "example-boot-1",
+        "sequence": 1,
+        "metric": "heartRate",
+        "value": 75,
+        "unit": "bpm",
+        "measuredAt": null,
+        "receivedAt": "2026-11-13T08:00:02+00:00",
+        "timeBasis": "receivedAt",
+        "source": "simulator"
+      }
+    },
+    {
+      "metric": "systolicPressure",
+      "latestMeasurement": null,
+      "latestKnownMeasurement": null,
+      "latestReceivedMeasurement": null
+    },
+    {
+      "metric": "diastolicPressure",
+      "latestMeasurement": null,
+      "latestKnownMeasurement": null,
+      "latestReceivedMeasurement": null
+    },
+    {
+      "metric": "temperature",
+      "latestMeasurement": null,
+      "latestKnownMeasurement": null,
+      "latestReceivedMeasurement": null
+    },
+    {
+      "metric": "sleepHours",
+      "latestMeasurement": null,
+      "latestKnownMeasurement": null,
+      "latestReceivedMeasurement": null
+    },
+    {
+      "metric": "mood",
+      "latestMeasurement": null,
+      "latestKnownMeasurement": null,
+      "latestReceivedMeasurement": null
+    }
+  ]
+}

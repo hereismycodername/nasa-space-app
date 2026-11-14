@@ -59,7 +59,7 @@ async fn empty_database_migrates_and_seeds_only_task_templates() {
             .fetch_all(&pool)
             .await
             .unwrap();
-    assert_eq!(versions, vec![1, 2]);
+    assert_eq!(versions, vec![1, 2, 3]);
 }
 
 #[tokio::test]

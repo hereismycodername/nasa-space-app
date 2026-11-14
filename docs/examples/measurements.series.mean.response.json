@@ -1,0 +1,45 @@
+{
+  "astronautId": "demo-astronaut",
+  "metric": "heartRate",
+  "unit": "bpm",
+  "aggregation": "mean",
+  "from": "2026-11-13T08:00:00.000Z",
+  "to": "2026-11-13T08:00:05.000Z",
+  "intervalMs": 1667,
+  "timeBasis": "mixed",
+  "points": [
+    {
+      "startAt": "2026-11-13T08:00:00.000Z",
+      "endAt": "2026-11-13T08:00:01.667Z",
+      "value": 72,
+      "min": 70,
+      "max": 74,
+      "count": 2,
+      "measuredCount": 1,
+      "receivedCount": 1,
+      "timeBasis": "mixed"
+    },
+    {
+      "startAt": "2026-11-13T08:00:01.667Z",
+      "endAt": "2026-11-13T08:00:03.334Z",
+      "value": null,
+      "min": null,
+      "max": null,
+      "count": 0,
+      "measuredCount": 0,
+      "receivedCount": 0,
+      "timeBasis": null
+    },
+    {
+      "startAt": "2026-11-13T08:00:03.334Z",
+      "endAt": "2026-11-13T08:00:05.000Z",
+      "value": 78,
+      "min": 78,
+      "max": 78,
+      "count": 1,
+      "measuredCount": 1,
+      "receivedCount": 0,
+      "timeBasis": "measuredAt"
+    }
+  ]
+}

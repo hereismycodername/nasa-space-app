@@ -144,7 +144,7 @@ async fn different_instants_inside_one_millisecond_conflict_without_overwriting(
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(error["code"], "SEQUENCE_CONFLICT");
     let (_, rows) = call(&app, "GET", "/api/measurements", Value::Null).await;
-    assert_eq!(rows, json!([first]));
+    assert_eq!(rows["items"], json!([first]));
     assert_eq!(row_count(&pool).await, 1);
 }
 
@@ -266,7 +266,7 @@ async fn concurrent_different_payloads_keep_the_winner_and_reject_the_other_payl
         }
     }
     let (_, history) = call(&app, "GET", "/api/measurements", Value::Null).await;
-    assert_eq!(history, json!([original]));
+    assert_eq!(history["items"], json!([original]));
     assert_eq!(row_count(&pool).await, 1);
     pool.close().await;
 }
@@ -288,8 +288,8 @@ async fn a_delayed_old_measurement_is_saved_without_becoming_the_newest_or_fresh
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(delayed["timeBasis"], "measuredAt");
     let (_, history) = call(&app, "GET", "/api/measurements", Value::Null).await;
-    assert_eq!(history[0]["id"], recent["id"]);
-    assert_eq!(history[1], delayed);
+    assert_eq!(history["items"][0]["id"], recent["id"]);
+    assert_eq!(history["items"][1], delayed);
     let (_, assessment) = call(&app, "GET", "/api/assessments", Value::Null).await;
     assert_eq!(assessment["status"], "stale");
     assert_eq!(row_count(&pool).await, 2);
