@@ -1,3 +1,4 @@
+import { HISTORY_METRICS } from '../simulator/history.mjs'
 import { spawn } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -54,7 +55,7 @@ try {
   assert.equal(history.nextCursor, null)
   assert.ok(history.items.every(row => row.source === 'simulator'))
   const latest = await (await fetch(`${base}/api/measurements/latest`)).json()
-  assert.equal(latest.metrics.length, 6)
+  assert.deepEqual(latest.metrics.map(row => row.metric), HISTORY_METRICS)
   assert.equal(latest.metrics[0].latestKnownMeasurement.id, history.items[0].id)
   assert.ok(latest.metrics.slice(1).every(row => row.latestMeasurement === null))
   assert.ok(Number.isFinite(Date.parse(latest.evaluatedAt)))
@@ -63,7 +64,7 @@ try {
   assert.equal(latest.metrics[0].quality.freshForSeconds, 15)
   assert.ok(latest.metrics.slice(1).every(row => row.quality.status === 'missing'))
   const assessment = await (await fetch(`${base}/api/assessments`)).json()
-  assert.equal(assessment.metrics.length, 6)
+  assert.deepEqual(assessment.metrics.map(row => row.metric), HISTORY_METRICS)
   assert.equal(assessment.metrics[0].quality.measurementId, latest.metrics[0].quality.measurementId)
   assert.equal(assessment.metrics[0].quality.status, latest.metrics[0].quality.status)
   const timestamps = history.items.map(row => Date.parse(row.measuredAt))

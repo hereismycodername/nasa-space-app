@@ -167,6 +167,9 @@ SIM_COUNT=10 npm run simulator
 
 ## Демо-сценарии
 
+Все четыре сценария включают spo2, glucose, visionBlur, exerciseMinutes, headache и backPain; attention меняет их синтетические профили за последние трое суток.
+Live по умолчанию отправляет только пульс, поэтому spo2 в демо ожидаемо становится stale через 60 секунд.
+
 `npm run demo` — быстрый стенд с живым симулятором; `demo:prepare` / `demo:start` —
 воспроизводимые семидневные сценарии в отдельных БД.
 
