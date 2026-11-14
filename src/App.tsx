@@ -10,8 +10,10 @@ import { formatFreshnessWindow } from './features/dashboard/freshness'
 import { useFreshnessElapsed } from './features/dashboard/useFreshnessElapsed'
 import type { BodySystem } from './features/dashboard/metrics'
 import type { LatestMeasurements, Metric } from './shared/types'
+import type { TelemetryRange } from './features/ground/useTelemetry'
 
 const TrendPanel = lazy(() => import('./features/dashboard/TrendPanel'))
+const GroundConsole = lazy(() => import('./features/ground/GroundConsole'))
 type Tab = 'overview' | 'trends' | 'system'
 type Role = 'crew' | 'ground'
 const sourceNames = { manual: 'Ручной ввод', simulator: 'Симулятор', sensor: 'Датчик' }
@@ -84,6 +86,8 @@ export default function App() {
   const [checkIn, setCheckIn] = useState(false)
   const [formMetric, setFormMetric] = useState<Metric>()
   const [refreshVersion, setRefreshVersion] = useState(0)
+  const [groundChannels, setGroundChannels] = useState<Metric[]>(['heartRate', 'temperature', 'sleepHours'])
+  const [groundDays, setGroundDays] = useState<TelemetryRange>(1)
   const selectSystem = useCallback((id: BodySystem | null) => {
     setSelectedSystem(id)
     setTab('overview')
@@ -102,7 +106,7 @@ export default function App() {
   function changeTab(next: Tab) { setTab(next); setCheckIn(false) }
   function openCheckIn() { setFormMetric(current => current ?? metric); setCheckIn(true) }
 
-  return <div className="app-shell">
+  return <div className={`app-shell ${role === 'ground' ? 'ground-mode' : 'crew-mode'}`}>
     <a className="skip-link" href="#main-content">Перейти к содержимому</a>
     <header className="topbar">
       <a className="brand" href="#main-content" aria-label="AstroCheck"><Activity size={24} aria-hidden="true" /> ASTRO<span>CHECK</span></a>
@@ -118,10 +122,10 @@ export default function App() {
       <button className="primary-button header-checkin" onClick={openCheckIn}><Plus size={16} aria-hidden="true" /> Внести измерение</button>
     </header>
     <div className="workspace">
-      <aside className="anatomy-sidebar" aria-label="Карта организма">
+      {role === 'crew' ? <aside className="anatomy-sidebar" aria-label="Карта организма">
         <AnatomyPanel selected={selectedSystem} onSelect={selectSystem} availableSystems={availableSystems} />
         <div className="anatomy-footnote"><span className="legend-dot" /> Есть измерения <span className="legend-dot empty" /> Пока нет показателей</div>
-      </aside>
+      </aside> : null}
       <main id="main-content" className="main-content" tabIndex={-1}>
         <nav className="page-tabs" aria-label="Разделы">
           <button aria-current={tab === 'overview' && !checkIn ? 'page' : undefined} onClick={() => changeTab('overview')}>{role === 'crew' ? 'Обзор здоровья' : 'Наблюдение экипажа'}</button>
@@ -143,8 +147,10 @@ export default function App() {
             </div>
             <div className="panel"><h2>Оценка последнего сообщения</h2><p>{assessment?.explanation ?? 'Оценка ещё не получена.'}</p><p className="note">Совместимая сводка одного последнего принятого сообщения. Свежесть каждого показателя отображается отдельно в обзоре; клинические правила пока не подключены.</p>{assessment ? <p className="note">Оценено сервером {formatTime(assessment.evaluatedAt)}.{!connected ? ' Это предыдущая оценка; актуальность не подтверждена.' : ''}</p> : null}</div>
             <div className="panel"><h2>Возможности прототипа</h2><p>Доступны один профиль, шесть показателей, история измерений и задачи. Поддержка нескольких членов экипажа, наземная передача сообщений и медицинские рекомендации находятся в разработке.</p></div>
+          </> : role === 'ground' ? <>
+            <Suspense fallback={<div className="loading-panel">Загрузка наземной консоли…</div>}><GroundConsole latest={latest} connected={connected} elapsedSeconds={freshnessElapsed} refreshVersion={refreshVersion} selectedSystem={selectedSystem} onSystemSelect={selectSystem} onOpenMetric={openMetric} channels={groundChannels} onChannelsChange={setGroundChannels} days={groundDays} onDaysChange={setGroundDays} /></Suspense>
+            <TaskPanel tasks={tasks} connected={connected} onChanged={refresh} />
           </> : <>
-            {role === 'ground' ? <div className="crew-strip panel"><div className="crew-avatar">01</div><div><h2>Демо-астронавт</h2><p className="note">Единственный подключённый профиль</p></div><div className="crew-summary"><span>{knownCount} из 6</span><small>показателей с известным временем</small></div><CoverageRing count={knownCount} total={6} small /></div> : null}
             <div className="summary-grid">
               <section className="panel coverage-panel"><h2>Полнота наблюдений</h2><div className="coverage-content"><CoverageRing count={knownCount} total={6} /><div><strong>{loading ? 'Получаем измерения' : knownCount === 6 ? 'Все показатели записаны' : `${6 - knownCount} показателей без измерений`}</strong><p>С известным временем измерения</p><span className="neutral-tag">Не оценка здоровья</span></div></div></section>
               <section className="panel session-panel"><h2>Сеанс наблюдения</h2><p className="session-title">Демо-миссия</p><dl><div><dt>Источники</dt><dd>{sourceSet.join(', ') || 'Ожидание данных'}</dd></div><div><dt>Обновлено</dt><dd>{lastUpdated ? formatTime(lastUpdated.toISOString()) : '—'}</dd></div></dl><span className={`status-tag ${connected ? 'online' : ''}`}>{connected ? 'Мониторинг подключён' : loading ? 'Подключение' : 'Нет связи'}</span></section>
@@ -158,11 +164,6 @@ export default function App() {
               })}</div><p className="note">Выберите область на схеме, чтобы отфильтровать показатели.</p></section>
               <section className="panel attention-panel"><h2>О данных</h2>{unknownEntries.length ? <div className="data-notice"><strong>Время измерения неизвестно</strong><p>{unknownEntries.map(entry => METRICS.find(config => config.id === entry.metric)?.label).join(', ')}: последнее сообщение не содержит времени измерения. Оно не подтверждает свежесть.</p></div> : <div className="data-notice neutral"><strong>{loading ? 'Ожидание измерений' : knownCount ? 'Время измерений сохранено' : 'Начните с первого измерения'}</strong><p>{knownCount ? 'На карточках показаны последние значения с известным временем. В динамике можно посмотреть весь период.' : 'Запустите симулятор или внесите показания вручную.'}</p></div>}<p className="note">Клиническая оценка пока не подключена. Наличие данных не означает, что показатель в норме.</p></section>
             </div>
-            {role === 'ground' ? <section className="panel ground-table-panel"><h2>Сводка измерений</h2><div className="table-scroll"><table><thead><tr><th>Показатель</th><th>Значение</th><th>Измерено</th><th>Источник</th><th>Свежесть данных</th></tr></thead><tbody>{METRICS.map(config => {
-              const entry = entries.find(entry => entry.metric === config.id)
-              const reading = entry?.latestKnownMeasurement ?? entry?.latestReceivedMeasurement
-              return <tr key={config.id}><th scope="row"><button onClick={() => openMetric(config.id)}>{config.label}</button></th><td>{reading ? `${formatValue(reading.value)} ${reading.unit}` : '—'}</td><td>{reading?.measuredAt ? formatTime(reading.measuredAt) : reading ? 'Время неизвестно' : 'Нет данных'}</td><td>{reading ? sourceNames[reading.source] : '—'}</td><td><QualityBadge quality={entry?.quality} connected={connected} elapsedSeconds={freshnessElapsed} />{entry?.latestReceivedMeasurement && reading?.id !== entry.latestReceivedMeasurement.id ? <div className="ground-received-quality"><small>Последняя доставка:</small><QualityBadge quality={entry.latestReceivedQuality} connected={connected} elapsedSeconds={freshnessElapsed} /></div> : null}</td></tr>
-            })}</tbody></table></div></section> : null}
             <div className="section-heading metrics-heading"><div><h2>{selected?.label ?? 'Все показатели'}</h2>{selected ? <p className="note">{selected.description}</p> : null}</div>{selectedSystem ? <button className="text-button" onClick={() => setSelectedSystem(null)}>Показать все</button> : <span className="note">6 показателей</span>}</div>
             {latest ? <p className="quality-context note">Оценка сервера: {formatTime(latest.evaluatedAt)}. Сроки различаются по показателям; время доставки не подтверждает свежесть.{!connected ? ' Показан предыдущий ответ; свежесть не подтверждена.' : ''}</p> : null}
             <MetricOverview latest={latest} selectedSystem={selectedSystem} onSelect={openMetric} connected={connected} elapsedSeconds={freshnessElapsed} />

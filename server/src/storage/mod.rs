@@ -1,4 +1,5 @@
 //! Concrete SQLite functions. HTTP status codes and DTOs do not belong here.
+pub(crate) mod devices;
 pub(crate) mod measurements;
 pub(crate) mod series;
 pub(crate) mod tasks;

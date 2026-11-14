@@ -1,8 +1,8 @@
 //! Human anatomy (frontal view, anatomical position) as plain vector data.
 //!
 //! Design space is 240 x 500 units, body axis at x = 120. The outlines are real: a frontal
-//! projection of the CT-based adult male meshes of BodyParts3D (see `anatomy_data.rs` and
-//! `tools/gen_anatomy.py`), so organ and bone sizes and positions are measured, not drawn.
+//! projection of the adult male reference meshes of BodyParts3D (see `anatomy_data.rs`
+//! and `tools/gen_anatomy.py`). This is a simplified reference model, not a patient scan.
 //! Any front end can draw it: the window UI fills it with shaded meshes, the terminal UI
 //! rasterises it into braille dots. `schematic_parts()` keeps the older hand-drawn figure.
 //!

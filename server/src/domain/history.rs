@@ -1,5 +1,8 @@
 //! Validated history filters and separate views of the latest measurement.
-use super::measurements::{Measurement, ValidationError, METRICS};
+use super::{
+    measurements::{Measurement, ValidationError},
+    metric_config::definition_for,
+};
 use chrono::DateTime;
 
 pub(crate) const DEMO_ASTRONAUT_ID: &str = "demo-astronaut";
@@ -29,7 +32,7 @@ impl HistoryQuery {
     ) -> Result<Self, ValidationError> {
         if metric
             .as_deref()
-            .is_some_and(|metric| !METRICS.contains(&metric))
+            .is_some_and(|metric| definition_for(metric).is_none())
         {
             return Err(ValidationError {
                 field: "metric",

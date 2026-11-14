@@ -63,6 +63,38 @@ async fn seed(
 }
 
 #[tokio::test]
+async fn accepted_large_finite_values_have_a_finite_mean_in_the_json_response() {
+    let (app, _) = setup().await;
+    for sequence in 0..2 {
+        let input = json!({"deviceId":"manual-01", "sessionId":"large-values", "sequence":sequence,
+            "metric":"heartRate", "value":1e308, "unit":"bpm", "measuredAt":"2020-01-01T00:00:01Z"});
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/measurements")
+                    .header("content-type", "application/json")
+                    .body(Body::from(input.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+    }
+    let (status, result) = get(
+        &app,
+        "metric=heartRate&from=2020-01-01T00:00:00Z&to=2020-01-01T00:00:10Z&maxPoints=1",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(result["points"][0]["value"].as_f64(), Some(1e308));
+    assert_eq!(result["points"][0]["count"], 2);
+    assert_eq!(result["points"][0]["min"].as_f64(), Some(1e308));
+    assert_eq!(result["points"][0]["max"].as_f64(), Some(1e308));
+}
+
+#[tokio::test]
 async fn seven_day_series_aggregates_every_record_beyond_the_raw_history_limit() {
     let (app, pool) = setup().await;
     // Four samples per hour for seven days: 672 rows, exceeding history's 500 cap.

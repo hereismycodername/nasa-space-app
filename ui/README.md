@@ -16,9 +16,9 @@ Both exist as a **window** (`astrocheck-gui`, egui) and a **terminal** program (
 works over SSH / serial console / on boards without a display). Switch role at runtime (GUI: Crew|Ground control
 in the top bar, TUI: key `r`).
 
-Real anatomy: the figure is a frontal projection of the CT-based adult male meshes of BodyParts3D (skin, skull, spine,
+Reference anatomy: the figure is a frontal projection of the adult male meshes of BodyParts3D (skin, skull, spine,
 ribs, clavicles, scapulae, pelvis, arm and leg bones; brain, eyes, trachea, lungs, thymus, heart, liver, gallbladder, stomach,
-pancreas, kidneys, intestines, bladder), so sizes and positions are measured, not drawn. Layers: *Organs / Skeleton / X-ray*.
+pancreas, kidneys, intestines, bladder). It is a simplified reference model, not a patient-specific scan. Layers: *Organs / Skeleton / X-ray*.
 Organ outlines and the hotspot markers show status; labels with leader lines are clickable. In the terminal the same figure
 is drawn with braille dots. Regenerate the data with `tools/gen_anatomy.py` (needs the BodyParts3D download, see the script).
 
@@ -78,7 +78,7 @@ All numbers in `evaluate` / `thresholds` / advice texts are produced by the back
 ```bash
 cargo run --release -p ui-tui          # terminal, needs 80x24 and a UTF-8 terminal
 cargo run --release -p ui-gui          # window,   needs OpenGL (GL 2.1 / GLES 2) and X11 or Wayland
-cargo test  --workspace                # 10 model tests + 9 terminal tests (renders frames headless)
+cargo test --locked --workspace        # model + terminal regression tests; compiles the GUI
 ```
 
 Window options: `--role crew|ground`, `--env iss|orion|moon|mars|transit`, `--lite` (no animation),
@@ -86,6 +86,8 @@ Window options: `--role crew|ground`, `--env iss|orion|moon|mars|transit`, `--li
 --tab main|comms|system --blackout --storm`.
 Terminal on a console without braille glyphs (Linux framebuffer, `TERM=linux`): an ASCII sketch is used automatically,
 or force it with `ASTROCHECK_ASCII=1`.
+Ground telemetry scrolls with PageUp/PageDown so every selected channel remains reachable.
+Its sample labels refer to the displayed readings; GUI stacked plots share one time range, including All.
 
 Windows needs a C toolchain for Rust (MSVC Build Tools, or the GNU toolchain + MinGW). If the project sits in a deep
 folder, point `CARGO_TARGET_DIR` at a short path (Windows 260-character path limit).
@@ -109,7 +111,8 @@ expected to differ - measure on the target. The terminal version is the lightwei
   data set, hands and feet are skin only). It is not a patient-specific model. To use other artwork replace `anatomy::parts()`;
   nothing else depends on how the shapes were made.
 * Thresholds, advice texts and the demo crew are illustrative. Not a medical device.
-* Developed and tested on Windows 11 only. Not yet run on a Raspberry Pi or any other board; the GUI needs the usual
+* Originally developed on Windows 11; the integrated workspace also compiles and passes model/terminal tests on macOS.
+  Linux headless workspace tests are configured in CI. Not yet run on a Raspberry Pi or any other board; the GUI needs the usual
   GL / X11 / Wayland runtime libraries there.
 * The demo backend keeps everything in memory; persistence, integrity checks and the downlink queue belong to the real backend.
 

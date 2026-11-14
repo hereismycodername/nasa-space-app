@@ -1,0 +1,2 @@
+# Optional. stdin/HTTP mode has no third-party Python dependencies.
+pyserial==3.5

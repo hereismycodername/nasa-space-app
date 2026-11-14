@@ -1,6 +1,6 @@
 import { memo, useId, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { anatomyParts } from './anatomyData'
+import { anatomyParts, ANATOMY_ANCHORS } from './anatomyData'
 import type { SystemId } from './types'
 import './anatomy.css'
 
@@ -18,15 +18,16 @@ const modes: { id: Mode; label: string }[] = [
   { id: 'skeleton', label: 'Скелет' },
   { id: 'xray', label: 'Рентген' },
 ]
-const callouts: { system: SystemId; label: string; fullLabel: string; x: number; y: number; labelY: number; side: 'left' | 'right' }[] = [
-  { system: 'brain', label: 'Мозг', fullLabel: 'Сон и самочувствие', x: 136, y: 24, labelY: 24, side: 'right' },
-  { system: 'eyes', label: 'Зрение', fullLabel: 'Зрение', x: 106, y: 43, labelY: 43, side: 'left' },
-  { system: 'lungs', label: 'Дыхание', fullLabel: 'Дыхание', x: 96, y: 140, labelY: 128, side: 'left' },
-  { system: 'heart', label: 'Сердце', fullLabel: 'Сердце и кровообращение', x: 136, y: 158, labelY: 150, side: 'right' },
-  { system: 'gut', label: 'Обмен', fullLabel: 'Обмен веществ', x: 98, y: 208, labelY: 214, side: 'left' },
-  { system: 'msk', label: 'Кости', fullLabel: 'Кости и мышцы', x: 153, y: 330, labelY: 318, side: 'right' },
-  { system: 'immune', label: 'Всё тело', fullLabel: 'Температура тела', x: 81, y: 300, labelY: 304, side: 'left' },
+const calloutLabels: { system: SystemId; label: string; fullLabel: string }[] = [
+  { system: 'brain', label: 'Мозг', fullLabel: 'Сон и самочувствие' },
+  { system: 'eyes', label: 'Зрение', fullLabel: 'Зрение' },
+  { system: 'lungs', label: 'Дыхание', fullLabel: 'Дыхание' },
+  { system: 'heart', label: 'Сердце', fullLabel: 'Сердце и кровообращение' },
+  { system: 'gut', label: 'Обмен', fullLabel: 'Обмен веществ' },
+  { system: 'msk', label: 'Кости', fullLabel: 'Кости и мышцы' },
+  { system: 'immune', label: 'Всё тело', fullLabel: 'Температура тела' },
 ]
+const callouts = calloutLabels.map(callout => ({ ...callout, ...ANATOMY_ANCHORS[callout.system] }))
 const emptySystems: SystemId[] = []
 
 /** Interactive navigation through the same vector anatomy as the native Crew UI. */
@@ -64,7 +65,7 @@ export const AnatomyPanel = memo(function AnatomyPanel({ selected, onSelect, ava
           const isSelected = selected === callout.system
           const available = availableSystems.includes(callout.system)
           const left = callout.side === 'left'
-          const textX = left ? -37 : 277
+          const textX = callout.labelX
           const edgeX = left ? 36 : 204
           return <g key={callout.system} role="button" tabIndex={0} aria-pressed={isSelected}
             aria-label={`${callout.fullLabel}: ${available ? 'есть данные' : 'нет данных'}`}
@@ -83,6 +84,7 @@ export const AnatomyPanel = memo(function AnatomyPanel({ selected, onSelect, ava
     <div className="anatomy-caption">
       <span><i className="anatomy-legend-dot" aria-hidden="true" /> Наличие данных, не оценка здоровья</span>
       {selected ? <button type="button" onClick={() => onSelect(null)}>Все системы</button> : <p>Выберите орган или подпись</p>}
+      <a className="anatomy-credits" href="/anatomy-credits.txt" target="_blank" rel="noreferrer">Анатомия: BodyParts3D · условия использования</a>
     </div>
   </div>
 }, (previous, next) => previous.selected === next.selected && previous.onSelect === next.onSelect

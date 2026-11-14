@@ -1,7 +1,9 @@
 //! Local Space Health API: HTTP transport, pure domain rules and SQLite storage.
 #![deny(missing_docs)]
 
+pub mod admin;
 mod api;
+pub mod database;
 mod domain;
 mod storage;
 

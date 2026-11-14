@@ -226,7 +226,12 @@ impl<B: Backend> GuiApp<B> {
         let window = match self.range {
             Range::D7 => Some(7),
             Range::D14 => Some(14),
-            Range::All => None,
+            // All stacked channels use the same left edge, even when one sensor
+            // started reporting later than another.
+            Range::All => self.watch.iter()
+                .filter_map(|id| self.b.history(id).first().map(|reading| reading.day))
+                .min()
+                .map(|first| o.mission_day.saturating_sub(first).saturating_add(1)),
         };
         let mut drop: Option<String> = None;
         let mut open: Option<String> = None;

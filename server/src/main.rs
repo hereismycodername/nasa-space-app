@@ -1,28 +1,55 @@
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
-use std::{env, str::FromStr, time::Duration};
+use std::{env, path::Path};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let database_url =
-        env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://space-health.db".into());
-    let options = SqliteConnectOptions::from_str(&database_url)?
-        .create_if_missing(true)
-        .foreign_keys(true)
-        .busy_timeout(Duration::from_secs(5))
-        .journal_mode(SqliteJournalMode::Wal);
-    let pool = SqlitePoolOptions::new()
-        .max_connections(5)
-        .connect_with(options)
-        .await?;
-    sqlx::migrate!().run(&pool).await?;
+    let pool = space_health_server::database::connect_from_env().await?;
     let address = env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".into());
     let dist = env::var("FRONTEND_DIST").unwrap_or_else(|_| "dist".into());
-    let listener = tokio::net::TcpListener::bind(&address).await?;
-    println!("Space Health: http://{address}");
+    let working_directory = env::current_dir()?;
+    let dist_path = working_directory.join(&dist);
+    let options = pool.connect_options();
+    let database_path = options.get_filename();
+    if database_path == Path::new(":memory:") {
+        println!("Database: in-memory SQLite");
+    } else {
+        println!(
+            "Database: {}",
+            working_directory.join(database_path).display()
+        );
+    }
+    println!("Frontend: {}", dist_path.display());
+    if !dist_path.join("index.html").is_file() {
+        eprintln!("Frontend build not found at {}. API remains available; run npm run build or set FRONTEND_DIST.", dist_path.display());
+    }
+    let listener = tokio::net::TcpListener::bind(&address)
+        .await
+        .map_err(|error| {
+            std::io::Error::new(
+                error.kind(),
+                format!("Cannot listen on BIND_ADDR={address}: {error}"),
+            )
+        })?;
+    println!("Space Health: http://{}", listener.local_addr()?);
     axum::serve(listener, space_health_server::app(pool, &dist))
         .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
+            if let Err(error) = shutdown_signal().await {
+                eprintln!("Shutdown signal handler failed: {error}");
+            }
         })
         .await?;
     Ok(())
+}
+
+async fn shutdown_signal() -> Result<(), std::io::Error> {
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => result,
+            _ = terminate.recv() => Ok(()),
+        }
+    }
+    #[cfg(not(unix))]
+    tokio::signal::ctrl_c().await
 }

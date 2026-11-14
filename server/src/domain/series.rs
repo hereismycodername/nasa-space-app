@@ -1,21 +1,10 @@
 //! Bounded UTC intervals and explicit gaps for measurement charts.
-use super::{history::parse_boundary, measurements::ValidationError};
+use super::{
+    history::parse_boundary,
+    measurements::ValidationError,
+    metric_config::{definition_for, Aggregation},
+};
 use chrono::{DateTime, Datelike};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Aggregation {
-    Mean,
-    Last,
-}
-
-impl Aggregation {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Mean => "mean",
-            Self::Last => "last",
-        }
-    }
-}
 
 #[derive(Debug)]
 pub(crate) struct SeriesQuery {
@@ -39,19 +28,10 @@ impl SeriesQuery {
             field: "metric",
             message: "metric is required",
         })?;
-        let (unit, aggregation) = match metric.as_str() {
-            "heartRate" => ("bpm", Aggregation::Mean),
-            "systolicPressure" | "diastolicPressure" => ("mmHg", Aggregation::Mean),
-            "temperature" => ("°C", Aggregation::Mean),
-            "sleepHours" => ("h", Aggregation::Last),
-            "mood" => ("score", Aggregation::Last),
-            _ => {
-                return Err(ValidationError {
-                    field: "metric",
-                    message: "Unknown metric",
-                })
-            }
-        };
+        let definition = definition_for(&metric).ok_or(ValidationError {
+            field: "metric",
+            message: "Unknown metric",
+        })?;
         let from_ms = boundary(from, "from")?;
         let to_ms = boundary(to, "to")?;
         if from_ms >= to_ms {
@@ -74,8 +54,8 @@ impl SeriesQuery {
         let interval_ms = (to_ms - from_ms - 1) / i64::from(max_points) + 1;
         Ok(Self {
             metric,
-            unit,
-            aggregation,
+            unit: definition.unit,
+            aggregation: definition.aggregation,
             from_ms,
             to_ms,
             interval_ms,
