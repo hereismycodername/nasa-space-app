@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { getAssessment, getLatestMeasurements, getTasks } from './measurements'
 import { startDashboardPolling } from './useDashboard'
 import type { DashboardState } from './useDashboard'
-import type { DailyTask, HealthAssessment, LatestMeasurements } from '../shared/types'
+import type { TaskList, HealthAssessment, LatestMeasurements } from '../shared/types'
 import { healthFixture } from '../features/dashboard/health.fixture'
 
 vi.mock('./measurements', () => ({
@@ -11,7 +11,7 @@ vi.mock('./measurements', () => ({
 
 const latest: LatestMeasurements = { astronautId: 'demo-astronaut', evaluatedAt: '2026-11-14T08:00:00Z', metrics: [] }
 const assessment: HealthAssessment = { status: 'no-data', explanation: 'Нет измерений', astronautId: 'demo-astronaut', evaluatedAt: latest.evaluatedAt, metrics: [] }
-const tasks: DailyTask[] = [{ id: 'daily-check', title: 'Заполнить измерения', completedAt: null }]
+const tasks: TaskList = { missionDate: '2026-11-14', tasks: [{ id: 'daily-check', title: 'Заполнить измерения', completedAt: null }] }
 let page: EventTarget & { hidden: boolean }
 let lifecycle: ReturnType<typeof startDashboardPolling> | undefined
 
@@ -55,7 +55,7 @@ afterEach(() => {
 it('starts reads in parallel, publishes one complete snapshot and polls only after completion', async () => {
   const latestRequest = deferred<LatestMeasurements>()
   const assessmentRequest = deferred<HealthAssessment>()
-  const tasksRequest = deferred<DailyTask[]>()
+  const tasksRequest = deferred<TaskList>()
   vi.mocked(getLatestMeasurements).mockReturnValueOnce(latestRequest.promise)
   vi.mocked(getAssessment).mockReturnValueOnce(assessmentRequest.promise)
   vi.mocked(getTasks).mockReturnValueOnce(tasksRequest.promise)
@@ -144,7 +144,7 @@ it('keeps the last complete snapshot on failure and refreshes immediately after 
 it('aborts pending work and removes polling and visibility updates on disposal', async () => {
   vi.mocked(getLatestMeasurements).mockImplementation(pendingUntilAborted)
   vi.mocked(getAssessment).mockImplementation(pendingUntilAborted)
-  vi.mocked(getTasks).mockImplementation(pendingUntilAborted)
+  vi.mocked(getTasks).mockImplementation((_date, signal) => pendingUntilAborted(signal))
   const onChange = vi.fn<(state: DashboardState) => void>()
   lifecycle = startDashboardPolling(onChange)
   const signal = vi.mocked(getLatestMeasurements).mock.calls[0][0]
@@ -160,7 +160,7 @@ it('aborts pending work and removes polling and visibility updates on disposal',
 it('pauses hidden tabs, cancels in-flight reads and immediately resumes without an abort error', async () => {
   vi.mocked(getLatestMeasurements).mockImplementationOnce(pendingUntilAborted)
   vi.mocked(getAssessment).mockImplementationOnce(pendingUntilAborted)
-  vi.mocked(getTasks).mockImplementationOnce(pendingUntilAborted)
+  vi.mocked(getTasks).mockImplementationOnce((_date, signal) => pendingUntilAborted(signal))
   const onChange = vi.fn<(state: DashboardState) => void>()
   lifecycle = startDashboardPolling(onChange)
   page.hidden = true
@@ -181,7 +181,7 @@ it('pauses hidden tabs, cancels in-flight reads and immediately resumes without 
 it('coalesces repeated refreshes during a request and waits for cancellation before replacing it', async () => {
   vi.mocked(getLatestMeasurements).mockImplementationOnce(pendingUntilAborted)
   vi.mocked(getAssessment).mockImplementationOnce(pendingUntilAborted)
-  vi.mocked(getTasks).mockImplementationOnce(pendingUntilAborted)
+  vi.mocked(getTasks).mockImplementationOnce((_date, signal) => pendingUntilAborted(signal))
   const onChange = vi.fn<(state: DashboardState) => void>()
   lifecycle = startDashboardPolling(onChange)
   lifecycle.refresh()
