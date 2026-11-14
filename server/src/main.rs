@@ -41,6 +41,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn shutdown_signal() -> Result<(), std::io::Error> {
+    // Supervisors opt into stdin because SIGINT from Node forces exit on Windows.
+    if env::var("SHUTDOWN_STDIN").as_deref() == Ok("1") {
+        let (shutdown, requested) = tokio::sync::oneshot::channel::<()>();
+        std::thread::spawn(move || {
+            let mut line = String::new();
+            let _ = std::io::stdin().read_line(&mut line);
+            let _ = shutdown.send(());
+        });
+        tokio::select! {
+            result = os_shutdown_signal() => result,
+            _ = requested => Ok(()),
+        }
+    } else {
+        os_shutdown_signal().await
+    }
+}
+
+async fn os_shutdown_signal() -> Result<(), std::io::Error> {
     #[cfg(unix)]
     {
         let mut terminate =
