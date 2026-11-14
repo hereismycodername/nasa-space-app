@@ -26,12 +26,12 @@ export default function TrendPanel({ metric, onMetricChange, refreshVersion, onA
       clearTimeout(timer)
       controller = new AbortController()
       inFlight = true
+      // The previous response stays visible while this request is in flight.
       setLoading(true)
-      setError('')
       const to = new Date()
       try {
         const result = await getMeasurementSeries({ metric, from: new Date(to.getTime() - days * 86_400_000).toISOString(), to: to.toISOString(), maxPoints: days === 1 ? 96 : 168 }, controller.signal)
-        if (!disposed) setSeries(result)
+        if (!disposed) { setSeries(result); setError('') }
       } catch {
         if (!disposed && !controller.signal.aborted) setError('Не удалось загрузить историю. Проверьте связь с сервером.')
       } finally {
@@ -65,6 +65,6 @@ export default function TrendPanel({ metric, onMetricChange, refreshVersion, onA
     <div className="section-heading"><div><h2>{config.label}</h2><p className="note">{config.description}</p></div><button className="secondary-button" disabled={!supported} onClick={() => { if (supported) onAdd() }}><Plus size={15} aria-hidden="true" /> Измерение</button></div>
     {!supported ? <p className="note">Сервер пока не поддерживает ввод и историю этого показателя.</p> : null}
     {error && supported ? <div className="inline-error" role="alert"><p>{error}{current ? ' Показан предыдущий ответ; актуальность не подтверждена.' : ''}</p><button className="secondary-button" onClick={() => setRetry(value => value + 1)}><RefreshCw size={14} aria-hidden="true" /> Повторить</button></div> : null}
-    {current ? <><MeasurementSeriesChart series={current} /><div className="series-stats"><div><span>Измерений за период</span><strong>{total}</strong></div><div><span>С известным временем</span><strong>{measured}</strong></div><div><span>Интервалов с данными</span><strong>{points.length}<small> / {current.points.length}</small></strong></div></div></> : loading && supported ? <div className="loading-panel" role="status">Загрузка истории…</div> : null}
+    <div className="trend-content">{current ? <><MeasurementSeriesChart series={current} /><div className="series-stats"><div><span>Измерений за период</span><strong>{total}</strong></div><div><span>С известным временем</span><strong>{measured}</strong></div><div><span>Интервалов с данными</span><strong>{points.length}<small> / {current.points.length}</small></strong></div></div></> : supported && (loading || !error) ? <div className="loading-panel" role="status">Загрузка истории…</div> : null}</div>
   </section>
 }

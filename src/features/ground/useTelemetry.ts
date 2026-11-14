@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getMeasurementSeries } from '../../data/measurements'
 import type { MeasurementSeries, Metric } from '../../shared/types'
 
@@ -17,8 +17,8 @@ export function telemetryWindow(days: TelemetryRange, now = Date.now()): Telemet
 }
 
 /** One bounded, cancellable batch gives every channel exactly the same time domain. */
-export function startTelemetryPolling(metrics: readonly Metric[], days: TelemetryRange, onChange: (state: TelemetryState) => void) {
-  let state = empty
+export function startTelemetryPolling(metrics: readonly Metric[], days: TelemetryRange, onChange: (state: TelemetryState) => void, previous: TelemetryState = empty) {
+  let state = previous.window && Date.parse(previous.window.to) - Date.parse(previous.window.from) === days * 86_400_000 ? previous : empty
   let disposed = false
   let running = false
   let pending = false
@@ -66,8 +66,12 @@ export function startTelemetryPolling(metrics: readonly Metric[], days: Telemetr
 
 export function useTelemetry(metrics: readonly Metric[], days: TelemetryRange, refreshVersion: number) {
   const [state, setState] = useState<TelemetryState>(empty)
+  const snapshot = useRef(state)
   const channels = [...new Set(metrics)].sort().join(',')
-  useEffect(() => startTelemetryPolling(channels ? channels.split(',') as Metric[] : [], days, setState), [channels, days, refreshVersion])
+  useEffect(() => startTelemetryPolling(channels ? channels.split(',') as Metric[] : [], days, next => {
+    snapshot.current = next
+    setState(next)
+  }, snapshot.current), [channels, days, refreshVersion])
   // Keep the prior complete response only for the same requested period; never relabel old data.
   const matches = state.window && Date.parse(state.window.to) - Date.parse(state.window.from) === days * 86_400_000
   return matches ? state : { ...state, series: {}, window: undefined }

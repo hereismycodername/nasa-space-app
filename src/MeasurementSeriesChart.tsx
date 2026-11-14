@@ -1,3 +1,4 @@
+import { formatUnit, formatValue } from './features/dashboard/metrics'
 import { useState } from 'react'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { TooltipContentProps } from 'recharts'
@@ -28,8 +29,8 @@ function SeriesTooltip({ active, payload, series, hoveredPoint }: TooltipContent
   return <div style={{ background: '#182c39', padding: 12, border: '1px solid #344755',
     maxWidth: 'min(260px, 70vw)', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
     <p>{periodDate.format(new Date(point.startAt))} – {periodDate.format(new Date(point.endAt))} UTC</p>
-    <p>{point.value === null ? 'Нет данных' : `${series.aggregation === 'mean' ? 'Среднее' : 'Последнее'}: ${number.format(point.value)} ${series.unit}`}</p>
-    {point.min !== null && point.max !== null ? <p>Мин–макс: {number.format(point.min)}–{number.format(point.max)} {series.unit}</p> : null}
+    <p>{point.value === null ? 'Нет данных' : `${series.aggregation === 'mean' ? 'Среднее' : 'Последнее'}: ${number.format(point.value)} ${formatUnit(series.unit, series.metric)}`}</p>
+    {point.min !== null && point.max !== null ? <p>Мин–макс: {number.format(point.min)}–{number.format(point.max)} {formatUnit(series.unit, series.metric)}</p> : null}
     <p>Измерений: {point.count}</p>
     {point.receivedCount > 0 ? <p>Без времени измерения: {point.receivedCount}; сгруппированы по времени получения.</p> : null}
   </div>
@@ -59,7 +60,7 @@ export function MeasurementSeriesChart({ series, compact = false, syncId }: { se
     {!compact ? <p className="note">Период: {periodDate.format(new Date(series.from))} – {periodDate.format(new Date(series.to))} UTC.</p> : null}
     <p className="note">
       {series.aggregation === 'mean' ? 'Среднее за интервал' : 'Последнее значение за интервал'}
-      {' · '}Интервал: {formatInterval(series.intervalMs)} · Единица: {series.unit}.
+      {' · '}Интервал: {formatInterval(series.intervalMs)} · Единица: {formatUnit(series.unit, series.metric)}.
     </p>
     <div style={{ height: compact ? 150 : 240, marginTop: compact ? 10 : 24 }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -67,7 +68,7 @@ export function MeasurementSeriesChart({ series, compact = false, syncId }: { se
           <CartesianGrid stroke="#29323e" vertical={false} />
           <XAxis dataKey="time" type="number" scale="time" domain={chart.domain} ticks={chart.ticks}
             allowDataOverflow interval="preserveStartEnd" minTickGap={32} tickFormatter={value => tickDate.format(new Date(value))} />
-          <YAxis width={compact ? 48 : 68} domain={['auto', 'auto']} unit={compact ? undefined : ` ${series.unit}`} />
+          <YAxis tickFormatter={formatValue} width={compact ? 48 : 96} domain={['auto', 'auto']} unit={compact ? undefined : ` ${formatUnit(series.unit, series.metric)}`} />
           <Tooltip filterNull={false} active={hoveredPoint ? true : undefined}
             content={props => <SeriesTooltip {...props} series={series} hoveredPoint={hoveredPoint} />} />
           <Line dataKey="value" name={series.aggregation === 'mean' ? 'Среднее' : 'Последнее'} stroke="#97b6df"

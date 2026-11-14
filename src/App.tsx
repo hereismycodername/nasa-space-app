@@ -5,7 +5,7 @@ import { AnatomyPanel } from './features/anatomy/AnatomyPanel'
 import { CheckInPanel } from './features/check-in/CheckInPanel'
 import { SystemCheckInActions } from './features/check-in/SystemCheckInActions'
 import { TaskPanel } from './features/tasks/TaskPanel'
-import { METRICS, SYSTEMS, formatTime, formatValue, supportedMetricConfigs } from './features/dashboard/metrics'
+import { METRICS, SYSTEMS, formatUnit, formatTime, formatValue, supportedMetricConfigs } from './features/dashboard/metrics'
 import { QualityBadge } from './features/dashboard/QualityBadge'
 import { formatFreshnessWindow } from './features/dashboard/freshness'
 import { useFreshnessElapsed } from './features/dashboard/useFreshnessElapsed'
@@ -49,21 +49,21 @@ export function MetricOverview({ latest, selectedSystem = null, onSelect, onAdd,
       return <article className={`metric-card ${known ? 'has-reading' : ''} metric-health-${health.status}`} key={config.id}>
         <div className="metric-card-heading"><h3>{config.label}</h3><span className="metric-mark" aria-hidden="true" /></div>
         {known ? <>
-          <p className="metric-value">{formatValue(known.value)} <small>{known.unit}</small></p>
+          <p className="metric-value">{formatValue(known.value)} <small>{formatUnit(known.unit, config.id)}</small></p>
           <p className="note" title={known.measuredAt}>Измерено {formatTime(known.measuredAt)}</p>
           <p className="metric-source">{sourceNames[known.source]}</p>
-        </> : <><p className="metric-value missing-value">— <small>{config.unit}</small></p><p className="note">{latest ? (unknown ? 'Нет измерения с известным временем' : 'Нет данных') : 'Загрузка…'}</p></>}
+        </> : <><p className="metric-value missing-value">— <small>{formatUnit(config.unit, config.id)}</small></p><p className="note">{latest ? (unknown ? 'Нет измерения с известным временем' : 'Нет данных') : 'Загрузка…'}</p><p className="metric-source">Источник не получен</p></>}
         <div className="metric-quality"><QualityBadge quality={entry?.quality} connected={connected} elapsedSeconds={elapsedSeconds} />
           {entry?.quality ? <span className="note">Демо-срок: {formatFreshnessWindow(entry.quality.freshForSeconds)}</span> : null}
         </div>
-        {unknown ? <div className="unknown-time"><p>
-          Получено {formatTime(unknown.receivedAt)}: {formatValue(unknown.value)} {unknown.unit}.
+        <div className="metric-delivery">{unknown ? <div className="unknown-time"><p>
+          Получено {formatTime(unknown.receivedAt)}: {formatValue(unknown.value)} {formatUnit(unknown.unit, config.id)}.
           {' '}Время измерения неизвестно; свежесть не подтверждена.
         </p>{known ? <QualityBadge quality={entry?.latestReceivedQuality} connected={connected} elapsedSeconds={elapsedSeconds} /> : null}</div> : null}
         {received && known && received.id !== known.id && !unknown ? <div className="received-quality">
-          <p>Последняя доставка: {formatValue(received.value)} {received.unit}, получено {formatTime(received.receivedAt)}.</p>
+          <p>Последняя доставка: {formatValue(received.value)} {formatUnit(received.unit, config.id)}, получено {formatTime(received.receivedAt)}.</p>
           <QualityBadge quality={entry?.latestReceivedQuality} connected={connected} elapsedSeconds={elapsedSeconds} />
-        </div> : null}
+        </div> : null}</div>
         <MetricHealth metric={config.id} context={context} />
         {onAdd ? <button type="button" className="metric-link" onClick={() => onAdd(config.id)}>{config.quickInputLabel ?? 'Внести измерение'} <Plus size={15} aria-hidden="true" /></button> : null}
         {onSelect ? <button className="metric-link" onClick={() => onSelect(config.id)} aria-label={`Динамика: ${config.label}`}>
@@ -135,8 +135,8 @@ export default function App() {
         {loading ? 'Подключение…' : connected ? 'Связь установлена' : 'Нет связи'}
       </div>
       <div className="role-switch" aria-label="Режим просмотра">
-        <button aria-pressed={role === 'crew'} onClick={() => setRole('crew')}>Crew<span>Экипаж</span></button>
-        <button aria-pressed={role === 'ground'} onClick={() => setRole('ground')}>Ground<span>Наземная команда</span></button>
+        <button aria-pressed={role === 'crew'} onClick={() => setRole('crew')}>Экипаж<span>Наблюдение</span></button>
+        <button aria-pressed={role === 'ground'} onClick={() => setRole('ground')}>Земля<span>Наземная команда</span></button>
       </div>
       <button className="primary-button header-checkin" onClick={openCheckIn} disabled={!supported.length}><Plus size={16} aria-hidden="true" /> Внести измерение</button>
     </header>
@@ -159,7 +159,7 @@ export default function App() {
             <p className="heading-description">{tab === 'overview' ? 'Измерения, самочувствие и задачи в одном пространстве.' : tab === 'trends' ? 'Полная история за выбранный период. Пропуски остаются видимыми.' : 'Состояние подключения и доступные функции мониторинга.'}</p></div>
             <button className="icon-button" aria-label="Обновить данные" title="Обновить данные" onClick={() => { refresh(); setRefreshVersion(value => value + 1) }}><RefreshCw size={17} aria-hidden="true" /></button>
           </div>
-          {tab === 'trends' ? <><Suspense fallback={<div className="panel loading-panel">Загрузка графика…</div>}><TrendPanel metric={metric} supportedMetrics={supportedIds} onMetricChange={setMetric} refreshVersion={refreshVersion} onAdd={() => openMetricCheckIn(metric)} /></Suspense><section className="panel"><h2>{METRICS.find(item => item.id === metric)?.label}: оценка последнего измерения</h2><MetricHealth metric={metric} context={healthContext} /></section></> : tab === 'system' ? <>
+          {tab === 'trends' ? <><Suspense fallback={<div className="panel loading-panel trend-placeholder">Загрузка графика…</div>}><TrendPanel metric={metric} supportedMetrics={supportedIds} onMetricChange={setMetric} refreshVersion={refreshVersion} onAdd={() => openMetricCheckIn(metric)} /></Suspense><section className="panel"><h2>{METRICS.find(item => item.id === metric)?.label}: оценка последнего измерения</h2><MetricHealth metric={metric} context={healthContext} /></section></> : tab === 'system' ? <>
             <div className="panel system-panel"><h2><Database size={18} aria-hidden="true" /> Состояние подключения</h2>
               <dl className="system-facts"><div><dt>Сервер</dt><dd>{loading ? 'Проверка…' : connected ? 'Доступен' : 'Недоступен'}</dd></div><div><dt>Последнее обновление</dt><dd>{lastUpdated ? formatTime(lastUpdated.toISOString()) : 'Ещё не получено'}</dd></div><div><dt>Хранение измерений</dt><dd>Локальная база данных</dd></div><div><dt>Источники</dt><dd>{sourceSet.join(', ') || 'Измерения пока не получены'}</dd></div></dl>
               <p className="note">Обновление каждые 5 секунд при открытой вкладке. После потери связи предыдущие данные остаются на экране.</p>

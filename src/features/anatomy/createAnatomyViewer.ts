@@ -8,12 +8,12 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { anatomySystems } from './anatomySystems'
 import type { AnatomyMode } from './anatomySystems'
 import { anatomyAppearance } from './anatomyAppearance'
-import type { AnatomyLayer } from './anatomyAppearance'
+import type { AnatomyHealth, AnatomyLayer } from './anatomyAppearance'
 import type { SystemId } from './types'
 
 export interface AnatomyViewerController {
   ready: Promise<void>
-  setAppearance: (mode: AnatomyMode, selected: SystemId | null, hovered?: SystemId | null) => void
+  setAppearance: (mode: AnatomyMode, selected: SystemId | null, hovered?: SystemId | null, health?: AnatomyHealth) => void
   rotate: (horizontal: number, vertical: number) => void
   zoom: (factor: number) => void
   reset: () => void
@@ -68,6 +68,7 @@ export function createAnatomyViewer(host: HTMLDivElement, onSelect: (system: Sys
   let mode: AnatomyMode = 'organs'
   let selected: SystemId | null = null
   let hovered: SystemId | null = null
+  let health: AnatomyHealth = {}
   const meshes: BodyMesh[] = []
   const originalColors = new Map<BodyMesh, Color>()
   const abort = new AbortController()
@@ -102,15 +103,18 @@ export function createAnatomyViewer(host: HTMLDivElement, onSelect: (system: Sys
   resize()
   reset()
 
-  const setAppearance = (nextMode: AnatomyMode, nextSelected: SystemId | null, nextHovered: SystemId | null = null) => {
+  const setAppearance = (nextMode: AnatomyMode, nextSelected: SystemId | null, nextHovered: SystemId | null = null, nextHealth = health) => {
     mode = nextMode
     selected = nextSelected
     hovered = nextHovered
+    health = nextHealth
     for (const mesh of meshes) {
-      const appearance = anatomyAppearance(mode, mesh.userData.system, mesh.userData.layer, selected, hovered)
+      const appearance = anatomyAppearance(mode, mesh.userData.system, mesh.userData.layer, selected, hovered, health, mesh.name)
       const material = mesh.material
       mesh.visible = true
-      material.color.copy(originalColors.get(mesh)!).multiplyScalar(appearance.light)
+      if (appearance.color) material.color.set(appearance.color)
+      else material.color.copy(originalColors.get(mesh)!)
+      material.color.multiplyScalar(appearance.light)
       material.opacity = appearance.opacity
       const transparent = material.opacity < 1
       if (material.transparent !== transparent) {
@@ -118,8 +122,8 @@ export function createAnatomyViewer(host: HTMLDivElement, onSelect: (system: Sys
         material.needsUpdate = true
       }
       material.depthWrite = !transparent
-      material.emissive.set(appearance.active ? 0xc8d7e8 : 0x000000)
-      material.emissiveIntensity = appearance.active ? 0.07 : 0
+      material.emissive.set(appearance.color ?? (appearance.active ? 0xc8d7e8 : 0x000000))
+      material.emissiveIntensity = appearance.color ? 0.18 : appearance.active ? 0.07 : 0
     }
     invalidate()
   }

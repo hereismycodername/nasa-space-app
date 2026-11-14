@@ -1,10 +1,10 @@
 import { lazy, Suspense, useState } from 'react'
 import { ChevronDown, Circle, Minus, RefreshCw } from 'lucide-react'
 import { AnatomyPanel } from '../anatomy/AnatomyPanel'
-import { METRICS, SYSTEMS, formatTime, formatValue, supportedMetricConfigs } from '../dashboard/metrics'
+import { METRICS, SYSTEMS, formatUnit, formatTime, formatValue, supportedMetricConfigs } from '../dashboard/metrics'
 import type { BodySystem } from '../dashboard/metrics'
 import { QualityBadge } from '../dashboard/QualityBadge'
-import { currentFreshness, freshnessLabels } from '../dashboard/freshness'
+import { currentFreshness, freshnessLabel } from '../dashboard/freshness'
 import { HealthPanel, MetricHealth } from '../dashboard/HealthPanel'
 import { systemHealth } from '../dashboard/health'
 import type { HealthContext } from '../dashboard/health'
@@ -29,10 +29,10 @@ export function ObservationLog({ latest, connected, elapsedSeconds, healthContex
       const received = entry?.latestReceivedMeasurement
       const main = known ?? received
       return <div className="observation-row" key={config.id}>
-        <div><strong>{config.label}</strong><span>{main ? `${formatValue(main.value)} ${main.unit}` : 'Нет данных'}</span></div>
+        <div><strong>{config.label}</strong><span>{main ? `${formatValue(main.value)} ${formatUnit(main.unit, config.id)}` : 'Нет данных'}</span></div>
         <QualityBadge quality={entry?.quality} connected={connected} elapsedSeconds={elapsedSeconds} />
         <p>{main?.measuredAt ? `Измерено ${formatTime(main.measuredAt)}` : main ? `Получено ${formatTime(main.receivedAt)}; время измерения неизвестно.` : 'Измерение ещё не получено.'}{main ? ` · ${sources[main.source]}` : ''}</p>
-        {known && received && known.id !== received.id ? <div className="observation-receipt"><span>Последняя доставка: {formatValue(received.value)} {received.unit}</span><QualityBadge quality={entry?.latestReceivedQuality} connected={connected} elapsedSeconds={elapsedSeconds} /></div> : null}
+        {known && received && known.id !== received.id ? <div className="observation-receipt"><span>Последняя доставка: {formatValue(received.value)} {formatUnit(received.unit, config.id)}</span><QualityBadge quality={entry?.latestReceivedQuality} connected={connected} elapsedSeconds={elapsedSeconds} /></div> : null}
         <MetricHealth metric={config.id} context={healthContext ?? { latest, connected, latestElapsedSeconds: elapsedSeconds }} />
       </div>
     })}</div>
@@ -81,9 +81,9 @@ export default function GroundConsole({ latest, connected, elapsedSeconds, healt
             const entry = entries.find(row => row.metric === config.id)
             const reading = entry?.latestKnownMeasurement ?? entry?.latestReceivedMeasurement
             const status = entry?.quality ? currentFreshness(entry.quality, elapsedSeconds) : 'missing'
-            return <label className={`object-metric ${channels.includes(config.id) ? 'object-watched' : ''}`} key={config.id} title={connected ? freshnessLabels[status] : 'Свежесть не подтверждена'}>
+            return <label className={`object-metric ${channels.includes(config.id) ? 'object-watched' : ''}`} key={config.id} title={connected ? entry?.quality ? freshnessLabel(entry.quality, elapsedSeconds) : 'Нет измерения' : 'Свежесть не подтверждена'}>
               <input type="checkbox" checked={channels.includes(config.id)} onChange={() => toggle(config.id)} aria-label={`График: ${config.label}`} />
-              <span className={`object-dot ${connected ? `object-dot-${status}` : ''}`} /><span>{config.label}</span><small>{reading ? formatValue(reading.value) : '—'}<em>{config.unit}</em></small>
+              <span className={`object-dot ${connected ? `object-dot-${status}` : ''}`} /><span>{config.label}</span><small>{reading ? formatValue(reading.value) : '—'}<em>{formatUnit(config.unit, config.id)}</em></small>
             </label>
           })}</div>
         </details> : <div className="object-unavailable" key={system.id}><span>{system.label}</span><small>Не подключено</small></div>
@@ -97,7 +97,7 @@ export default function GroundConsole({ latest, connected, elapsedSeconds, healt
       <HealthPanel context={context} />
       <section className="telemetry-section" aria-label="Телеметрия экипажа">
         <div className="time-conductor"><div><h2>Телеметрия</h2><p>Общая временная шкала · UTC</p></div><div className="period-switch" aria-label="Период телеметрии">{([1, 7, 30] as const).map(period => <button key={period} aria-pressed={days === period} onClick={() => onDaysChange(period)}>{period === 1 ? '24 часа' : `${period} дней`}</button>)}</div><button className="icon-button" onClick={() => setRetry(value => value + 1)} aria-label="Обновить телеметрию"><RefreshCw size={15} aria-hidden="true" /></button></div>
-        {telemetry.window ? <p className="telemetry-period">{utc.format(new Date(telemetry.window.from))} — {utc.format(new Date(telemetry.window.to))} UTC{telemetry.loading ? ' · обновление…' : ''}</p> : null}
+        <p className="telemetry-period">{telemetry.window ? <>{utc.format(new Date(telemetry.window.from))} — {utc.format(new Date(telemetry.window.to))} UTC<span className="telemetry-refresh">{telemetry.loading ? ' · обновление…' : ''}</span></> : 'Подготовка временной шкалы…'}</p>
         {telemetry.error ? <p className="inline-error" role="alert">{telemetry.error}{telemetry.window ? ' Показана предыдущая история.' : ''}</p> : null}
         {!activeChannels.length ? <div className="empty-state"><h3>Выберите показатели</h3><p>Отметьте один или несколько показателей в списке объектов.</p></div> : null}
         <div className="telemetry-stack">{activeChannels.map(metric => {
@@ -106,7 +106,7 @@ export default function GroundConsole({ latest, connected, elapsedSeconds, healt
           const reading = entry?.latestKnownMeasurement ?? entry?.latestReceivedMeasurement
           const series = telemetry.series[metric]
           return <section className="telemetry-channel" key={metric} aria-label={`Телеметрия: ${config.label}`}>
-            <header><button className="telemetry-title" onClick={() => onOpenMetric(metric)}>{config.label}</button><span className="telemetry-value">{reading ? formatValue(reading.value) : '—'} <small>{config.unit}</small></span><QualityBadge quality={entry?.quality} connected={connected} elapsedSeconds={elapsedSeconds} /><button className="remove-channel" aria-label={`Убрать график: ${config.label}`} onClick={() => toggle(metric)}><Minus size={14} aria-hidden="true" /></button></header>
+            <header><button className="telemetry-title" onClick={() => onOpenMetric(metric)}>{config.label}</button><span className="telemetry-value">{reading ? formatValue(reading.value) : '—'} <small>{formatUnit(config.unit, config.id)}</small></span><QualityBadge quality={entry?.quality} connected={connected} elapsedSeconds={elapsedSeconds} /><button className="remove-channel" aria-label={`Убрать график: ${config.label}`} onClick={() => toggle(metric)}><Minus size={14} aria-hidden="true" /></button></header>
             {series ? <Suspense fallback={<div className="telemetry-loading">Загрузка графика…</div>}><TelemetryCharts metric={metric} series={series} /></Suspense> : <div className="telemetry-loading">{telemetry.error ? 'История недоступна' : 'Загрузка истории…'}</div>}
           </section>
         })}</div>
