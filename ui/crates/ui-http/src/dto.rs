@@ -76,6 +76,21 @@ pub(crate) struct Latest {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct TasksResponse {
+    pub mission_date: String,
+    pub tasks: Vec<Task>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TaskUpdateResponse {
+    pub mission_date: String,
+    #[serde(flatten)]
+    pub task: Task,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct Task {
     pub id: String,
     pub title: String,

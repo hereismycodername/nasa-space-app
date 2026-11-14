@@ -27,6 +27,7 @@ pub(crate) struct State {
     assessment_error: Option<String>,
     snapshot_at: Option<Instant>,
     tasks: Vec<dto::Task>,
+    mission_date: Option<String>,
     series: HashMap<String, TimedSeries>,
     series_error: Option<String>,
     pending: usize,
@@ -45,6 +46,7 @@ impl State {
             assessment_error: None,
             snapshot_at: None,
             tasks: vec![],
+            mission_date: None,
             series: HashMap::new(),
             series_error: None,
             pending: 0,
@@ -85,11 +87,15 @@ pub(crate) fn lock(state: &Mutex<State>) -> MutexGuard<'_, State> {
 
 pub(crate) enum Command {
     Measurement(dto::NewMeasurement),
-    Task { id: String, completed: bool },
+    Task {
+        id: String,
+        mission_date: String,
+        completed: bool,
+    },
     Refresh,
 }
 
-/// A single-astronaut client for the existing BE-06 service.
+/// A single-astronaut HTTP client with dated daily tasks.
 pub struct HttpBackend {
     api_url: String,
     state: Arc<Mutex<State>>,
@@ -321,11 +327,19 @@ impl Backend for HttpBackend {
         lock(&self.state).tasks.iter().map(Into::into).collect()
     }
     fn set_task_completed(&mut self, id: &str, completed: bool) -> Result<(), String> {
-        if !lock(&self.state).tasks.iter().any(|task| task.id == id) {
-            return Err("Unknown task".into());
-        }
+        let mission_date = {
+            let state = lock(&self.state);
+            if !state.tasks.iter().any(|task| task.id == id) {
+                return Err("Unknown task".into());
+            }
+            state
+                .mission_date
+                .clone()
+                .ok_or("Missing task mission date")?
+        };
         self.enqueue(Command::Task {
             id: id.into(),
+            mission_date,
             completed,
         })
     }

@@ -1,7 +1,10 @@
-[
-  {
-    "id": "daily-check",
-    "title": "Заполнить ежедневные измерения",
-    "completedAt": null
-  }
-]
+{
+  "missionDate": "2026-11-13",
+  "tasks": [
+    {
+      "id": "daily-check",
+      "title": "Заполнить ежедневные измерения",
+      "completedAt": null
+    }
+  ]
+}

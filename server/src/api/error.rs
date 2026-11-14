@@ -30,6 +30,12 @@ impl ApiError {
         self.field = Some(field);
         self
     }
+    pub fn task_body_error(mut self) -> Self {
+        if self.status == StatusCode::UNPROCESSABLE_ENTITY {
+            self.status = StatusCode::BAD_REQUEST;
+        }
+        self
+    }
 }
 
 #[derive(Serialize)]

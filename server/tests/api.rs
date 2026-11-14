@@ -112,7 +112,7 @@ async fn data_freshness_and_tasks() {
         &app,
         "PATCH",
         "/api/tasks/daily-check",
-        json!({"completed":true}),
+        json!({"missionDate":"2026-11-14","completed":true}),
     )
     .await;
     assert!(done["completedAt"].is_string());
@@ -121,7 +121,7 @@ async fn data_freshness_and_tasks() {
             &app,
             "PATCH",
             "/api/tasks/missing",
-            json!({"completed":true})
+            json!({"missionDate":"2026-11-14","completed":true})
         )
         .await
         .0,
@@ -300,7 +300,7 @@ async fn missing_routes_and_tasks_use_distinct_problem_codes() {
         &app,
         "PATCH",
         "/api/tasks/missing",
-        json!({"completed":true}).to_string(),
+        json!({"missionDate":"2026-11-14","completed":true}).to_string(),
         Some("application/json"),
     )
     .await;
@@ -333,7 +333,7 @@ async fn invalid_path_encoding_returns_a_problem_response() {
         &app,
         "PATCH",
         "/api/tasks/%FF",
-        json!({"completed":true}).to_string(),
+        json!({"missionDate":"2026-11-14","completed":true}).to_string(),
         Some("application/json"),
     )
     .await;
@@ -354,34 +354,175 @@ async fn database_failures_return_generic_problems() {
 }
 
 #[tokio::test]
-async fn health_and_task_success_responses_keep_their_existing_shape() {
-    let app = setup().await;
+async fn health_and_dated_task_responses_preserve_daily_completion() {
+    let (app, pool) = setup_with_pool().await;
     let (status, health) = call(&app, "GET", "/api/health", Value::Null).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(health, json!({"status":"ok","storage":"sqlite"}));
-    let (_, tasks) = call(&app, "GET", "/api/tasks", Value::Null).await;
-    assert_eq!(
-        tasks,
-        json!([{
-            "id":"daily-check", "title":"Заполнить ежедневные измерения", "completedAt":null,
-        }])
-    );
-    call(
-        &app,
-        "PATCH",
-        "/api/tasks/daily-check",
-        json!({"completed":true}),
-    )
-    .await;
-    let (status, cleared) = call(
-        &app,
-        "PATCH",
-        "/api/tasks/daily-check",
-        json!({"completed":false}),
-    )
-    .await;
+    sqlx::query("INSERT INTO task_templates (id,title) VALUES ('extra-check','Extra check')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let before = chrono::Utc::now();
+    let (status, today) = call(&app, "GET", "/api/tasks", Value::Null).await;
+    let after = chrono::Utc::now();
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(cleared, tasks[0]);
+    let date =
+        chrono::NaiveDate::parse_from_str(today["missionDate"].as_str().unwrap(), "%Y-%m-%d")
+            .unwrap();
+    assert!(date == before.date_naive() || date == after.date_naive());
+    let templates: Vec<(String, String)> =
+        sqlx::query_as("SELECT id,title FROM task_templates ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    let expected: Vec<Value> = templates
+        .into_iter()
+        .map(|(id, title)| json!({"id":id,"title":title,"completedAt":null}))
+        .collect();
+    assert_eq!(today["tasks"], json!(expected));
+    let yesterday = date.pred_opt().unwrap().to_string();
+    let path = format!("/api/tasks?date={yesterday}");
+    let (_, empty) = call(&app, "GET", &path, Value::Null).await;
+    assert_eq!(empty, json!({"missionDate":yesterday,"tasks":expected}));
+    let today_body = json!({"missionDate":today["missionDate"],"completed":true});
+    let (status, today_mark) = call(&app, "PATCH", "/api/tasks/daily-check", today_body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(today_mark["missionDate"], today["missionDate"]);
+    let body = json!({"missionDate":yesterday,"completed":true});
+    let start = chrono::Utc::now();
+    let (status, saved) = call(&app, "PATCH", "/api/tasks/daily-check", body.clone()).await;
+    let end = chrono::Utc::now();
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(saved["missionDate"], yesterday);
+    assert_eq!(saved["id"], empty["tasks"][0]["id"]);
+    assert_eq!(saved["title"], empty["tasks"][0]["title"]);
+    assert_eq!(saved.as_object().unwrap().len(), 4);
+    let time =
+        chrono::DateTime::parse_from_rfc3339(saved["completedAt"].as_str().unwrap()).unwrap();
+    assert!(time >= start && time <= end);
+    let (status, repeated) = call(&app, "PATCH", "/api/tasks/daily-check", body.clone()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(repeated, saved);
+    let (_, read) = call(&app, "GET", &path, Value::Null).await;
+    assert_eq!(read["tasks"][0]["completedAt"], saved["completedAt"]);
+    for _ in 0..2 {
+        let (status, cleared) = call(
+            &app,
+            "PATCH",
+            "/api/tasks/daily-check",
+            json!({"missionDate":yesterday,"completed":false}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            cleared,
+            json!({"missionDate":yesterday,"id":saved["id"],"title":saved["title"],"completedAt":null})
+        );
+        assert_eq!(call(&app, "GET", &path, Value::Null).await.1, empty);
+        let (_, current) = call(&app, "GET", &format!("/api/tasks?date={date}"), Value::Null).await;
+        assert_eq!(
+            current["tasks"][0]["completedAt"],
+            today_mark["completedAt"]
+        );
+    }
+    let (_, renewed) = call(&app, "PATCH", "/api/tasks/daily-check", body).await;
+    let renewed_time =
+        chrono::DateTime::parse_from_rfc3339(renewed["completedAt"].as_str().unwrap()).unwrap();
+    assert!(renewed_time > time);
+    let legacy: Option<String> =
+        sqlx::query_scalar("SELECT completed_at FROM tasks WHERE id='daily-check'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(legacy.is_none());
+}
+
+#[tokio::test]
+async fn task_date_and_body_errors_use_problem_fields_and_unknown_tasks_return_404() {
+    let app = setup().await;
+    for date in [
+        "",
+        "2026-02-30",
+        "2026-1-5",
+        "2026-11-14T00:00:00Z",
+        "2026-11-14+05:00",
+        "2026-11-14 ",
+    ] {
+        let query = format!("date={}", date.replace('+', "%2B").replace(' ', "%20"));
+        let response = call_raw(
+            &app,
+            "GET",
+            &format!("/api/tasks?{query}"),
+            String::new(),
+            None,
+        )
+        .await;
+        assert_problem(&response, StatusCode::BAD_REQUEST, "VALIDATION_ERROR");
+        assert_eq!(response.2["field"], "date");
+        let response = call_raw(
+            &app,
+            "PATCH",
+            "/api/tasks/daily-check",
+            json!({"missionDate":date,"completed":true}).to_string(),
+            Some("application/json"),
+        )
+        .await;
+        assert_problem(&response, StatusCode::BAD_REQUEST, "VALIDATION_ERROR");
+        assert_eq!(response.2["field"], "missionDate");
+    }
+    for body in [
+        json!({"completed":true}),
+        json!({"missionDate":null,"completed":true}),
+        json!({"missionDate":123,"completed":true}),
+    ] {
+        let response = call_raw(
+            &app,
+            "PATCH",
+            "/api/tasks/daily-check",
+            body.to_string(),
+            Some("application/json"),
+        )
+        .await;
+        assert_problem(&response, StatusCode::BAD_REQUEST, "VALIDATION_ERROR");
+        assert_eq!(response.2["field"], "missionDate");
+    }
+    for body in [
+        json!({"missionDate":"2026-11-14"}),
+        json!({"missionDate":"2026-11-14","completed":"true"}),
+        json!({"missionDate":"2026-11-14","completed":true,"completedAt":"2026-11-14T00:00:00Z"}),
+        json!({"missionDate":"2026-11-14","completed":true,"astronautId":"other"}),
+    ] {
+        let response = call_raw(
+            &app,
+            "PATCH",
+            "/api/tasks/daily-check",
+            body.to_string(),
+            Some("application/json"),
+        )
+        .await;
+        assert_problem(&response, StatusCode::BAD_REQUEST, "INVALID_BODY");
+    }
+    for query in ["unknown=1", "date=2026-11-14&date=2026-11-15"] {
+        let response = call_raw(
+            &app,
+            "GET",
+            &format!("/api/tasks?{query}"),
+            String::new(),
+            None,
+        )
+        .await;
+        assert_problem(&response, StatusCode::BAD_REQUEST, "INVALID_QUERY");
+    }
+    let response = call_raw(
+        &app,
+        "PATCH",
+        "/api/tasks/missing",
+        json!({"missionDate":"2026-11-14","completed":true}).to_string(),
+        Some("application/json"),
+    )
+    .await;
+    assert_problem(&response, StatusCode::NOT_FOUND, "TASK_NOT_FOUND");
 }
 
 #[tokio::test]
