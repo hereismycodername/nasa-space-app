@@ -38,11 +38,25 @@ struct Stash {
     hist: HashMap<String, Vec<Reading>>,
 }
 struct Member {
-    id: &'static str,
-    name: &'static str,
-    title: &'static str,
+    id: String,
+    name: String,
+    title: String,
     contact_base: u64,
     stash: Option<Stash>,
+}
+
+/// Everything a persistent backend knows about the mission, as plain rows. Applied in one go.
+#[derive(Clone, Debug, Default)]
+pub struct Snapshot {
+    pub day: u32,
+    pub env_id: String,
+    pub blackout: bool,
+    /// (crew id, indicator id, mission day, value); at most one row per crew, indicator and day
+    pub readings: Vec<(String, String, u32, f64)>,
+    /// (crew id, indicator id) of acknowledged findings
+    pub acks: Vec<(String, String)>,
+    /// (crew id, message)
+    pub messages: Vec<(String, Message)>,
 }
 
 pub struct DemoBackend {
@@ -98,10 +112,10 @@ impl DemoBackend {
     pub fn new() -> Self {
         let mut b = DemoBackend {
             members: vec![
-                Member { id: "reyes", name: "Cdr. Reyes", title: "Commander", contact_base: 61, stash: None },
-                Member { id: "okafor", name: "Dr. Okafor", title: "Medical officer", contact_base: 242, stash: None },
-                Member { id: "chen", name: "Eng. Chen", title: "Flight engineer", contact_base: 118, stash: None },
-                Member { id: "novak", name: "Sci. Novak", title: "Mission scientist", contact_base: 205, stash: None },
+                Member { id: "reyes".into(), name: "Cdr. Reyes".into(), title: "Commander".into(), contact_base: 61, stash: None },
+                Member { id: "okafor".into(), name: "Dr. Okafor".into(), title: "Medical officer".into(), contact_base: 242, stash: None },
+                Member { id: "chen".into(), name: "Eng. Chen".into(), title: "Flight engineer".into(), contact_base: 118, stash: None },
+                Member { id: "novak".into(), name: "Sci. Novak".into(), title: "Mission scientist".into(), contact_base: 205, stash: None },
             ],
             cur: 0,
             acked: vec![],
@@ -131,6 +145,127 @@ impl DemoBackend {
         }
         b.event("BOOT: demo backend started (in-memory)");
         b
+    }
+
+    /// Engine without any data: the rules, content and downlink simulation of the demo, fed by a persistent backend.
+    /// `crew` = (id, name, title); the first member is selected.
+    pub fn empty(crew: &[(String, String, String)]) -> Self {
+        let c = Content::load();
+        let blank = |c: &Content| -> HashMap<String, Vec<Reading>> { c.inds.iter().map(|i| (i.id.clone(), vec![])).collect() };
+        let members: Vec<Member> = crew
+            .iter()
+            .enumerate()
+            .map(|(i, (id, name, title))| Member {
+                id: id.clone(),
+                name: name.clone(),
+                title: title.clone(),
+                contact_base: 60 + (i as u64 * 57) % 240,
+                stash: if i == 0 { None } else { Some(Stash { hist: blank(&c) }) },
+            })
+            .collect();
+        let hist = blank(&c);
+        let mut b = DemoBackend {
+            members,
+            cur: 0,
+            acked: vec![],
+            chat: vec![],
+            blackout_since: None,
+            c,
+            day: 1,
+            env: 0,
+            blackout: false,
+            hist,
+            queue: vec![],
+            next_qid: 1,
+            events: vec![],
+            msgs: vec![],
+            fault: None,
+            started: Instant::now(),
+        };
+        b.event("BOOT: persistent backend started");
+        b
+    }
+
+    /// Switch the environment without inventing history (the demo's `set_environment` also re-seeds the dose history).
+    pub fn select_environment(&mut self, env_id: &str) {
+        if let Some(i) = self.c.envs.iter().position(|e| e.id == env_id) {
+            if self.env != i {
+                self.env = i;
+                let n = self.c.envs[i].name.clone();
+                self.event(&format!("Environment: {}", n));
+            }
+        }
+    }
+
+    /// Append an event line to the health log.
+    pub fn note(&mut self, text: &str) {
+        self.event(text);
+    }
+
+    /// Replace all mission data by a snapshot (used after a restart and when another process changed the database).
+    /// Keeps the selected crew member, the downlink queue and the blackout timer.
+    pub fn apply_snapshot(&mut self, snap: &Snapshot) {
+        let keep = self.members[self.cur].id.clone();
+        if let Some(i) = self.members.iter().position(|m| m.id == keep) {
+            // bring the selected member's data back to its stash so all data lives in one place
+            if i == self.cur {
+                let out = Stash { hist: std::mem::take(&mut self.hist) };
+                self.members[i].stash = Some(out);
+            }
+        }
+        let blank: HashMap<String, Vec<Reading>> = self.c.inds.iter().map(|i| (i.id.clone(), vec![])).collect();
+        for m in self.members.iter_mut() {
+            m.stash = Some(Stash { hist: blank.clone() });
+        }
+        for (crew, ind, day, value) in &snap.readings {
+            if let Some(m) = self.members.iter_mut().find(|m| m.id == *crew) {
+                if let Some(h) = m.stash.as_mut().and_then(|s| s.hist.get_mut(ind)) {
+                    h.push(Reading { day: *day, value: *value });
+                }
+            }
+        }
+        for m in self.members.iter_mut() {
+            if let Some(s) = m.stash.as_mut() {
+                for h in s.hist.values_mut() {
+                    h.sort_by_key(|r| r.day);
+                }
+            }
+        }
+        self.day = snap.day.max(1);
+        if let Some(i) = self.c.envs.iter().position(|e| e.id == snap.env_id) {
+            self.env = i;
+        }
+        if snap.blackout != self.blackout {
+            self.blackout = snap.blackout;
+            self.blackout_since = if snap.blackout { Some(Instant::now()) } else { None };
+        }
+        self.acked = snap
+            .acks
+            .iter()
+            .filter_map(|(crew, ind)| self.members.iter().position(|m| m.id == *crew).map(|i| (i, ind.clone())))
+            .collect();
+        self.chat = snap.messages.iter().filter_map(|(crew, m)| self.members.iter().position(|x| x.id == *crew).map(|i| (i, m.clone()))).collect();
+        let i = self.members.iter().position(|m| m.id == keep).unwrap_or(0);
+        self.hist = self.members[i].stash.take().map(|s| s.hist).unwrap_or_default();
+        self.cur = i;
+    }
+
+    /// The synthetic history of the demo crew as plain rows: (crew, indicator, day, value). Used to seed a database.
+    pub fn demo_rows() -> (u32, Vec<(String, String, u32, f64)>, Vec<(String, String, String)>) {
+        let mut b = DemoBackend::new();
+        let day = b.day;
+        let crew: Vec<(String, String, String)> = b.members.iter().map(|m| (m.id.clone(), m.name.clone(), m.title.clone())).collect();
+        let ids: Vec<String> = b.members.iter().map(|m| m.id.clone()).collect();
+        let mut rows = vec![];
+        for id in ids {
+            b.select_crew(&id);
+            for ind in &b.c.inds {
+                for r in b.hist.get(&ind.id).into_iter().flatten() {
+                    rows.push((id.clone(), ind.id.clone(), r.day, r.value));
+                }
+            }
+        }
+        (day, rows, crew)
     }
 
     /// Demo crew: 0 = fatigue (the seeded default), 1 = rising stress, 2 = low SpO2 event, 3 = all normal.
@@ -490,9 +625,9 @@ impl Backend for DemoBackend {
                     .map(|ind| hist.get(&ind.id).and_then(|h| h.last()).map_or(Status::NoData, |r| rules::status(ind, r.value, self.envd())))
                     .collect();
                 CrewMember {
-                    id: m.id.into(),
-                    name: m.name.into(),
-                    title: m.title.into(),
+                    id: m.id.clone(),
+                    name: m.name.clone(),
+                    title: m.title.clone(),
                     status: st.iter().copied().max().unwrap_or(Status::NoData),
                     score: rules::score(&st),
                     last_contact_s: self.contact_age(m),
@@ -503,7 +638,7 @@ impl Backend for DemoBackend {
     }
 
     fn selected_crew(&self) -> String {
-        self.members[self.cur].id.to_string()
+        self.members[self.cur].id.clone()
     }
 
     fn select_crew(&mut self, id: &str) {
@@ -553,14 +688,14 @@ impl Backend for DemoBackend {
             let id = ind.id.clone();
             if !self.acked.iter().any(|(m, i)| *m == self.cur && *i == id) {
                 self.acked.push((self.cur, id.clone()));
-                let who = self.members[self.cur].name;
+                let who = self.members[self.cur].name.clone();
                 self.event(&format!("ACK: {} - {}", who, id));
             }
         }
     }
 
     fn send_message(&mut self, text: &str) {
-        let (day, who) = (self.day, self.members[self.cur].name);
+        let (day, who) = (self.day, self.members[self.cur].name.clone());
         self.chat.push((self.cur, Message { from_ground: true, text: text.to_string(), day }));
         let one_way = self.envd().rtt / 2.0;
         let eta = if one_way < 60.0 { format!("{} s", rules::fmt(one_way)) } else { format!("{} min", (one_way / 60.0).round()) };

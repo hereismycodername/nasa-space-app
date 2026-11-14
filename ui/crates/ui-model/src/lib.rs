@@ -10,6 +10,6 @@ pub mod demo;
 pub mod types;
 
 pub use backend::Backend;
-pub use demo::DemoBackend;
+pub use demo::{DemoBackend, Snapshot};
 pub use rules::fmt as fmt_num;
 pub use types::*;

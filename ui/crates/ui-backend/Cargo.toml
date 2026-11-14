@@ -1,0 +1,14 @@
+[package]
+name = "ui-backend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Persistent (SQLite) Backend for the AstroCheck interfaces, built on the team backend's domain and storage layers"
+
+[dependencies]
+ui-model = { path = "../ui-model" }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "macros", "migrate"] }
+tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
+chrono = "0.4"
+uuid = { version = "1", features = ["v4"] }
+thiserror = "2"

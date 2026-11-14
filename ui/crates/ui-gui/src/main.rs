@@ -1,6 +1,8 @@
 // Windows release build: a window program, no console (otherwise Windows Terminal opens an extra tab)
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+#[allow(dead_code)]
+mod anatomy_sprites;
 mod figure;
 mod ground;
 mod theme;
@@ -56,6 +58,9 @@ struct Opts {
     storm: bool,
     size: Option<(f32, f32)>,
     pos: Option<(f32, f32)>,
+    db: Option<String>,
+    demo: bool,
+    no_seed: bool,
 }
 
 struct GuiApp<B: Backend> {
@@ -182,10 +187,20 @@ impl<B: Backend> GuiApp<B> {
             _ => figure::Mode::Organs,
         };
         if let Some(s) = app.opts.system.clone() {
-            app.nav = Nav::System(s);
+            if app.systems.iter().any(|x| x.id == s) {
+                app.nav = Nav::System(s);
+            } else {
+                let known: Vec<&str> = app.systems.iter().map(|x| x.id.as_str()).collect();
+                app.say(format!("Unknown body system '{}'. Known: {}", s, known.join(", ")));
+            }
         }
         if let Some(m) = app.opts.metric.clone() {
-            app.nav = Nav::Metric(m);
+            if app.ind(&m).is_some() {
+                app.nav = Nav::Metric(m);
+            } else {
+                let known: Vec<&str> = app.inds.iter().map(|x| x.id.as_str()).collect();
+                app.say(format!("Unknown indicator '{}'. Known: {}", m, known.join(", ")));
+            }
         }
         app.checkin_open = app.opts.checkin;
         app.pvt_open = app.opts.pvt;
@@ -275,7 +290,7 @@ impl<B: Backend> GuiApp<B> {
             .frame(Frame::new().fill(SURFACE).stroke(stroke(1.0, LINE)).inner_margin(Margin::symmetric(14, 0)))
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
-                    ui.label(RichText::new("ASTROCHECK").font(display(15.0)).strong().color(TXT));
+                    ui.label(RichText::new("ASTROCHECK").font(display(14.0)).strong().extra_letter_spacing(2.6).color(TXT));
                     ui.add_space(4.0);
                     ui.separator();
                     let envs = self.b.environments();
@@ -292,22 +307,25 @@ impl<B: Backend> GuiApp<B> {
                         self.reset_inputs();
                     }
                     ui.separator();
-                    ui.label(RichText::new(format!("MISSION DAY {}", o.mission_day)).size(12.0).strong());
+                    ui.label(tracked(&format!("Mission day {}", o.mission_day), 11.0, TXT));
                     ui.separator();
                     let (col, txt) = if !o.link_up {
-                        (CRIT, "LINK DOWN".to_string())
+                        (CRIT, "Link down")
                     } else if o.autonomous {
-                        (WARN, format!("AUTONOMOUS  RTT {}", rtt_text(o.rtt_s)))
+                        (WARN, "Autonomous")
                     } else {
-                        (OK, format!("LINK OK  RTT {}", rtt_text(o.rtt_s)))
+                        (OK, "Link OK")
                     };
                     led(ui, col);
-                    ui.label(RichText::new(txt).size(12.0).color(col).strong());
+                    ui.label(tracked(txt, 11.0, col));
+                    if o.link_up {
+                        ui.label(RichText::new(format!("RTT {}", rtt_text(o.rtt_s))).font(mono(11.0)).color(MUT));
+                    }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if self.role == Role::Crew && ui.add(primary("Daily check-in")).clicked() {
                             self.checkin_open = true;
                         }
-                        ui.menu_button("Demo", |ui| {
+                        ui.menu_button(tracked("Demo", 10.5, TXT), |ui| {
                             if ui.button("Next mission day").clicked() {
                                 self.b.demo_next_day();
                                 self.reset_inputs();
@@ -376,7 +394,7 @@ impl<B: Backend> GuiApp<B> {
         let time = ctx.input(|i| i.time);
         let animate = !self.opts.lite;
         egui::SidePanel::left("left")
-            .exact_width(372.0)
+            .exact_width(384.0)
             .resizable(false)
             .frame(Frame::new().fill(BG).inner_margin(Margin::same(12)))
             .show(ctx, |ui| {
@@ -444,7 +462,7 @@ impl<B: Backend> GuiApp<B> {
         let Some(first) = acts.first() else { return };
         let o = self.b.overview();
         let mut open: Option<String> = None;
-        Frame::new().fill(alpha(CRIT, 0.10)).stroke(stroke(1.0, alpha(CRIT, 0.55))).corner_radius(CornerRadius::same(8)).inner_margin(Margin::symmetric(12, 8)).show(ui, |ui| {
+        card().fill(alpha(CRIT, 0.12)).line(alpha(CRIT, 0.7)).margin(Margin::symmetric(12, 8)).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 led(ui, CRIT);
@@ -517,17 +535,23 @@ impl<B: Backend> GuiApp<B> {
             // readiness
             vcard(ui, cw, 150.0, |ui| {
                 caption(ui, "Readiness index");
-                ui.horizontal(|ui| {
-                    let (rect, _) = ui.allocate_exact_size(vec2(108.0, 108.0), Sense::hover());
-                    let (label, col) = readiness(o.score);
-                    ring(ui.painter(), rect.center(), 46.0, 9.0, o.score.unwrap_or(0) as f32 / 100.0, col);
-                    ui.painter().text(rect.center() + vec2(0.0, -4.0), Align2::CENTER_CENTER, o.score.map(|s| s.to_string()).unwrap_or("-".into()), mono(30.0), TXT);
-                    ui.painter().text(rect.center() + vec2(0.0, 20.0), Align2::CENTER_CENTER, label.to_uppercase(), mono(9.0), col);
-                    ui.vertical(|ui| {
-                        ui.label(RichText::new("Relative to personal baseline").size(12.0).color(MUT));
-                        ui.label(RichText::new(format!("{} of {} indicators in range", self.inds.len() - self.issues().len(), self.inds.len())).size(12.5));
-                    });
-                });
+                ui.add_space(4.0);
+                let (label, col) = readiness(o.score);
+                let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 50.0), Sense::hover());
+                let p = ui.painter();
+                let score = o.score.map(|s| s.to_string()).unwrap_or("-".into());
+                let g = ui.fonts(|f| f.layout_no_wrap(score.clone(), mono(44.0), TXT));
+                p.text(row.left_center(), Align2::LEFT_CENTER, &score, mono(44.0), TXT);
+                let x = row.left() + g.size().x + 8.0;
+                p.text(pos2(x, row.center().y - 9.0), Align2::LEFT_CENTER, "/ 100", mono(11.0), MUT);
+                p.text(pos2(x, row.center().y + 9.0), Align2::LEFT_CENTER, label.to_uppercase(), mono(10.5), col);
+                let inr = format!("{} / {}", self.inds.len() - self.issues().len(), self.inds.len());
+                p.text(pos2(row.right(), row.center().y - 9.0), Align2::RIGHT_CENTER, inr, mono(14.0), TXT);
+                p.text(pos2(row.right(), row.center().y + 9.0), Align2::RIGHT_CENTER, "IN RANGE", mono(9.5), MUT);
+                let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::hover());
+                seg_bar(ui.painter(), Rect::from_min_size(bar.min, vec2(bar.width(), 9.0)), o.score.unwrap_or(0) as f32 / 100.0, 25, col);
+                scale_ticks(ui.painter(), Rect::from_min_size(bar.min + vec2(0.0, 12.0), vec2(bar.width(), 12.0)));
+                ui.label(RichText::new("Relative to personal baseline").size(11.0).color(MUT));
             });
             // daily tasks: plain list, no rings
             vcard(ui, cw, 150.0, |ui| {
@@ -574,14 +598,13 @@ impl<B: Backend> GuiApp<B> {
                     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
                     let p = ui.painter();
                     if resp.hovered() {
-                        p.rect_filled(rect, CornerRadius::same(6), SURFACE2);
+                        p.rect_filled(rect, CornerRadius::ZERO, SURFACE2);
                     }
                     p.text(rect.left_center() + vec2(8.0, 0.0), Align2::LEFT_CENTER, short_name(&s.name), FontId::proportional(12.5), TXT);
-                    let bar = Rect::from_min_size(pos2(rect.left() + 170.0, rect.center().y - 3.5), vec2(rect.width() - 170.0 - 52.0, 7.0));
-                    p.rect_filled(bar, CornerRadius::same(4), DEEP);
+                    let bar = Rect::from_min_size(pos2(rect.left() + 170.0, rect.center().y - 4.0), vec2(rect.width() - 170.0 - 52.0, 8.0));
                     let f = score.unwrap_or(0) as f32 / 100.0;
-                    p.rect_filled(Rect::from_min_size(bar.min, vec2(bar.width() * f, bar.height())), CornerRadius::same(4), status_color(st));
-                    p.text(rect.right_center() - vec2(8.0, 0.0), Align2::RIGHT_CENTER, score.map(|v| v.to_string()).unwrap_or("-".into()), FontId::proportional(13.0), status_color(st));
+                    seg_bar(p, bar, f, 20, status_color(st));
+                    p.text(rect.right_center() - vec2(8.0, 0.0), Align2::RIGHT_CENTER, score.map(|v| v.to_string()).unwrap_or("-".into()), mono(13.0), if st == Status::Normal { TXT } else { status_color(st) });
                     if resp.clicked() {
                         go = Some(Nav::System(s.id.clone()));
                     }
@@ -599,9 +622,9 @@ impl<B: Backend> GuiApp<B> {
                     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 58.0), Sense::click());
                     let p = ui.painter_at(rect);
                     if resp.hovered() {
-                        p.rect_filled(rect, CornerRadius::same(6), SURFACE2);
+                        p.rect_filled(rect, CornerRadius::ZERO, SURFACE2);
                     }
-                    p.rect_filled(Rect::from_min_size(rect.min + vec2(0.0, 6.0), vec2(3.0, 46.0)), CornerRadius::same(2), status_color(*st));
+                    p.rect_filled(Rect::from_min_size(rect.min + vec2(0.0, 6.0), vec2(3.0, 46.0)), CornerRadius::ZERO, status_color(*st));
                     p.text(rect.min + vec2(14.0, 14.0), Align2::LEFT_CENTER, format!("{}  {} {}", ind.name, fmt_num(*v), ind.unit), FontId::proportional(12.5), TXT);
                     p.text(rect.min + vec2(14.0, 31.0), Align2::LEFT_CENTER, &ev.advice.headline, FontId::proportional(11.0), status_color(*st));
                     if let Some(a) = ev.advice.actions.first() {
@@ -689,7 +712,7 @@ impl<B: Backend> GuiApp<B> {
             row(ui, "Why check:", &sys.why, MUT);
             if let Some(n) = env.notes.get(&sys.id) {
                 ui.add_space(4.0);
-                Frame::new().fill(alpha(ACCENT, 0.10)).stroke(stroke(1.0, alpha(ACCENT, 0.45))).corner_radius(CornerRadius::same(6)).inner_margin(Margin::same(9)).show(ui, |ui| {
+                card().fill(alpha(ACCENT, 0.10)).line(alpha(ACCENT, 0.45)).margin(Margin::same(9)).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.label(RichText::new(format!("{}: {}", env.name, n)).size(12.0));
                 });
@@ -703,7 +726,13 @@ impl<B: Backend> GuiApp<B> {
     }
 
     fn metric_view(&mut self, ui: &mut Ui, id: &str) {
-        let Some(ind) = self.ind(id) else { return };
+        let Some(ind) = self.ind(id) else {
+            ui.label(RichText::new(format!("Unknown indicator '{}'.", id)).color(CRIT));
+            if ui.button("Back to overview").clicked() {
+                self.nav = Nav::Overview;
+            }
+            return;
+        };
         let hist = self.b.history(id);
         let th = self.b.thresholds(id);
         let day = self.b.overview().mission_day;
@@ -839,7 +868,7 @@ impl<B: Backend> GuiApp<B> {
                 });
             });
             let rr = r.response.rect;
-            ui.painter().rect_filled(Rect::from_min_size(rr.min, vec2(3.0, rr.height())), CornerRadius::same(1), col);
+            ui.painter().rect_filled(Rect::from_min_size(rr.min, vec2(3.0, rr.height())), CornerRadius::ZERO, col);
         });
         ui.add_space(8.0);
         card().show(ui, |ui| {
@@ -877,7 +906,7 @@ impl<B: Backend> GuiApp<B> {
         ui.horizontal(|ui| {
             pill(ui, if o.autonomous { "Autonomous: onboard protocol is primary" } else { "Ground-assisted" }, if o.autonomous { WARN } else { OK });
             pill(ui, if o.link_up { "Link up" } else { "Link down" }, if o.link_up { OK } else { CRIT });
-            pill(ui, &format!("RTT {}", rtt_text(o.rtt_s)), ACCENT);
+            tag(ui, &format!("RTT {}", rtt_text(o.rtt_s)), ACCENT);
         });
         ui.add_space(4.0);
         ui.label(RichText::new(format!("Comms at this location: {}. Urgent data goes first; nothing is lost during a blackout or a restart.", env.comms)).size(12.0).color(MUT));
@@ -885,7 +914,7 @@ impl<B: Backend> GuiApp<B> {
         ui.horizontal(|ui| {
             for (n, v, c) in [("Queued", s.queued, WARN), ("In flight", s.in_flight, ACCENT), ("Delivered", s.acked, OK)] {
                 vcard(ui, 140.0, 0.0, |ui| {
-                    ui.label(RichText::new(v.to_string()).size(26.0).strong().color(c));
+                    ui.label(RichText::new(v.to_string()).font(mono(28.0)).color(c));
                     caption(ui, n);
                 });
             }
@@ -900,8 +929,8 @@ impl<B: Backend> GuiApp<B> {
                 Priority::Routine => (OK, "routine"),
             };
             let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
-            ui.painter().rect_filled(rect, CornerRadius::same(6), SURFACE);
-            ui.painter().rect_stroke(rect, CornerRadius::same(6), stroke(1.0, LINE), egui::StrokeKind::Inside);
+            ui.painter().rect_filled(rect, CornerRadius::ZERO, SURFACE);
+            ui.painter().rect_stroke(rect, CornerRadius::ZERO, stroke(1.0, LINE), egui::StrokeKind::Inside);
             ui.painter().text(pos2(rect.left() + 12.0, rect.center().y), Align2::LEFT_CENTER, pt.to_uppercase(), FontId::proportional(10.5), pc);
             ui.painter().text(pos2(rect.left() + 92.0, rect.center().y), Align2::LEFT_CENTER, &r.label, FontId::proportional(12.5), TXT);
             let (sw, sc) = match r.state {
@@ -932,7 +961,7 @@ impl<B: Backend> GuiApp<B> {
         let h = self.b.health();
         let ok = h.checks.iter().filter(|c| c.ok).count();
         ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("Self-test {}/{}", ok, h.checks.len())).size(22.0).strong().color(if ok == h.checks.len() { OK } else { CRIT }));
+            ui.label(RichText::new(format!("Self-test {}/{}", ok, h.checks.len())).font(display(22.0)).color(if ok == h.checks.len() { TXT } else { CRIT }));
             ui.label(RichText::new(format!("platform {}", h.platform)).size(12.0).color(MUT));
         });
         ui.add_space(6.0);
@@ -960,7 +989,7 @@ impl<B: Backend> GuiApp<B> {
         ui.add_space(8.0);
         caption(ui, "Event log");
         ui.add_space(4.0);
-        Frame::new().fill(DEEP).stroke(stroke(1.0, LINE)).corner_radius(CornerRadius::same(8)).inner_margin(Margin::same(10)).show(ui, |ui| {
+        card().fill(DEEP).margin(Margin::same(10)).show(ui, |ui| {
             ui.set_width(ui.available_width());
             for e in h.events.iter().take(14) {
                 ui.label(RichText::new(e).monospace().size(11.0).color(MUT));
@@ -1044,7 +1073,7 @@ impl<B: Backend> GuiApp<B> {
                 Pvt::Done { mean } => (format!("Average {} ms", mean.round()), Color32::from_rgb(0x1b, 0x2a, 0x5e)),
             };
             let (rect, resp) = ui.allocate_exact_size(vec2(480.0, 170.0), Sense::click());
-            ui.painter().rect_filled(rect, CornerRadius::same(10), bg);
+            ui.painter().rect_filled(rect, CornerRadius::ZERO, bg);
             ui.painter().text(rect.center(), Align2::CENTER_CENTER, txt, FontId::proportional(if matches!(self.pvt, Pvt::Go { .. }) { 34.0 } else { 18.0 }), Color32::WHITE);
             if resp.clicked() {
                 clicked = true;
@@ -1176,6 +1205,9 @@ fn main() -> eframe::Result {
             "--checkin" => o.checkin = true,
             "--pvt" => o.pvt = true,
             "--storm" => o.storm = true,
+            "--db" => o.db = a.next(),
+            "--demo" => o.demo = true,
+            "--no-seed" => o.no_seed = true,
             "--size" => {
                 if let Some(s) = a.next() {
                     let p: Vec<f32> = s.split('x').filter_map(|v| v.parse().ok()).collect();
@@ -1193,7 +1225,7 @@ fn main() -> eframe::Result {
                 }
             }
             "--help" | "-h" => {
-                println!("astrocheck-gui [--lite] [--role crew|ground] [--pos X,Y] [--env iss|orion|moon|mars|transit] [--size WxH]\n  visual checks: --screenshot FILE.png --tab main|comms|system --system ID --metric ID --crew ID --mode organs|skeleton|xray --blackout --storm --checkin --pvt");
+                println!("astrocheck-gui [--lite] [--role crew|ground] [--pos X,Y] [--env iss|orion|moon|mars|transit] [--size WxH]\n  visual checks: --screenshot FILE.png --tab main|comms|system --system ID --metric ID --crew ID --mode organs|skeleton|xray --blackout --storm --checkin --pvt\n  data: --db FILE (default: ASTROCHECK_DB or the user data directory) --no-seed (empty database) --demo (in-memory demo, nothing stored)");
                 return Ok(());
             }
             _ => {}
@@ -1211,7 +1243,19 @@ fn main() -> eframe::Result {
         options,
         Box::new(move |cc| {
             theme::apply(&cc.egui_ctx);
-            // Swap DemoBackend for the real backend: anything that implements ui_model::Backend.
+            if !o.demo {
+                let path = o.db.clone().map(std::path::PathBuf::from).unwrap_or_else(ui_backend::default_db_path);
+                let mut opts = ui_backend::Options::new(path);
+                opts.seed = !o.no_seed;
+                match ui_backend::SqliteBackend::open(opts) {
+                    Ok(b) => return Ok(Box::new(GuiApp::new(b, o))),
+                    Err(e) => {
+                        let mut app = GuiApp::new(DemoBackend::new(), o);
+                        app.say(format!("Database unavailable ({e}); demo data, nothing is stored"));
+                        return Ok(Box::new(app));
+                    }
+                }
+            }
             Ok(Box::new(GuiApp::new(DemoBackend::new(), o)))
         }),
     )

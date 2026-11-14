@@ -8,12 +8,12 @@ fn tree_row(ui: &mut Ui, indent: f32, label: &str, right: &str, dot: Color32, se
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
     let p = ui.painter_at(rect);
     if selected {
-        p.rect_filled(rect, CornerRadius::same(5), alpha(ACCENT, 0.16));
+        p.rect_filled(rect, CornerRadius::ZERO, alpha(ACCENT, 0.22));
     } else if resp.hovered() {
-        p.rect_filled(rect, CornerRadius::same(5), SURFACE2);
+        p.rect_filled(rect, CornerRadius::ZERO, SURFACE2);
     }
     if mark {
-        p.rect_filled(Rect::from_min_size(rect.min + vec2(0.0, 4.0), vec2(2.0, 16.0)), CornerRadius::same(1), ACCENT);
+        p.rect_filled(Rect::from_min_size(rect.min + vec2(0.0, 4.0), vec2(2.0, 16.0)), CornerRadius::ZERO, ACCENT);
     }
     let mut x = rect.left() + 6.0 + indent;
     if let Some(open) = chev {
@@ -22,7 +22,7 @@ fn tree_row(ui: &mut Ui, indent: f32, label: &str, right: &str, dot: Color32, se
         p.add(egui::Shape::convex_polygon(pts, MUT, Stroke::NONE));
     }
     x += 14.0;
-    p.circle_filled(pos2(x + 3.0, rect.center().y), 3.0, dot);
+    p.rect_filled(Rect::from_center_size(pos2(x + 3.0, rect.center().y), vec2(6.0, 6.0)), CornerRadius::ZERO, dot);
     let font = if strong { display(13.0) } else { FontId::proportional(12.5) };
     p.text(pos2(x + 14.0, rect.center().y), Align2::LEFT_CENTER, label, font, TXT);
     p.text(pos2(rect.right() - 6.0, rect.center().y), Align2::RIGHT_CENTER, right, mono(11.5), MUT);
@@ -190,12 +190,14 @@ impl<B: Backend> GuiApp<B> {
                 let (rect, resp) = ui.allocate_exact_size(vec2(w, 50.0), Sense::click());
                 let p = ui.painter_at(rect);
                 let selected = c.id == sel;
-                p.rect_filled(rect, CornerRadius::same(8), if resp.hovered() { SURFACE2 } else { SURFACE });
-                p.rect_stroke(rect, CornerRadius::same(8), stroke(if selected { 1.5 } else { 1.0 }, if selected { ACCENT } else { LINE }), egui::StrokeKind::Inside);
+                p.add(panel_shape(rect, CUT, if resp.hovered() { SURFACE2 } else { SURFACE }, stroke(1.0, if selected { ACCENT } else { LINE })));
+                if selected {
+                    p.rect_filled(Rect::from_min_size(rect.left_bottom() + vec2(1.0, -3.0), vec2(rect.width() - 2.0, 2.0)), CornerRadius::ZERO, ACCENT);
+                }
                 let col = status_color(c.status);
-                p.circle_filled(pos2(rect.left() + 14.0, rect.top() + 17.0), 4.0, col);
+                p.rect_filled(Rect::from_center_size(pos2(rect.left() + 14.0, rect.top() + 17.0), vec2(7.0, 7.0)), CornerRadius::ZERO, col);
                 p.text(rect.min + vec2(26.0, 17.0), Align2::LEFT_CENTER, &c.name, display(13.0), TXT);
-                let stale = c.last_contact_s > 3600;
+                let stale = !o.link_up || c.last_contact_s > 3600;
                 let sub = if stale { format!("STALE {}", age_text(c.last_contact_s)) } else if c.open_alerts == 0 { "no open findings".to_string() } else { format!("{} open", c.open_alerts) };
                 p.text(rect.min + vec2(26.0, 35.0), Align2::LEFT_CENTER, sub, FontId::proportional(10.5), if stale { WARN } else if c.open_alerts > 0 { col } else { MUT });
                 p.text(pos2(rect.right() - 12.0, rect.center().y), Align2::RIGHT_CENTER, c.score.map(|s| s.to_string()).unwrap_or("-".into()), mono(18.0), TXT);
@@ -275,6 +277,8 @@ impl<B: Backend> GuiApp<B> {
         let events = self.b.events(60);
         let mut ack: Option<u64> = None;
         let mut open: Option<String> = None;
+        // severity, source, value, day and the button take about 460 px; the rest belongs to the event text
+        let text_w = (ui.available_width() - 520.0).clamp(220.0, 900.0);
         card().show(ui, |ui| {
             ui.set_width(ui.available_width());
             if events.is_empty() {
@@ -296,7 +300,9 @@ impl<B: Backend> GuiApp<B> {
                     if src.clicked() {
                         open = e.indicator.clone();
                     }
-                    ui.add(egui::Label::new(RichText::new(&e.text).size(11.5).color(MUT)).truncate());
+                    ui.allocate_ui_with_layout(vec2(text_w, 16.0), Layout::left_to_right(Align::Center), |ui| {
+                        ui.add(egui::Label::new(RichText::new(&e.text).size(11.5).color(MUT)).truncate());
+                    });
                     ui.label(RichText::new(e.value.clone().unwrap_or_default()).font(mono(11.5)));
                     ui.label(RichText::new(e.day.to_string()).font(mono(11.5)).color(MUT));
                     match (e.kind, e.alert_id) {

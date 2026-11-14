@@ -6,7 +6,7 @@ mod braille;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     prelude::*,
-    widgets::{Block, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState, Wrap},
+    widgets::{Block, Cell, HighlightSpacing, List, ListItem, ListState, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState, Wrap},
 };
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
@@ -193,10 +193,14 @@ impl<B: Backend> App<B> {
     /// Flattened object tree: crew > body systems > indicators (only the selected crew member is expanded).
     fn tree_rows(&self) -> Vec<TRow> {
         let sel = self.b.selected_crew();
+        let link_up = self.b.overview().link_up;
         let mut v = vec![];
         for c in self.b.crew() {
             let selected = c.id == sel;
-            v.push(TRow { node: Node::Crew(c.id.clone()), indent: 0, label: c.name.clone(), right: c.score.map(|s| s.to_string()).unwrap_or("-".into()), st: c.status, open: Some(selected), watched: false });
+            let score = c.score.map(|s| s.to_string()).unwrap_or("-".into());
+            // without a link every crew member's data is stale right away
+            let right = if !link_up || c.last_contact_s > 3600 { format!("STALE {}", score) } else { score };
+            v.push(TRow { node: Node::Crew(c.id.clone()), indent: 0, label: c.name.clone(), right, st: c.status, open: Some(selected), watched: false });
             if !selected {
                 continue;
             }
@@ -614,7 +618,7 @@ impl<B: Backend> App<B> {
 
     fn object_tree(&self, f: &mut Frame, a: Rect) {
         let rows = self.tree_rows();
-        let w = a.width.saturating_sub(4) as usize;
+        let w = a.width.saturating_sub(6) as usize;
         let items: Vec<ListItem> = rows
             .iter()
             .map(|r| {
@@ -636,10 +640,13 @@ impl<B: Backend> App<B> {
             })
             .collect();
         let list = List::new(items)
-            .block(Block::bordered().title(" OBJECTS ").border_style(self.focus_style(Pane::Systems)))
-            .highlight_style(Style::new().add_modifier(Modifier::REVERSED));
-        let cur = if self.pane == Pane::Systems { Some(self.tree_cur.min(rows.len().saturating_sub(1))) } else { None };
-        f.render_stateful_widget(list, a, &mut ListState::default().with_selected(cur));
+            .block(Block::bordered().title(format!(" OBJECTS  {}/{} ", self.tree_cur.min(rows.len().saturating_sub(1)) + 1, rows.len())).border_style(self.focus_style(Pane::Systems)))
+            .highlight_style(self.cursor_style(Pane::Systems))
+            .highlight_symbol(self.cursor_mark(Pane::Systems))
+            .highlight_spacing(HighlightSpacing::Always);
+        let cur = self.tree_cur.min(rows.len().saturating_sub(1));
+        f.render_stateful_widget(list, a, &mut ListState::default().with_selected(Some(cur)));
+        self.scroll(f, a, rows.len(), cur, 0);
     }
 
     /// Stacked telemetry: one header line and one trend line per watched channel, limit status per sample.
@@ -712,13 +719,36 @@ impl<B: Backend> App<B> {
         let empty = events.is_empty();
         let table = Table::new(rows, [Constraint::Length(11), Constraint::Length(24), Constraint::Min(20), Constraint::Length(11), Constraint::Length(7), Constraint::Length(5)])
             .header(Row::new(vec!["SEVERITY", "SOURCE", "EVENT", "VALUE", "DAY", ""]).style(Style::new().fg(Color::DarkGray).bold()))
-            .block(Block::bordered().title(" EVENT LOG   a = acknowledge   m = message crew ").border_style(self.focus_style(Pane::Indicators)))
-            .row_highlight_style(if self.pane == Pane::Indicators { Style::new().add_modifier(Modifier::REVERSED) } else { Style::new() });
-        f.render_stateful_widget(table, a, &mut TableState::default().with_selected(if empty { None } else { Some(self.alert_idx.min(events.len() - 1)) }));
+            .block(Block::bordered().title(" EVENT LOG   Tab = focus   a = acknowledge   m = message crew ").border_style(self.focus_style(Pane::Indicators)))
+            .row_highlight_style(self.cursor_style(Pane::Indicators))
+            .highlight_symbol(self.cursor_mark(Pane::Indicators))
+            .highlight_spacing(HighlightSpacing::Always);
+        let cur = if empty { 0 } else { self.alert_idx.min(events.len() - 1) };
+        f.render_stateful_widget(table, a, &mut TableState::default().with_selected(if empty { None } else { Some(cur) }));
+        self.scroll(f, a, events.len(), cur, 1);
     }
 
     fn focus_style(&self, p: Pane) -> Style {
-        if self.pane == p { Style::new().fg(Color::Cyan) } else { Style::new().fg(Color::DarkGray) }
+        if self.pane == p { Style::new().fg(Color::Cyan).bold() } else { Style::new().fg(Color::DarkGray) }
+    }
+
+    /// The cursor row: a marker in the margin and a grey bar across the row (status colours stay readable).
+    /// It is drawn in every pane, brighter in the pane that has the keyboard focus.
+    fn cursor_style(&self, p: Pane) -> Style {
+        if self.pane == p { Style::new().bg(Color::DarkGray).add_modifier(Modifier::BOLD) } else { Style::new().add_modifier(Modifier::UNDERLINED) }
+    }
+    fn cursor_mark(&self, p: Pane) -> &'static str {
+        if self.pane == p { "\u{25B6} " } else { "\u{2022} " }
+    }
+
+    /// Scroll bar on the right border, only when the content does not fit.
+    fn scroll(&self, f: &mut Frame, a: Rect, total: usize, pos: usize, header: u16) {
+        let visible = a.height.saturating_sub(2 + header) as usize;
+        if total > visible && a.height > 4 {
+            let area = Rect { x: a.x, y: a.y + 1 + header, width: a.width, height: a.height - 2 - header };
+            let mut st = ScrollbarState::new(total.saturating_sub(visible)).position(pos.saturating_sub(visible / 2).min(total.saturating_sub(visible)));
+            f.render_stateful_widget(Scrollbar::new(ScrollbarOrientation::VerticalRight).begin_symbol(None).end_symbol(None).thumb_symbol("\u{2588}").track_symbol(Some("\u{2502}")), area, &mut st);
+        }
     }
 
     fn figure(&self, f: &mut Frame, a: Rect, selected: &str) {
@@ -776,7 +806,7 @@ impl<B: Backend> App<B> {
     }
 
     fn sys_list(&self, f: &mut Frame, a: Rect) {
-        let w = a.width.saturating_sub(4) as usize;
+        let w = a.width.saturating_sub(6) as usize;
         let items: Vec<ListItem> = self
             .systems
             .iter()
@@ -790,8 +820,12 @@ impl<B: Backend> App<B> {
                 ]))
             })
             .collect();
-        let list = List::new(items).block(Block::bordered().title(" SYSTEMS ").border_style(self.focus_style(Pane::Systems))).highlight_style(Style::new().add_modifier(Modifier::REVERSED));
+        let list = List::new(items).block(Block::bordered().title(" SYSTEMS ").border_style(self.focus_style(Pane::Systems)))
+            .highlight_style(self.cursor_style(Pane::Systems))
+            .highlight_symbol(self.cursor_mark(Pane::Systems))
+            .highlight_spacing(HighlightSpacing::Always);
         f.render_stateful_widget(list, a, &mut ListState::default().with_selected(Some(self.sys)));
+        self.scroll(f, a, self.systems.len(), self.sys, 0);
     }
 
     fn ind_table(&self, f: &mut Frame, a: Rect, inds: &[IndicatorInfo]) {
@@ -818,8 +852,11 @@ impl<B: Backend> App<B> {
         let table = Table::new(rows, widths)
             .header(Row::new(head).style(Style::new().fg(Color::DarkGray).bold()))
             .block(Block::bordered().title(" INDICATORS  (* = due) ").border_style(self.focus_style(Pane::Indicators)))
-            .row_highlight_style(if self.pane == Pane::Indicators { Style::new().add_modifier(Modifier::REVERSED) } else { Style::new() });
+            .row_highlight_style(self.cursor_style(Pane::Indicators))
+            .highlight_symbol(self.cursor_mark(Pane::Indicators))
+            .highlight_spacing(HighlightSpacing::Always);
         f.render_stateful_widget(table, a, &mut TableState::default().with_selected(Some(self.ind)));
+        self.scroll(f, a, inds.len(), self.ind, 1);
     }
 
     fn detail(&self, f: &mut Frame, a: Rect, inds: &[IndicatorInfo]) {
