@@ -15,7 +15,7 @@ export default function App() {
     async function poll() {
       try {
         const [rows, result] = await Promise.all([getHistory(), getAssessment()])
-        if (active) { setHistory(rows); setAssessment(result); setConnected(true) }
+        if (active) { setHistory(rows.items); setAssessment(result); setConnected(true) }
       } catch { if (active) setConnected(false) }
       finally { if (active) timer = setTimeout(poll, 2000) }
     }

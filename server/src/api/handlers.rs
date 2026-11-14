@@ -1,7 +1,8 @@
 use super::{
     dto::{
-        AssessmentResponse, HealthResponse, MeasurementResponse, NewMeasurementRequest,
-        TaskResponse, TaskUpdateRequest,
+        AssessmentResponse, HealthResponse, HistoryQuery, LatestMeasurementsResponse,
+        MeasurementPageResponse, MeasurementResponse, NewMeasurementRequest, TaskResponse,
+        TaskUpdateRequest,
     },
     error::{ApiError, ApiResult},
     extractors::{ApiJson, ApiPath, ApiQuery},
@@ -21,15 +22,20 @@ pub(crate) async fn health(State(pool): State<SqlitePool>) -> ApiResult<Json<Hea
 }
 pub(crate) async fn history(
     State(pool): State<SqlitePool>,
-    ApiQuery(_): ApiQuery<HashMap<String, String>>,
-) -> ApiResult<Json<Vec<MeasurementResponse>>> {
+    ApiQuery(query): ApiQuery<HistoryQuery>,
+) -> ApiResult<Json<MeasurementPageResponse>> {
+    let filter = domain::measurements::HistoryFilter::try_from(query)?;
     Ok(Json(
-        storage::measurements::history(&pool)
-            .await?
-            .into_iter()
-            .map(Into::into)
-            .collect(),
+        storage::measurements::history(&pool, &filter).await?.into(),
     ))
+}
+pub(crate) async fn latest(
+    State(pool): State<SqlitePool>,
+) -> ApiResult<Json<LatestMeasurementsResponse>> {
+    let metrics = storage::measurements::latest_per_metric(&pool, "demo-astronaut").await?;
+    Ok(Json(LatestMeasurementsResponse {
+        metrics: metrics.into_iter().map(Into::into).collect(),
+    }))
 }
 pub(crate) async fn ingest(
     State(pool): State<SqlitePool>,

@@ -1,9 +1,10 @@
-# Backend после BE-03
+# Backend после BE-04
 
 BE-01 разделяет сервер и фиксирует контракт. BE-02 добавляет сравнимое время UTC,
 явное происхождение времени истории и схему ежедневных задач с переносом данных.
 BE-03 нормализует время при сравнении повторов и делает сохранение измерения транзакционным.
-Публичные фильтры истории и задачи по датам остаются следующими задачами [плана](backend-plan.md).
+BE-04 добавляет фильтрованную историю и независимые последние значения по метрикам.
+Series и задачи по датам остаются в [плане](backend-plan.md).
 
 ## Границы модулей
 
@@ -19,7 +20,7 @@ api/   DTO, handlers, extractors, Problem Details
 storage/  SQL-запросы и преобразование SQLite rows
        │
        ▼
-SQLite (исходная 0001 + новая миграция 0002)
+SQLite (миграции 0001–0003)
 ```
 
 | Область | Обязанность | Владелец |
@@ -45,7 +46,8 @@ api преобразует wire DTO и решает, какой HTTP-ответ 
 |---|---|---|
 | storage::check_connection | `&SqlitePool` | `()` |
 | storage::measurements::device | `&SqlitePool`, `device_id: &str` | `Option<Device>` |
-| storage::measurements::history | `&SqlitePool` | `Vec<Measurement>` |
+| storage::measurements::history | `&SqlitePool`, `&HistoryFilter {astronaut_id, metric, from_ms, to_ms, limit}` | `MeasurementPage {items: Vec<Measurement>, has_more}` |
+| storage::measurements::latest_per_metric | `&SqlitePool`, `astronaut_id: &str` | `Vec<LatestMetric {metric, unit, latest_known_measurement, latest_unknown_time_measurement}>` (всегда шесть) |
 | storage::measurements::latest_received | `&SqlitePool` | `Option<Measurement>` |
 | storage::measurements::insert_or_get | `&SqlitePool`, `&NewMeasurement`, `&Device`, `received_at: &str` | `InsertOutcome {measurement, created}` |
 | storage::tasks::list | `&SqlitePool` | `Vec<Task>` |
@@ -71,7 +73,8 @@ api преобразует wire DTO и решает, какой HTTP-ответ 
 - Один Rust-процесс, одна SQLite-база, существующие маршруты.
 - Привязка устройства, источника и астронавта определяется сервером.
 - POST новой записи — 201, повтор — 200, конфликт — 409.
-- История — массив до 500 записей без публичных фильтров.
+- История — envelope items/hasMore, фильтры metric/from/to/limit, по умолчанию 100, максимум 500.
+- Latest — шесть метрик, известное время и последняя неизвестная запись раздельно; без оценки свежести.
 - Текущая оценка свежести — по одной последней принятой записи, с порогом 15 секунд для известного времени.
 - Публичный API задач пока недатированный; повтор true обновляет completedAt.
 - Исходная миграция не переписывается.
@@ -167,9 +170,27 @@ offset. Дата миссии — календарно корректная `YYY
 Это сохраняет согласованность хранения до BE-07, но не делает текущий API
 интерфейсом выбора дня миссии.
 
+### Запросы BE-04
+
+`HistoryFilter` живёт в domain без Axum/SQLx. API переводит RFC3339 в миллисекунды UTC.
+Storage собирает только заданные условия через bind-параметры, выбирает `limit + 1`
+и вычисляет `has_more`. Обе выборки ограничены `demo-astronaut` в API.
+Latest одним SQL-запросом выбирает последнее известное измерение и последнюю принятую
+запись каждой метрики; последняя попадает в ответ только при неизвестном времени.
+Tie-breaker — `id DESC`. `latest_received` для assessments не изменён.
+
+Миграция `0003_measurement_latest_indexes.sql` добавляет индексы:
+
+- `measurements_metric_known_time(astronaut_id, metric, measured_at_ms DESC, id DESC)`
+  с условием `measured_at IS NOT NULL`;
+- `measurements_metric_received_time(astronaut_id, metric, received_at_ms DESC, id DESC)`;
+- `measurements_astronaut_display_time(astronaut_id, COALESCE(measured_at_ms, received_at_ms) DESC, id DESC)`.
+
+История с metric использует существующий `measurements_metric_time` из 0002.
+
 ## Точки последующего расширения
 
-- **BE-04/05:** независимые последние значения, фильтры, пагинация и series.
+- **BE-05:** series и агрегация для графиков.
 - **BE-06:** свежесть каждой метрики, единая модель качества, clockSkew.
 - **BE-07:** публичная дата миссии UTC, выбор ежедневного выполнения, идемпотентный PATCH.
 - **BE-08:** объяснимые демонстрационные правила.

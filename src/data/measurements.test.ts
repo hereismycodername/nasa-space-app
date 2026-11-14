@@ -10,9 +10,9 @@ const input: NewMeasurement = {
 afterEach(() => vi.unstubAllGlobals())
 
 it('reads history from the relative server API', async () => {
-  const fetchMock = vi.fn().mockResolvedValue(new Response('[]', { status: 200 }))
+  const fetchMock = vi.fn().mockResolvedValue(new Response('{"items":[],"hasMore":false}', { status: 200 }))
   vi.stubGlobal('fetch', fetchMock)
-  expect(await getHistory()).toEqual([])
+  expect(await getHistory()).toEqual({ items: [], hasMore: false })
   expect(fetchMock.mock.calls[0][0]).toBe('/api/measurements')
 })
 

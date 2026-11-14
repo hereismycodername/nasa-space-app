@@ -1,5 +1,34 @@
 use chrono::{DateTime, Utc};
 
+pub(crate) const METRICS: [(&str, &str); 6] = [
+    ("heartRate", "bpm"),
+    ("systolicPressure", "mmHg"),
+    ("diastolicPressure", "mmHg"),
+    ("temperature", "°C"),
+    ("sleepHours", "h"),
+    ("mood", "score"),
+];
+
+pub(crate) struct HistoryFilter {
+    pub astronaut_id: String,
+    pub metric: Option<String>,
+    pub from_ms: Option<i64>,
+    pub to_ms: Option<i64>,
+    pub limit: usize,
+}
+
+pub(crate) struct MeasurementPage {
+    pub items: Vec<Measurement>,
+    pub has_more: bool,
+}
+
+pub(crate) struct LatestMetric {
+    pub metric: &'static str,
+    pub unit: &'static str,
+    pub latest_known_measurement: Option<Measurement>,
+    pub latest_unknown_time_measurement: Option<Measurement>,
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("{message}")]
 pub(crate) struct ValidationError {

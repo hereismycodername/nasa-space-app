@@ -1,5 +1,7 @@
-use crate::domain::measurements::{Device, Measurement, NewMeasurement};
-use sqlx::{sqlite::SqliteRow, Row, SqlitePool};
+use crate::domain::measurements::{
+    Device, HistoryFilter, LatestMetric, Measurement, MeasurementPage, NewMeasurement, METRICS,
+};
+use sqlx::{sqlite::SqliteRow, QueryBuilder, Row, Sqlite, SqlitePool};
 use uuid::Uuid;
 
 fn decode(row: SqliteRow) -> Result<Measurement, sqlx::Error> {
@@ -19,13 +21,84 @@ fn decode(row: SqliteRow) -> Result<Measurement, sqlx::Error> {
 }
 
 /// Order the display timeline by measurement time, or explicitly unknown-time receipt.
-pub(crate) async fn history(pool: &SqlitePool) -> Result<Vec<Measurement>, sqlx::Error> {
-    sqlx::query("SELECT * FROM measurements ORDER BY COALESCE(measured_at_ms, received_at_ms) DESC, id DESC LIMIT 500")
+pub(crate) async fn history(
+    pool: &SqlitePool,
+    filter: &HistoryFilter,
+) -> Result<MeasurementPage, sqlx::Error> {
+    let mut query = QueryBuilder::<Sqlite>::new("SELECT * FROM measurements WHERE astronaut_id = ");
+    query.push_bind(&filter.astronaut_id);
+    if let Some(metric) = &filter.metric {
+        query.push(" AND metric = ").push_bind(metric);
+    }
+    if let Some(from) = filter.from_ms {
+        query
+            .push(" AND COALESCE(measured_at_ms, received_at_ms) >= ")
+            .push_bind(from);
+    }
+    if let Some(to) = filter.to_ms {
+        query
+            .push(" AND COALESCE(measured_at_ms, received_at_ms) < ")
+            .push_bind(to);
+    }
+    query
+        .push(" ORDER BY COALESCE(measured_at_ms, received_at_ms) DESC, id DESC LIMIT ")
+        .push_bind((filter.limit + 1) as i64);
+    let mut items = query
+        .build()
         .fetch_all(pool)
         .await?
         .into_iter()
         .map(decode)
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    let has_more = items.len() > filter.limit;
+    items.truncate(filter.limit);
+    Ok(MeasurementPage { items, has_more })
+}
+
+/// Each scalar lookup uses its metric/time index; one statement gives a consistent snapshot.
+pub(crate) async fn latest_per_metric(
+    pool: &SqlitePool,
+    astronaut_id: &str,
+) -> Result<Vec<LatestMetric>, sqlx::Error> {
+    let rows = sqlx::query(
+        "WITH metrics(metric) AS (VALUES ('heartRate'), ('systolicPressure'),
+            ('diastolicPressure'), ('temperature'), ('sleepHours'), ('mood'))
+        SELECT m.* FROM metrics JOIN measurements m ON m.id = (
+            SELECT id FROM measurements WHERE astronaut_id = ?1 AND metric = metrics.metric
+                AND measured_at IS NOT NULL ORDER BY measured_at_ms DESC, id DESC LIMIT 1
+        )
+        UNION ALL
+        SELECT m.* FROM metrics JOIN measurements m ON m.id = (
+            SELECT id FROM measurements WHERE astronaut_id = ?1 AND metric = metrics.metric
+                ORDER BY received_at_ms DESC, id DESC LIMIT 1
+        ) WHERE m.measured_at IS NULL",
+    )
+    .bind(astronaut_id)
+    .fetch_all(pool)
+    .await?;
+    let mut metrics: Vec<_> = METRICS
+        .into_iter()
+        .map(|(metric, unit)| LatestMetric {
+            metric,
+            unit,
+            latest_known_measurement: None,
+            latest_unknown_time_measurement: None,
+        })
+        .collect();
+    for row in rows {
+        let measurement = decode(row)?;
+        if let Some(metric) = metrics
+            .iter_mut()
+            .find(|metric| metric.metric == measurement.metric)
+        {
+            if measurement.measured_at.is_some() {
+                metric.latest_known_measurement = Some(measurement);
+            } else {
+                metric.latest_unknown_time_measurement = Some(measurement);
+            }
+        }
+    }
+    Ok(metrics)
 }
 
 pub(crate) async fn latest_received(pool: &SqlitePool) -> Result<Option<Measurement>, sqlx::Error> {

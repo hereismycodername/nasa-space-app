@@ -17,6 +17,24 @@ export interface Measurement extends Omit<NewMeasurement, 'measuredAt'> {
   timeBasis: 'measuredAt' | 'receivedAt'
   source: 'manual' | 'simulator' | 'sensor'
 }
+export interface MeasurementPage {
+  items: Measurement[]
+  hasMore: boolean
+}
+export interface HistoryParams {
+  metric?: Metric
+  from?: string
+  to?: string
+  limit?: number
+}
+export interface LatestMeasurementsResponse {
+  metrics: {
+    metric: Metric
+    unit: Unit
+    latestKnownMeasurement: Measurement | null
+    latestUnknownTimeMeasurement: Measurement | null
+  }[]
+}
 export interface HealthAssessment {
   status: 'no-data' | 'stale' | 'not-evaluated' | 'unknown-time'
   explanation: string
