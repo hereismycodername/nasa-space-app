@@ -1,0 +1,41 @@
+﻿ ASTROCHECK  GROUND  Day 15 | Score 81 | LINK OK  RTT 1 s | Space station | Cdr. Reyes
+┌ BODY ────────────────────────┐┌ ALERT TRIAGE   a = acknowledge   m = message crew ─────────────────────────┐
+│             ⢀⣀⣀⡀             ││SEVERITY   FINDING                              VALUE        SINCE    STATE │
+│            ⢠⣿⣿⣿⣿⡄            ││● WATCH    Headache intensity                   5 /10        day 14   open  │
+│            ⠈⠿⣟⣻⠿⠁            ││● WATCH    Sleep last night                     6.5 h        day 14   open  │
+│            ⠈⢻⣷⣾⡟⠁            ││● WATCH    Hydration (urine colour)             4 /8         day 14   open  │
+│              ⢰⡆              ││● WATCH    Exercise today                       70 min       day 14   open  │
+│         ⢀⣠⠤⠶⣶⢺⡗⣶⠶⠤⣄⡀         │└────────────────────────────────────────────────────────────────────────────┘
+│        ⡔⣿⢀⢀⣴⣿⣾⣷⣿⣦⡀⡀⣿⢢        │┌ CLINICAL SUMMARY - Cdr. Reyes ─────────────────────────────────────────────┐
+│        ⢠⡇⠈⢸⣿⣿⣇⣿⣿⣿⡇⠁⢸⡄        ││INDICATOR              LATEST       BASELINE  DELTA   STATUS   14-DAY       │
+│        ⣸⠃ ⣿⣿⣿⣿⣿⣿⣿⣿ ⠘⣇        ││Headache intensity     5 /10        2.57      +2.43   WATCH    ▃▅▁▅▃▅▆▅▃▅▅▁█│
+│       ⢸⡿⡜ ⣿⣿⣿⣿⣿⣿⣿⣿ ⢣⢿⡇       ││Reaction time (PVT)    325 ms       307.5     +17.5   NORMAL   ▁▁██         │
+│       ⢸⡇⡇ ⠹⣿⣿⡿⣿⣿⣿⠏ ⢸⢸⡇       ││Sleep last night       6.5 h        6.84      -0.34   WATCH    ▆▃▅▂█▃▆▆▁▃▂▁▃│
+│       ⣿⡆  ⣠⣿⣿⣶⣦⣩⣭⡀⣀ ⢰⣿       ││Stress / mood          3 /10        3.14      -0.14   NORMAL   ▁▃▃▃▃█▃▆██▆▆▃│
+│      ⢀⣿⠇ ⢀⠻⣿⣿⡿⠋⢸⣿⣿⡿ ⠸⣿⡀      ││Near-vision blur       1 /10        1         +0      NORMAL   ▄▄           │
+│      ⢸⡽⠁ ⡞⠁⡤⠶⠒⠒⠿⢿⠃⢳ ⠈⢯⡇      ││Resting heart rate     71 bpm       65.43     +5.57   NORMAL   ▃▄▃▁▄▁▁█▂▇▇▇█│
+│     ⢀⣿⠃  ⢻⣀⣧⣿⣿⣿⣿⢼⣀⡟  ⠘⣿⡀     ││Blood pressure (systol 119 mmHg     113.86    +5.14   NORMAL   █▃▇▁▂▄▃▅▃▆▃█▇│
+│    ⠠⣾⡿⠄  ⡸⢻⠻⢿⡿⣿⢿⣼⡟⢇  ⠠⢿⣷⠄    ││Blood oxygen (SpO₂)    96 %         97.14     -1.14   NORMAL   ██▅▁▅█▁█▅▅▁█▁│
+│    ⠈⠻⠇   ⡇⣾⠇⠉⠁⠉⠛⠁⣷⢸   ⠸⠟⠁    ││Breathing rate         15 /min      14.71     +0.29   NORMAL   ▁██▁▁▁▅▁█▅▁▁▅│
+│          ⡇⣿  ⡇⢸  ⣿⢸          ││Fasting blood glucose  87 mg/dL     90.5      -3.5    NORMAL   █▁           │
+│          ⢀⣿  ⡇⢸  ⣿⡀          ││Hydration (urine colou 4 /8         3.29      +0.71   WATCH    ▆▁▁▆▆▆▃▃▃█▆█▆│
+│          ⢸⡟  ⡇⢸  ⢻⡇          ││Body mass vs pre-fligh -0.4 %       0         -0.4    NORMAL   █▁           │
+│          ⢸⡇  ⡇⢸  ⢸⡇          ││Exercise today         70 min       112.14    -42.14  WATCH    ▆█▄▆▄▄▆▇▄▁▂▄▁│
+│          ⢸⡇  ⡇⢸  ⢸⡇          ││Back pain              2 /10        2         +0      NORMAL   ▃▃█▆▆█▆▆▃▆▁▆▆│
+│          ⡼⡇  ⡇⢸  ⢸⢧          ││Body temperature       36.8 °C      36.76     +0.04   NORMAL   █▃▄▄▂▄▇▃▅█▁█▅│
+│          ⣿⡇  ⡇⢸  ⢸⣿          ││Radiation dose rate    0.54 mSv/day 0.49      +0.05   NORMAL   ▆▄█▄▁▁▂▆▃▆▇▃▇│
+│          ⣿⡇ ⢰⠁⠈⡆ ⢸⣿          ││                                                                            │
+│          ⢸⣇ ⢸  ⡇ ⣸⡇          ││                                                                            │
+│          ⢸⣿ ⢸  ⡇ ⣿⡇          ││                                                                            │
+│          ⠈⢻⣄⢸  ⡇⣠⡟⠁          ││                                                                            │
+│           ⢿⡿⡸  ⢇⢿⡿           ││                                                                            │
+└──────────────────────────────┘│                                                                            │
+┌ CREW  score  contact ────────┐│                                                                            │
+│● Cdr. Reyes       81    1m   ││                                                                            │
+│● Dr. Okafor       67    4m   ││                                                                            │
+│● Eng. Chen        53    1m   ││                                                                            │
+│● Sci. Novak      100    3m   ││                                                                            │
+└──────────────────────────────┘└────────────────────────────────────────────────────────────────────────────┘
+ Up/Dn move  Tab pane  a ack  m message  r crew view  g downlink  h health  ? help  q quit
+ DB OK  CRC OK  BIT 6/6  QUEUE 0q 0f 0a  DUE 16/16   > Ground console
+ ASTROCHECK  GROUND  Day 15 | Score 81 | LINK OK  RTT 1 s | Space station | Cdr.

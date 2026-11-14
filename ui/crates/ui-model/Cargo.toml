@@ -1,0 +1,10 @@
+[package]
+name = "ui-model"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Backend contract + demo backend for the AstroCheck interfaces"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

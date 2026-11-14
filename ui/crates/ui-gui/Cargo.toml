@@ -1,0 +1,16 @@
+﻿[package]
+name = "ui-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "AstroCheck window interface (egui)"
+
+[[bin]]
+name = "astrocheck-gui"
+path = "src/main.rs"
+
+[dependencies]
+ui-model = { path = "../ui-model" }
+eframe = { version = "0.31", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
+# only used by the optional --screenshot switch (visual checks / documentation)
+image = { version = "0.25", default-features = false, features = ["png"] }
