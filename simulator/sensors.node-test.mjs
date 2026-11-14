@@ -13,7 +13,7 @@ test('API origin accepts /api without duplicating it; malformed configuration is
 })
 
 function simulator(env) {
-  const child = spawn(process.execPath, ['simulator/sensors.mjs'], { env: { ...process.env, SIM_REQUEST_TIMEOUT_MS: '500', SIM_RETRY_MS: '100', ...env }, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(process.execPath, ['simulator/sensors.mjs'], { env: { ...process.env, SIM_REQUEST_TIMEOUT_MS: '500', SIM_RETRY_MS: '100', SHUTDOWN_STDIN: '1', ...env }, stdio: ['pipe', 'pipe', 'pipe'] })
   let output = ''
   child.stdout.on('data', chunk => { output += chunk })
   child.stderr.on('data', chunk => { output += chunk })
@@ -41,14 +41,15 @@ test('finite simulator retries exact payload, posts to /api once and exits', { t
   } finally { run.child.kill('SIGKILL'); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
 })
 
-test('SIGTERM interrupts a long retry wait', { timeout: 5000 }, async () => {
+test('shutdown interrupts a long retry wait (SIGTERM on Unix, stdin on Windows)', { timeout: 5000 }, async () => {
   const server = createServer((_request, response) => { response.writeHead(503); response.end() })
   server.listen(0, '127.0.0.1'); await once(server, 'listening')
   const run = simulator({ API_URL: `http://127.0.0.1:${server.address().port}`, SIM_RETRY_MS: '60000', SIM_INTERVAL_MS: '60000' })
   try {
     for (let n = 0; n < 100 && !run.output().includes('retrying'); n++) await delay(10)
     assert.match(run.output(), /retrying/)
-    run.child.kill('SIGTERM')
+    if (process.platform === 'win32') run.child.stdin.end('shutdown\n')
+    else run.child.kill('SIGTERM')
     const result = await Promise.race([run.done, delay(1000, undefined, { ref: false }).then(() => { throw new Error('Stop did not cancel retry wait') })])
     assert.equal(result[0], 0)
   } finally { run.child.kill('SIGKILL'); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }

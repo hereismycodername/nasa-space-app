@@ -6,6 +6,10 @@ const shutdown = new AbortController()
 const stop = () => shutdown.abort()
 process.once('SIGINT', stop)
 process.once('SIGTERM', stop)
+if (process.env.SHUTDOWN_STDIN === '1') {
+  process.stdin.on('data', stop)
+  process.stdin.on('end', stop)
+}
 try {
   const { base, interval, count, retry, timeout } = simulatorConfig()
   const sessionId = randomUUID()
@@ -60,5 +64,6 @@ try {
 } finally {
   process.off('SIGINT', stop)
   process.off('SIGTERM', stop)
+  process.stdin.pause()
   if (shutdown.signal.aborted) console.log('Simulator stopped. Unconfirmed sample was kept only in memory; use sensor_bridge.py for a durable outbox.')
 }
