@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useState } from 'react'
-import { Activity, ArrowUpRight, Check, ChevronRight, CircleHelp, Database, Plus, Radio, RefreshCw, WifiOff } from 'lucide-react'
+import { ArrowUpRight, Check, ChevronRight, CircleHelp, Database, Plus, Radio, RefreshCw, WifiOff } from 'lucide-react'
 import { useDashboard } from './data/useDashboard'
 import { AnatomyPanel } from './features/anatomy/AnatomyPanel'
 import { CheckInPanel } from './features/check-in/CheckInPanel'
@@ -63,15 +63,12 @@ export function MetricOverview({ latest, selectedSystem = null, onSelect, connec
   </div>
 }
 
-function CoverageRing({ count, total, small = false }: { count: number; total: number; small?: boolean }) {
-  const circumference = 2 * Math.PI * 44
-  return <div className={`coverage-ring ${small ? 'small' : ''}`} aria-label={`Данные есть для ${count} из ${total} показателей`}>
-    <svg viewBox="0 0 100 100" aria-hidden="true">
-      <circle cx="50" cy="50" r="44" fill="none" stroke="var(--track)" strokeWidth="7" />
-      <circle cx="50" cy="50" r="44" fill="none" stroke="var(--blue)" strokeWidth="7" strokeLinecap="round"
-        strokeDasharray={`${circumference * count / total} ${circumference}`} transform="rotate(-90 50 50)" />
-    </svg>
-    <span>{count}<small> / {total}</small></span>
+function CoverageGauge({ count, total }: { count: number; total: number }) {
+  return <div className="coverage-gauge" role="img" aria-label={`Данные есть для ${count} из ${total} показателей`}>
+    <span className="coverage-value" aria-hidden="true">{count}<small> / {total}</small></span>
+    <div className="coverage-segments" aria-hidden="true">
+      {Array.from({ length: total }, (_, index) => <span key={index} data-filled={index < count} />)}
+    </div>
   </div>
 }
 
@@ -109,7 +106,7 @@ export default function App() {
   return <div className={`app-shell ${role === 'ground' ? 'ground-mode' : 'crew-mode'}`}>
     <a className="skip-link" href="#main-content">Перейти к содержимому</a>
     <header className="topbar">
-      <a className="brand" href="#main-content" aria-label="AstroCheck"><Activity size={24} aria-hidden="true" /> ASTRO<span>CHECK</span></a>
+      <a className="brand" href="#main-content" aria-label="AstroCheck">ASTROCHECK</a>
       <div className="mission-context"><span className="context-dot" /> Демо-миссия <span className="context-divider">/</span> Один астронавт</div>
       <div className={`connection-status ${connected ? 'connected' : 'disconnected'}`} role="status">
         {connected ? <Radio size={14} aria-hidden="true" /> : <WifiOff size={14} aria-hidden="true" />}
@@ -152,15 +149,21 @@ export default function App() {
             <TaskPanel tasks={tasks} connected={connected} onChanged={refresh} />
           </> : <>
             <div className="summary-grid">
-              <section className="panel coverage-panel"><h2>Полнота наблюдений</h2><div className="coverage-content"><CoverageRing count={knownCount} total={6} /><div><strong>{loading ? 'Получаем измерения' : knownCount === 6 ? 'Все показатели записаны' : `${6 - knownCount} показателей без измерений`}</strong><p>С известным временем измерения</p><span className="neutral-tag">Не оценка здоровья</span></div></div></section>
+              <section className="panel coverage-panel"><h2>Полнота наблюдений</h2><div className="coverage-content"><CoverageGauge count={knownCount} total={METRICS.length} /><div><strong>{loading ? 'Получаем измерения' : knownCount === 6 ? 'Все показатели записаны' : `Без записи с известным временем: ${METRICS.length - knownCount}`}</strong><p>С известным временем измерения</p><span className="neutral-tag">Не оценка здоровья</span></div></div></section>
               <section className="panel session-panel"><h2>Сеанс наблюдения</h2><p className="session-title">Демо-миссия</p><dl><div><dt>Источники</dt><dd>{sourceSet.join(', ') || 'Ожидание данных'}</dd></div><div><dt>Обновлено</dt><dd>{lastUpdated ? formatTime(lastUpdated.toISOString()) : '—'}</dd></div></dl><span className={`status-tag ${connected ? 'online' : ''}`}>{connected ? 'Мониторинг подключён' : loading ? 'Подключение' : 'Нет связи'}</span></section>
               <section className="panel routine-panel"><h2>Задачи</h2><div className="routine-value">{completedTasks}<small> / {tasks?.length ?? '—'}</small><Check size={22} aria-hidden="true" /></div><p className="note">Отмечено выполненными</p><div className="task-track"><span style={{ width: `${tasks?.length ? completedTasks / tasks.length * 100 : 0}%` }} /></div></section>
             </div>
             <div className="overview-columns">
-              <section className="panel systems-panel"><div className="section-heading"><h2>Системы организма</h2><span className="note">Доступность данных</span></div><div className="system-list">{SYSTEMS.slice(0, 3).map(system => {
+              <section className="panel systems-panel"><div className="section-heading"><h2>Системы организма</h2><span className="note">Доступность данных</span></div><div className="system-list">{SYSTEMS.map(system => {
                 const configs = METRICS.filter(config => config.system === system.id)
                 const count = configs.filter(config => entries.some(entry => entry.metric === config.id && entry.latestKnownMeasurement)).length
-                return <button className="system-row" key={system.id} onClick={() => setSelectedSystem(current => current === system.id ? null : system.id)} aria-pressed={selectedSystem === system.id}><span>{system.label}</span><span className="system-track"><span style={{ width: `${100 * count / configs.length}%` }} /></span><span className="system-count">{count}/{configs.length}</span></button>
+                return <button className="system-row" key={system.id} onClick={() => setSelectedSystem(current => current === system.id ? null : system.id)} aria-pressed={selectedSystem === system.id}>
+                  <span>{system.label}</span>
+                  {configs.length ? <span className="system-segments" aria-hidden="true">
+                    {Array.from({ length: 12 }, (_, index) => <span key={index} data-filled={index < count / configs.length * 12} />)}
+                  </span> : <span className="system-unavailable">Не подключено</span>}
+                  <span className="system-count">{configs.length ? `${count}/${configs.length}` : '—'}</span>
+                </button>
               })}</div><p className="note">Выберите область на схеме, чтобы отфильтровать показатели.</p></section>
               <section className="panel attention-panel"><h2>О данных</h2>{unknownEntries.length ? <div className="data-notice"><strong>Время измерения неизвестно</strong><p>{unknownEntries.map(entry => METRICS.find(config => config.id === entry.metric)?.label).join(', ')}: последнее сообщение не содержит времени измерения. Оно не подтверждает свежесть.</p></div> : <div className="data-notice neutral"><strong>{loading ? 'Ожидание измерений' : knownCount ? 'Время измерений сохранено' : 'Начните с первого измерения'}</strong><p>{knownCount ? 'На карточках показаны последние значения с известным временем. В динамике можно посмотреть весь период.' : 'Запустите симулятор или внесите показания вручную.'}</p></div>}<p className="note">Клиническая оценка пока не подключена. Наличие данных не означает, что показатель в норме.</p></section>
             </div>
