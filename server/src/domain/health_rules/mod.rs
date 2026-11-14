@@ -226,14 +226,7 @@ fn evaluate_metric(
 }
 
 fn valid_value(row: &Measurement, policy: &MetricDefinition) -> bool {
-    row.metric == policy.metric
-        && row.unit == policy.unit
-        && row.value.is_finite()
-        && match policy.metric {
-            "sleepHours" => (0.0..=24.0).contains(&row.value),
-            "mood" => (1.0..=5.0).contains(&row.value),
-            _ => row.value > 0.0,
-        }
+    row.metric == policy.metric && row.unit == policy.unit && policy.bounds.contains(row.value)
 }
 
 #[cfg(test)]

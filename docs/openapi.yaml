@@ -1,15 +1,16 @@
 openapi: 3.1.0
 info:
   title: Space Health Local API
-  version: 0.8.0
+  version: 0.8.1
   description: 'BE-08 adds explainable demonstration rules while preserving the BE-06 contract. Latest and assessments return independent
-    quality for all six metrics with one server evaluatedAt per response. Explicit demo freshness policies
+    quality for all twelve registered metrics with one server evaluatedAt per response. Explicit demo freshness policies
     are not medical thresholds. History, series, raw measurements and ingestion identity remain unchanged.
     Reads use demo-astronaut. Assessment status/explanation are a deprecated summary of one latest received
     record; new consumers use metrics for quality and health for rule results. Rules are not a validated medical
     device, diagnosis or NASA medical protocol. No authentication, authorization or rate limiting is implemented:
     synthetic data on a trusted local network only, with no 401/403/429 flows. Public missionDate remains future work.
-    JSON bodies above 2 MiB are rejected. This revision keeps /api paths and adds health without changing ingestion.'
+    JSON bodies above 2 MiB are rejected. This additive revision keeps /api paths and ingestion identity,
+    extends the metric registry from six to twelve, and retains explicit legacy six-metric response compatibility.'
 servers:
 - url: http://127.0.0.1:8080
   description: Local Rust server (also serves the built React UI)
@@ -180,11 +181,11 @@ paths:
                 externalValue: ./examples/measurement.unknown-time.request.json
   /api/measurements/latest:
     get:
-      summary: Read independent latest values for all six metrics
+      summary: Read independent latest values for all twelve metrics
       operationId: getLatestMeasurements
       tags:
       - Measurements
-      description: Returns one consistent database snapshot for demo-astronaut with all six metrics in fixed
+      description: Returns one consistent database snapshot for demo-astronaut with all twelve registered metrics in fixed
         order and one UTC evaluatedAt instant. latestMeasurement uses effective UTC milliseconds descending then
         id descending; latestKnownMeasurement uses known measuredAt in the same order; latestReceivedMeasurement
         uses receipt UTC milliseconds descending then id descending. A late old packet does not replace a newer
@@ -227,8 +228,8 @@ paths:
         offset must be URL-encoded. Buckets are anchored at from in UTC, in ascending order,
         with intervalMs = max(1, ceil((to - from) / maxPoints)). The last bucket ends at to.
         The result has ceil((to - from) / intervalMs) points, at most maxPoints.
-        heartRate, systolicPressure, diastolicPressure and temperature use mean with min/max/count.
-        sleepHours and mood use the last value by effective UTC milliseconds descending then id
+        heartRate, systolicPressure, diastolicPressure, temperature, spo2 and glucose use mean with min/max/count.
+        sleepHours, mood, visionBlur, exerciseMinutes, headache and backPain use the last value by effective UTC milliseconds descending then id
         descending, with null min/max. count and timeBasis always include every row of the bucket,
         even for last aggregation. Empty intervals have null values and timeBasis, with zero counts;
         a wholly empty range still returns the same bucket grid. No interpolation, carry-forward
@@ -289,7 +290,7 @@ paths:
       operationId: getAssessment
       tags:
       - Assessments
-      description: 'Returns astronautId, one UTC evaluatedAt and quality/latestReceivedQuality for all six metrics
+      description: 'Returns astronautId, one UTC evaluatedAt and quality/latestReceivedQuality for all twelve registered metrics
         using the same domain evaluation as latest. Separate requests can observe different snapshots and times.
         Deprecated status/explanation summarize only the single most recently received record (receipt UTC milliseconds
         descending, then id descending), with that metric''s window: no-data, unknown-time, clock-skew, stale
@@ -418,7 +419,15 @@ components:
       - temperature
       - sleepHours
       - mood
-      description: Supported measurement indicators.
+      - spo2
+      - glucose
+      - visionBlur
+      - exerciseMinutes
+      - headache
+      - backPain
+      description: Twelve supported measurement indicators in registry order. exerciseMinutes records activity
+        during the last 24 hours; visionBlur, headache and backPain are self-reported scores.
+        Acceptance bounds are not clinical thresholds. The additional six metrics have no BE-08 health rules yet.
     Unit:
       type: string
       enum:
@@ -427,8 +436,12 @@ components:
       - °C
       - h
       - score
+      - '%'
+      - mg/dL
+      - min
       description: heartRate=bpm; systolicPressure/diastolicPressure=mmHg; temperature=°C; sleepHours=h;
-        mood=score. A mismatched pair returns VALIDATION_ERROR.
+        mood/visionBlur/headache/backPain=score; spo2=%; glucose=mg/dL; exerciseMinutes=min.
+        A mismatched pair returns VALIDATION_ERROR.
     NewMeasurement:
       type: object
       additionalProperties: false
@@ -465,8 +478,10 @@ components:
         value:
           type: number
           format: double
-          description: Finite number. >0 for pulse, pressures and temperature; sleepHours in [0,24]; mood
-            in [1,5]. These are input bounds, not clinical norms.
+          description: Finite number, including fractions. >0 for pulse, pressures, temperature and glucose;
+            sleepHours in [0,24]; mood in [1,5]; spo2 in [0,100]; visionBlur, headache and backPain in [0,10];
+            exerciseMinutes in [0,1440] over the last 24 hours. Zero is allowed for every inclusive interval
+            except mood. These are input bounds, not clinical norms.
         unit:
           $ref: '#/components/schemas/Unit'
         measuredAt:
@@ -552,6 +567,83 @@ components:
             value:
               minimum: 1
               maximum: 5
+      - if:
+          properties:
+            metric:
+              const: spo2
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: '%'
+            value:
+              minimum: 0
+              maximum: 100
+      - if:
+          properties:
+            metric:
+              const: glucose
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: mg/dL
+            value:
+              exclusiveMinimum: 0
+      - if:
+          properties:
+            metric:
+              const: visionBlur
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: score
+            value:
+              minimum: 0
+              maximum: 10
+      - if:
+          properties:
+            metric:
+              const: exerciseMinutes
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: min
+            value:
+              minimum: 0
+              maximum: 1440
+      - if:
+          properties:
+            metric:
+              const: headache
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: score
+            value:
+              minimum: 0
+              maximum: 10
+      - if:
+          properties:
+            metric:
+              const: backPain
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: score
+            value:
+              minimum: 0
+              maximum: 10
     Measurement:
       type: object
       additionalProperties: false
@@ -598,8 +690,10 @@ components:
         value:
           type: number
           format: double
-          description: Finite number. >0 for pulse, pressures and temperature; sleepHours in [0,24]; mood
-            in [1,5]. These are input bounds, not clinical norms.
+          description: Finite number, including fractions. >0 for pulse, pressures, temperature and glucose;
+            sleepHours in [0,24]; mood in [1,5]; spo2 in [0,100]; visionBlur, headache and backPain in [0,10];
+            exerciseMinutes in [0,1440] over the last 24 hours. Zero is allowed for every inclusive interval
+            except mood. These are input bounds, not clinical norms.
         unit:
           $ref: '#/components/schemas/Unit'
         measuredAt:
@@ -723,6 +817,83 @@ components:
             value:
               minimum: 1
               maximum: 5
+      - if:
+          properties:
+            metric:
+              const: spo2
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: '%'
+            value:
+              minimum: 0
+              maximum: 100
+      - if:
+          properties:
+            metric:
+              const: glucose
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: mg/dL
+            value:
+              exclusiveMinimum: 0
+      - if:
+          properties:
+            metric:
+              const: visionBlur
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: score
+            value:
+              minimum: 0
+              maximum: 10
+      - if:
+          properties:
+            metric:
+              const: exerciseMinutes
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: min
+            value:
+              minimum: 0
+              maximum: 1440
+      - if:
+          properties:
+            metric:
+              const: headache
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: score
+            value:
+              minimum: 0
+              maximum: 10
+      - if:
+          properties:
+            metric:
+              const: backPain
+          required:
+          - metric
+        then:
+          properties:
+            unit:
+              const: score
+            value:
+              minimum: 0
+              maximum: 10
     HistoryPage:
       type: object
       additionalProperties: false
@@ -915,9 +1086,21 @@ components:
           description: Server-selected demo profile. No astronautId query selector or authentication is provided.
         metrics:
           type: array
-          minItems: 6
-          maxItems: 6
-          description: Fixed order heartRate, systolicPressure, diastolicPressure, temperature, sleepHours, mood.
+          oneOf:
+          - title: Current twelve-metric registry
+            minItems: 12
+            maxItems: 12
+          - title: Legacy six-metric registry
+            minItems: 6
+            maxItems: 6
+            items:
+              properties:
+                metric:
+                  enum: [heartRate, systolicPressure, diastolicPressure, temperature, sleepHours, mood]
+          description: Current servers return twelve metrics in fixed registry order heartRate, systolicPressure,
+            diastolicPressure, temperature, sleepHours, mood, spo2, glucose, visionBlur, exerciseMinutes, headache,
+            backPain. The six-item alternative documents older servers and retained legacy examples only;
+            it contains the original first six metrics. Clients discover supported metrics from this response.
           items:
             $ref: '#/components/schemas/LatestMetric'
         evaluatedAt:
@@ -956,10 +1139,12 @@ components:
           type: integer
           enum:
           - 15
+          - 60
           - 3600
           - 86400
-          description: 'Demo policy: heartRate 15; both pressures and temperature 3600; sleepHours and mood 86400
-            seconds.'
+          description: 'Demo policy in seconds: heartRate 15; spo2 60; both pressures, temperature, glucose, headache
+            and backPain 3600; sleepHours, mood, visionBlur and exerciseMinutes 86400. These operational
+            freshness windows are not medical thresholds.'
         ageSeconds:
           type:
           - number
@@ -1155,7 +1340,8 @@ components:
         aggregation:
           type: string
           enum: [mean, last]
-          description: Mean for pulse, pressure and temperature; last for sleepHours and mood.
+          description: Mean for heartRate, systolicPressure, diastolicPressure, temperature, spo2 and glucose;
+            last for sleepHours, mood, visionBlur, exerciseMinutes, headache and backPain.
         from:
           type: string
           format: date-time
@@ -1182,7 +1368,7 @@ components:
       allOf:
       - if:
           properties:
-            metric: {enum: [sleepHours, mood]}
+            metric: {enum: [sleepHours, mood, visionBlur, exerciseMinutes, headache, backPain]}
         then:
           additionalProperties: true
           properties:
@@ -1237,11 +1423,32 @@ components:
             unit: {const: h}
       - if:
           properties:
-            metric: {const: mood}
+            metric: {enum: [mood, visionBlur, headache, backPain]}
         then:
           additionalProperties: true
           properties:
             unit: {const: score}
+      - if:
+          properties:
+            metric: {const: spo2}
+        then:
+          additionalProperties: true
+          properties:
+            unit: {const: '%'}
+      - if:
+          properties:
+            metric: {const: glucose}
+        then:
+          additionalProperties: true
+          properties:
+            unit: {const: mg/dL}
+      - if:
+          properties:
+            metric: {const: exerciseMinutes}
+        then:
+          additionalProperties: true
+          properties:
+            unit: {const: min}
     RuleStatus:
       type: string
       enum: [notEvaluated, insufficientData, noAlert, attention, critical]
@@ -1341,15 +1548,29 @@ components:
         evaluatedMetricCount:
           type: integer
           minimum: 0
+          maximum: 12
         totalMetricCount:
           type: integer
-          minimum: 1
+          enum: [6, 12]
+          description: Twelve on current servers; six is retained for pre-extension BE-08 responses.
         rules:
           type: array
-          minItems: 1
+          oneOf:
+          - title: Current twelve-metric rules
+            minItems: 12
+            maxItems: 12
+          - title: Legacy six-metric rules
+            minItems: 6
+            maxItems: 6
+            items:
+              properties:
+                metric:
+                  enum: [heartRate, systolicPressure, diastolicPressure, temperature, sleepHours, mood]
           items:
             $ref: '#/components/schemas/HealthRule'
-          description: One result per registered metric, in registry order; unsupported rules are notEvaluated.
+          description: One result per registered metric, in registry order. spo2, glucose, visionBlur, exerciseMinutes,
+            headache and backPain currently remain notEvaluated even with fresh readings; no clinical rules
+            are defined for these metrics. Six-rule arrays describe pre-extension responses only.
         education:
           type: array
           minItems: 5
@@ -1403,9 +1624,21 @@ components:
           description: One server UTC RFC3339 instant for every quality calculation in this response.
         metrics:
           type: array
-          minItems: 6
-          maxItems: 6
-          description: Fixed order heartRate, systolicPressure, diastolicPressure, temperature, sleepHours, mood.
+          oneOf:
+          - title: Current twelve-metric registry
+            minItems: 12
+            maxItems: 12
+          - title: Legacy six-metric registry
+            minItems: 6
+            maxItems: 6
+            items:
+              properties:
+                metric:
+                  enum: [heartRate, systolicPressure, diastolicPressure, temperature, sleepHours, mood]
+          description: Current servers return twelve metrics in fixed registry order heartRate, systolicPressure,
+            diastolicPressure, temperature, sleepHours, mood, spo2, glucose, visionBlur, exerciseMinutes, headache,
+            backPain. The six-item alternative documents older servers and retained legacy examples only;
+            it contains the original first six metrics. Clients discover supported metrics from this response.
           items:
             $ref: '#/components/schemas/MetricQuality'
         health:

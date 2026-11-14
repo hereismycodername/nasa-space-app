@@ -1,4 +1,4 @@
-# API v0.8.0 — BE-06 и объяснимая оценка BE-08
+# API v0.8.1 — BE-06, оценка BE-08 и метрики B/C
 
 Машиночитаемая спецификация: [openapi.yaml](openapi.yaml).
 Готовые JSON-запросы и ответы: [examples](examples/README.md).
@@ -128,7 +128,7 @@ RFC3339-строкам. Один момент с разными offsets полу
 
 | Query | Значение |
 |---|---|
-| metric | Одна из шести метрик; без параметра выбираются все |
+| metric | Одна из двенадцати метрик; без параметра выбираются все |
 | from | Включённая нижняя граница эффективного времени |
 | to | Исключённая верхняя граница эффективного времени |
 | limit | Целое от 1 до 500, по умолчанию 100 |
@@ -161,8 +161,9 @@ query-параметров дают 400 `INVALID_QUERY` без `field`.
 ### Последние значения
 
 `GET /measurements/latest` возвращает `{astronautId, evaluatedAt, metrics}` одним согласованным
-снимком чтения. Массив всегда содержит шесть записей в порядке `heartRate`,
-`systolicPressure`, `diastolicPressure`, `temperature`, `sleepHours`, `mood`.
+снимком чтения. Массив содержит двенадцать записей в порядке `heartRate`,
+`systolicPressure`, `diastolicPressure`, `temperature`, `sleepHours`, `mood`,
+`spo2`, `glucose`, `visionBlur`, `exerciseMinutes`, `headache`, `backPain`.
 У каждой записи есть `metric` и три поля:
 
 | Поле | Как выбирается |
@@ -195,7 +196,7 @@ query-параметров дают 400 `INVALID_QUERY` без `field`.
 
 | Query | Значение |
 |---|---|
-| metric | Обязательно: одна из шести метрик |
+| metric | Обязательно: одна из двенадцати метрик |
 | from | Обязательно: включённая нижняя граница эффективного времени |
 | to | Обязательно: исключённая верхняя граница, строго больше from |
 | maxPoints | Целое от 1 до 500, по умолчанию 200 |
@@ -223,10 +224,13 @@ query-параметров дают 400 `INVALID_QUERY` без `field`.
 
 | Метрики | aggregation | value | min / max |
 |---|---|---|---|
-| heartRate, systolicPressure, diastolicPressure, temperature | mean | Среднее арифметическое всех значений интервала | Минимум и максимум |
-| sleepHours, mood | last | Последнее по эффективному UTC-времени в миллисекундах, затем id DESC | Всегда null |
+| heartRate, systolicPressure, diastolicPressure, temperature, spo2, glucose | mean | Среднее арифметическое всех значений интервала | Минимум и максимум |
+| sleepHours, mood, visionBlur, exerciseMinutes, headache, backPain | last | Последнее по эффективному UTC-времени в миллисекундах, затем id DESC | Всегда null |
 
-`last` не означает сумму сна за день или усреднение шкалы самочувствия.
+`last` не означает сумму сна/активности за день или усреднение самооценки.
+`exerciseMinutes` — отдельный отчёт о последних 24 часах, а не накапливаемый счётчик.
+Шкалы симптомов 0…10 допускают дроби: 0 — отсутствие симптома, 10 — максимальная
+самооценка. Они не устанавливают причину симптома или диагноз.
 Выбор последней строки детерминирован при одинаковом времени. `count` для обоих
 режимов — число **всех** подходящих строк интервала, а не только выбранной строки.
 
@@ -260,7 +264,7 @@ query-параметров дают 400 `INVALID_QUERY` без `field`.
 ## Свежесть
 
 `GET /assessments` возвращает `{astronautId, evaluatedAt, metrics, status, explanation, health}`.
-`metrics` содержит шесть записей `{metric, quality, latestReceivedQuality}` в том же
+`metrics` содержит двенадцать записей `{metric, quality, latestReceivedQuality}` в том же
 порядке и с теми же правилами выбора, что `/measurements/latest`. Оба endpoint
 используют одну чистую функцию domain. Отдельные HTTP-запросы могут увидеть разные
 снимки БД и моменты оценки; карточка React использует качество из своего latest-ответа.
@@ -286,6 +290,12 @@ query-параметров дают 400 `INVALID_QUERY` без `field`.
 | temperature | 3600 |
 | sleepHours | 86400 |
 | mood | 86400 |
+| spo2 | 60 |
+| glucose | 3600 |
+| visionBlur | 86400 |
+| exerciseMinutes | 86400 |
+| headache | 3600 |
+| backPain | 3600 |
 
 | status | Условие |
 |---|---|
