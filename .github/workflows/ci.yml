@@ -36,3 +36,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libgl1-mesa-dev pkg-config
       - name: Test native UI workspace independently
         run: cargo test --locked --manifest-path ui/Cargo.toml --workspace
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Verify native clients against the shared HTTP API
+        run: npm run test:native-api
