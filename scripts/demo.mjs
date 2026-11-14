@@ -5,7 +5,7 @@ import { createServer } from 'node:net'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { setTimeout as delay } from 'node:timers/promises'
-import { generateHistory, SCENARIOS } from '../simulator/history.mjs'
+import { generateHistory, HISTORY_METRICS, SCENARIOS } from '../simulator/history.mjs'
 import { cargoPath, isWindows, root } from './tooling.mjs'
 
 const demoDirectory = join(root, 'demo')
@@ -169,7 +169,7 @@ async function prepare(scenario, { seed = '42', reference, force = false } = {})
   }
   console.log(`Synthetic demo: scenario=${scenario} seed=${numericSeed} reference=${reference}`)
   const { child, base } = await startServer(scenario, await freePort())
-  const summary = Object.fromEntries(['heartRate', 'temperature', 'sleepHours', 'mood']
+  const summary = Object.fromEntries(HISTORY_METRICS
     .map(metric => [metric, { created: 0, repeated: 0, errors: 0 }]))
   try {
     for (const payload of payloads) {
