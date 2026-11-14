@@ -9,19 +9,41 @@ Two interfaces, one contract, for two audiences:
 
 | Audience | What they get |
 |---|---|
-| **Crew** (the astronaut) | Self-assessment: readiness score, rings for today, contributors per body system, insights in plain language, metric tiles with sparklines and deviation from *their own* baseline, metric detail with chart + statistics, daily check-in, reaction-time test, XP/streak. |
-| **Ground** (flight surgeon / NASA team) | Crew roster with score and *data age* (STALE during blackout), alert triage with acknowledge, clinical table (latest / baseline / delta / status / trend), metric detail per crew member, message composer (uplink) with one-way light-delay estimate. |
+| **Crew** (the astronaut) | Self-assessment: readiness index, daily task list, status per body system, findings in plain language, metric tiles with sparklines and deviation from *their own* baseline, metric detail with chart + statistics, daily check-in, reaction-time test (PVT). No gamification: no levels, points or streaks. |
+| **Ground** (flight surgeon / NASA team) | Console laid out like [NASA Open MCT](https://nasa.github.io/openmct/): object tree (crew > body system > indicator, status dots, click to plot, double-click for detail), stacked telemetry plots with limit bands and a time conductor (7D / 14D / All), event log with acknowledge, crew status strip with data age (STALE during blackout), the selected crew member's body figure, and an uplink message composer with one-way light-delay estimate. |
 
 Both exist as a **window** (`astrocheck-gui`, egui) and a **terminal** program (`astrocheck-tui`, ratatui;
 works over SSH / serial console / on boards without a display). Switch role at runtime (GUI: Crew|Ground control
 in the top bar, TUI: key `r`).
 
-Real anatomy: a human figure with skin, skeleton (skull, spine, ribs, clavicles, pelvis, arm and leg bones),
-and organs (brain with gyri, eyes, lungs with lobes and bronchi, heart with great vessels, liver, stomach, intestines,
-spleen). Layers: *Organs / Skeleton / X-ray*. Organ outlines and the hotspot markers show status (green / amber / red);
-labels with leader lines are clickable. In the terminal the same figure is drawn with braille dots.
+Real anatomy: the figure is a frontal projection of the CT-based adult male meshes of BodyParts3D (skin, skull, spine,
+ribs, clavicles, scapulae, pelvis, arm and leg bones; brain, eyes, trachea, lungs, thymus, heart, liver, gallbladder, stomach,
+pancreas, kidneys, intestines, bladder), so sizes and positions are measured, not drawn. Layers: *Organs / Skeleton / X-ray*.
+Organ outlines and the hotspot markers show status; labels with leader lines are clickable. In the terminal the same figure
+is drawn with braille dots. Regenerate the data with `tools/gen_anatomy.py` (needs the BodyParts3D download, see the script).
 
 Screens: see `docs/*.png` (window) and `docs/terminal-*.txt` (terminal frames).
+
+## Design: NASA style, from NASA's own material
+
+* **Typography (NASA Horizon Design System, [nasa/hds-core](https://github.com/nasa/hds-core)):** Inter for headings,
+  Public Sans for body text, DM Mono for numbers, units and technical labels. Fonts are embedded
+  (`crates/ui-gui/assets/fonts`, SIL Open Font License; licence texts included).
+* **Colour:** Horizon blue as the single accent, neutral greys. Following NASA's crew-interface guidance
+  ("use color sparingly", "quiet/dark" displays, standard colour meanings) the screen is *quiet*: NORMAL is neutral,
+  colour appears only on departures: WATCH amber, ACT NOW red, NO DATA cyan. Healthy metric tiles carry no status bar,
+  and the crew overview shows only what needs attention by default ("Show all metrics" is one click away).
+* **Always visible:** a status bar with key parameters (DB / CRC / self-test / queue / due) and a one-line alert strip.
+* **Standard conventions:** no custom decorative icons, the crew never has to do arithmetic (baseline and delta are
+  computed), ground view is denser than the crew view (tables, trends) as on NASA ground displays.
+* The exact Artemis GUI Standard (M2M-30040), Orion Display Format Standard (MPCV 72242) and ISS DGCS (SSP 50313) are not
+  public; the status colours above follow general aerospace practice and must be checked against them before real use.
+  Brand red must not be used on dark backgrounds (NASA brand rule), so alerts use a functional red.
+
+Sources: [NASA Brand Guidelines](https://www.nasa.gov/nasa-brand-center/brand-guidelines),
+[NASA Horizon Design System](https://github.com/nasa/hds-core),
+[NASA CLDP "Crew Interfaces" (2024)](https://ntrs.nasa.gov/api/citations/20240003566/downloads/CLD%20HSI%20Workshop%20Crew%20Interfaces.pdf),
+[NASA Open MCT](https://nasa.github.io/openmct/about-open-mct).
 
 ## Layout
 
@@ -83,9 +105,18 @@ expected to differ - measure on the target. The terminal version is the lightwei
 
 ## Honest limits
 
-* The anatomy is a schematic medical illustration authored in code (`anatomy.rs`), not a licensed atlas. To use official
-  artwork replace `anatomy::parts()`; nothing else depends on how the shapes were made.
+* The anatomy is one real adult male (BodyParts3D, 99 % reduced meshes, frontal view only, no spleen or lymph nodes in the
+  data set, hands and feet are skin only). It is not a patient-specific model. To use other artwork replace `anatomy::parts()`;
+  nothing else depends on how the shapes were made.
 * Thresholds, advice texts and the demo crew are illustrative. Not a medical device.
 * Developed and tested on Windows 11 only. Not yet run on a Raspberry Pi or any other board; the GUI needs the usual
   GL / X11 / Wayland runtime libraries there.
 * The demo backend keeps everything in memory; persistence, integrity checks and the downlink queue belong to the real backend.
+
+## Credits and licences
+
+* Anatomy data: "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International"
+  ([licence](https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html)). The mesh files themselves carry the older
+  CC Attribution-Share Alike 2.1 Japan header, so `crates/ui-model/src/anatomy_data.rs` (derived data) is shared under the
+  same terms.
+* Fonts: Inter, Public Sans, DM Mono (SIL Open Font License, texts in `crates/ui-gui/assets/fonts`).
