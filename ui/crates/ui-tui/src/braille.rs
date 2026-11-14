@@ -14,18 +14,18 @@ pub struct Cell {
 
 fn bright(s: Status) -> Color {
     match s {
-        Status::Normal => Color::LightGreen,
+        Status::Normal => Color::White,
         Status::Watch => Color::LightYellow,
         Status::Act => Color::LightRed,
-        Status::NoData => Color::Gray,
+        Status::NoData => Color::LightCyan,
     }
 }
 fn normal(s: Status) -> Color {
     match s {
-        Status::Normal => Color::Green,
+        Status::Normal => Color::Gray,
         Status::Watch => Color::Yellow,
         Status::Act => Color::Red,
-        Status::NoData => Color::DarkGray,
+        Status::NoData => Color::Cyan,
     }
 }
 

@@ -4,7 +4,7 @@ Two interfaces, one contract, for two audiences:
 
 | Audience | What they get |
 |---|---|
-| **Crew** (the astronaut) | Self-assessment: readiness score, rings for today, contributors per body system, insights in plain language, metric tiles with sparklines and deviation from *their own* baseline, metric detail with chart + statistics, daily check-in, reaction-time test, XP/streak. |
+| **Crew** (the astronaut) | Self-assessment: readiness index, daily task list, status per body system, findings in plain language, metric tiles with sparklines and deviation from *their own* baseline, metric detail with chart + statistics, daily check-in, reaction-time test (PVT). No gamification: no levels, points or streaks. |
 | **Ground** (flight surgeon / NASA team) | Crew roster with score and *data age* (STALE during blackout), alert triage with acknowledge, clinical table (latest / baseline / delta / status / trend), metric detail per crew member, message composer (uplink) with one-way light-delay estimate. |
 
 Both exist as a **window** (`astrocheck-gui`, egui) and a **terminal** program (`astrocheck-tui`, ratatui;
@@ -17,6 +17,27 @@ spleen). Layers: *Organs / Skeleton / X-ray*. Organ outlines and the hotspot mar
 labels with leader lines are clickable. In the terminal the same figure is drawn with braille dots.
 
 Screens: see `docs/*.png` (window) and `docs/terminal-*.txt` (terminal frames).
+
+## Design: NASA style, from NASA's own material
+
+* **Typography (NASA Horizon Design System, [nasa/hds-core](https://github.com/nasa/hds-core)):** Inter for headings,
+  Public Sans for body text, DM Mono for numbers, units and technical labels. Fonts are embedded
+  (`crates/ui-gui/assets/fonts`, SIL Open Font License; licence texts included).
+* **Colour:** Horizon blue as the single accent, neutral greys. Following NASA's crew-interface guidance
+  ("use color sparingly", "quiet/dark" displays, standard colour meanings) the screen is *quiet*: NORMAL is neutral,
+  colour appears only on departures: WATCH amber, ACT NOW red, NO DATA cyan. Healthy metric tiles carry no status bar,
+  and the crew overview shows only what needs attention by default ("Show all metrics" is one click away).
+* **Always visible:** a status bar with key parameters (DB / CRC / self-test / queue / due) and a one-line alert strip.
+* **Standard conventions:** no custom decorative icons, the crew never has to do arithmetic (baseline and delta are
+  computed), ground view is denser than the crew view (tables, trends) as on NASA ground displays.
+* The exact Artemis GUI Standard (M2M-30040), Orion Display Format Standard (MPCV 72242) and ISS DGCS (SSP 50313) are not
+  public; the status colours above follow general aerospace practice and must be checked against them before real use.
+  Brand red must not be used on dark backgrounds (NASA brand rule), so alerts use a functional red.
+
+Sources: [NASA Brand Guidelines](https://www.nasa.gov/nasa-brand-center/brand-guidelines),
+[NASA Horizon Design System](https://github.com/nasa/hds-core),
+[NASA CLDP "Crew Interfaces" (2024)](https://ntrs.nasa.gov/api/citations/20240003566/downloads/CLD%20HSI%20Workshop%20Crew%20Interfaces.pdf),
+[NASA Open MCT](https://nasa.github.io/openmct/about-open-mct).
 
 ## Layout
 

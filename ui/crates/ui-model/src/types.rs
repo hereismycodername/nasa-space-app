@@ -111,8 +111,6 @@ pub struct Evaluation {
 pub struct LogResult {
     pub status: Status,
     pub value: f64,
-    pub xp_gained: u32,
-    pub bonus: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -150,9 +148,6 @@ pub struct Overview {
     pub env_id: String,
     pub env_name: String,
     pub score: Option<u8>,
-    pub xp: u32,
-    pub level: u32,
-    pub streak: u32,
     pub link_up: bool,
     /// no usable link to ground (blackout or very long light delay): onboard protocol is primary
     pub autonomous: bool,
@@ -227,8 +222,3 @@ pub struct Message {
     pub day: u32,
 }
 
-#[derive(Clone, Debug)]
-pub struct Badge {
-    pub name: String,
-    pub unlocked: bool,
-}
