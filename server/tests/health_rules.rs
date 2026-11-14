@@ -123,15 +123,9 @@ async fn six_fresh_observations_use_the_same_ids_times_and_policy_as_assessment_
     assert_eq!(assessment["status"], "not-evaluated");
     let health = &assessment["health"];
     assert_eq!(health["evaluatedMetricCount"], 6);
-    // A registry expansion with unconfigured rules must not silently retain an all-clear.
-    assert_eq!(
-        health["status"],
-        if health["totalMetricCount"] == 6 {
-            "noAlert"
-        } else {
-            "insufficientData"
-        }
-    );
+    // The six new registered metrics have no clinical rules and prevent an all-clear.
+    assert_eq!(health["totalMetricCount"], 12);
+    assert_eq!(health["status"], "insufficientData");
     for (metric, _, _) in cases {
         let quality = &by_metric(&assessment["metrics"], metric)["quality"];
         let rule = by_metric(&health["rules"], metric);
@@ -143,6 +137,163 @@ async fn six_fresh_observations_use_the_same_ids_times_and_policy_as_assessment_
             valid_until,
             now + Duration::seconds(quality["freshForSeconds"].as_i64().unwrap())
         );
+    }
+}
+
+#[tokio::test]
+async fn unconfigured_metrics_preserve_independent_quality_without_rule_evidence() {
+    let app = setup().await;
+    let now = Utc::now() - Duration::seconds(1);
+    let cases = [
+        ("spo2", 97.0, "%", Some(now), "fresh"),
+        ("glucose", 90.0, "mg/dL", None, "unknownTime"),
+        (
+            "visionBlur",
+            1.5,
+            "score",
+            Some(now - Duration::days(2)),
+            "stale",
+        ),
+        (
+            "exerciseMinutes",
+            45.0,
+            "min",
+            Some(now + Duration::minutes(2)),
+            "clockSkew",
+        ),
+        ("headache", 0.0, "score", Some(now), "fresh"),
+        ("backPain", 3.5, "score", Some(now), "fresh"),
+    ];
+    let mut saved_ids = Vec::new();
+    for (sequence, (metric, value, unit, at, _)) in cases.iter().enumerate() {
+        saved_ids
+            .push(insert(&app, sequence as i64, metric, *value, unit, *at).await["id"].clone());
+    }
+    let (status, assessment) = call(&app, "GET", "/api/assessments", Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(assessment["metrics"].as_array().unwrap().len(), 12);
+    assert_eq!(assessment["health"]["rules"].as_array().unwrap().len(), 12);
+    assert_eq!(assessment["health"]["evaluatedMetricCount"], 0);
+    assert_eq!(assessment["health"]["status"], "insufficientData");
+    for ((metric, _, _, _, quality_status), saved_id) in cases.iter().zip(saved_ids) {
+        let quality = &by_metric(&assessment["metrics"], metric)["quality"];
+        assert_eq!(quality["measurementId"], saved_id);
+        assert_eq!(quality["status"], *quality_status);
+        let rule = by_metric(&assessment["health"]["rules"], metric);
+        assert_eq!(rule["status"], "notEvaluated");
+        assert_eq!(rule["measurementIds"], json!([]));
+        assert_eq!(rule["validUntil"], Value::Null);
+        assert_eq!(rule["sourceUrls"], json!([]));
+    }
+}
+
+#[tokio::test]
+async fn all_twelve_fresh_observations_keep_unconfigured_rules_out_of_the_evaluated_count() {
+    let app = setup().await;
+    let now = Utc::now() - Duration::seconds(1);
+    let configured = [
+        ("heartRate", 72.0, "bpm"),
+        ("systolicPressure", 115.0, "mmHg"),
+        ("diastolicPressure", 75.0, "mmHg"),
+        ("temperature", 36.6, "°C"),
+        ("sleepHours", 8.0, "h"),
+        ("mood", 4.0, "score"),
+    ];
+    let unconfigured = [
+        ("spo2", 0.0, "%"),
+        ("glucose", 500.0, "mg/dL"),
+        ("visionBlur", 10.0, "score"),
+        ("exerciseMinutes", 0.0, "min"),
+        ("headache", 10.0, "score"),
+        ("backPain", 10.0, "score"),
+    ];
+    for (sequence, (metric, value, unit)) in configured.iter().chain(&unconfigured).enumerate() {
+        insert(&app, sequence as i64, metric, *value, unit, Some(now)).await;
+    }
+    let (status, assessment) = call(&app, "GET", "/api/assessments", Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(assessment["health"]["status"], "insufficientData");
+    assert_eq!(assessment["health"]["evaluatedMetricCount"], 6);
+    assert_eq!(assessment["health"]["totalMetricCount"], 12);
+    for (metric, _, _) in configured {
+        assert_eq!(
+            by_metric(&assessment["health"]["rules"], metric)["status"],
+            "noAlert"
+        );
+    }
+    for (metric, _, _) in unconfigured {
+        assert_eq!(
+            by_metric(&assessment["metrics"], metric)["quality"]["status"],
+            "fresh"
+        );
+        assert_eq!(
+            by_metric(&assessment["health"]["rules"], metric)["status"],
+            "notEvaluated"
+        );
+    }
+}
+
+#[tokio::test]
+async fn new_metric_input_bounds_accept_endpoints_and_fractions_but_reject_outside_values() {
+    let app = setup().await;
+    let now = Utc::now() - Duration::seconds(1);
+    let accepted = [
+        ("spo2", "%", 0.0),
+        ("spo2", "%", 100.0),
+        ("spo2", "%", 97.5),
+        ("glucose", "mg/dL", 0.01),
+        ("glucose", "mg/dL", 90.5),
+        ("visionBlur", "score", 0.0),
+        ("visionBlur", "score", 10.0),
+        ("visionBlur", "score", 1.5),
+        ("exerciseMinutes", "min", 0.0),
+        ("exerciseMinutes", "min", 1440.0),
+        ("exerciseMinutes", "min", 30.5),
+        ("headache", "score", 0.0),
+        ("headache", "score", 10.0),
+        ("headache", "score", 2.5),
+        ("backPain", "score", 0.0),
+        ("backPain", "score", 10.0),
+        ("backPain", "score", 3.5),
+    ];
+    for (sequence, (metric, unit, value)) in accepted.into_iter().enumerate() {
+        let saved = insert(&app, sequence as i64, metric, value, unit, Some(now)).await;
+        assert_eq!(saved["value"], value);
+    }
+    for (sequence, (metric, unit, value)) in [
+        ("spo2", "%", -0.01),
+        ("spo2", "%", 100.01),
+        ("glucose", "mg/dL", 0.0),
+        ("glucose", "mg/dL", -0.01),
+        ("visionBlur", "score", -0.01),
+        ("visionBlur", "score", 10.01),
+        ("exerciseMinutes", "min", -0.01),
+        ("exerciseMinutes", "min", 1440.01),
+        ("headache", "score", -0.01),
+        ("headache", "score", 10.01),
+        ("backPain", "score", -0.01),
+        ("backPain", "score", 10.01),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (status, problem) = call(
+            &app,
+            "POST",
+            "/api/measurements",
+            json!({
+                "deviceId":"manual-01", "sessionId":"invalid-bc-bounds", "sequence":sequence,
+                "metric":metric, "unit":unit, "value":value, "measuredAt":now.to_rfc3339()
+            }),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "{metric} {value}: {problem}"
+        );
+        assert_eq!(problem["code"], "VALIDATION_ERROR");
+        assert_eq!(problem["field"], "value");
     }
 }
 

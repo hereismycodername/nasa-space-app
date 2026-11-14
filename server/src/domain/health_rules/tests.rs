@@ -1,5 +1,8 @@
 use super::*;
-use crate::domain::{freshness, metric_config::Aggregation};
+use crate::domain::{
+    freshness,
+    metric_config::{Aggregation, InputBounds},
+};
 use chrono::Utc;
 
 fn now() -> DateTime<Utc> {
@@ -256,6 +259,7 @@ fn newly_registered_metric_without_rules_is_explicitly_not_evaluated() {
     let policy = MetricDefinition {
         metric: "newMetric",
         unit: "test",
+        bounds: InputBounds::Positive,
         aggregation: Aggregation::Mean,
         fresh_for_seconds: 60,
     };
@@ -263,6 +267,36 @@ fn newly_registered_metric_without_rules_is_explicitly_not_evaluated() {
     assert_eq!(rule.status, RuleStatus::NotEvaluated);
     assert!(rule.measurement_ids.is_empty());
     assert_eq!(rule.valid_until, None);
+}
+
+#[test]
+fn all_six_unconfigured_registry_metrics_stay_unevaluated_for_every_quality_state() {
+    let metrics = [
+        ("spo2", 0.0),
+        ("glucose", 500.0),
+        ("visionBlur", 10.0),
+        ("exerciseMinutes", 0.0),
+        ("headache", 10.0),
+        ("backPain", 10.0),
+    ];
+    for (metric, value) in metrics {
+        for at in [
+            None,
+            Some(now()),
+            Some(now() - Duration::days(2)),
+            Some(now() + Duration::minutes(2)),
+        ] {
+            let result = assess(&[entry(metric, value, at)], now());
+            let rule = find_rule(&result, metric);
+            assert_eq!(rule.status, RuleStatus::NotEvaluated, "{metric} {at:?}");
+            assert!(rule.measurement_ids.is_empty());
+            assert_eq!(rule.valid_until, None);
+            assert!(rule.source_urls.is_empty());
+            assert_eq!(result.evaluated_metric_count, 0);
+            assert_eq!(result.total_metric_count, 12);
+            assert_eq!(result.status, RuleStatus::InsufficientData);
+        }
+    }
 }
 
 #[test]

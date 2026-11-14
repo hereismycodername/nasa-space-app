@@ -50,7 +50,7 @@ api преобразует wire DTO и решает, какой HTTP-ответ 
 | storage::check_connection | `&SqlitePool` | `()` |
 | storage::measurements::device | `&SqlitePool`, `device_id: &str` | `Option<Device>` |
 | storage::measurements::history | `&SqlitePool`, `astronaut_id: &str`, `&HistoryQuery` | `HistoryPage {items, has_more, next_cursor}` |
-| storage::measurements::latest_by_metric | `&SqlitePool`, `astronaut_id: &str` | `Vec<LatestMetric>` с шестью метриками |
+| storage::measurements::latest_by_metric | `&SqlitePool`, `astronaut_id: &str` | `Vec<LatestMetric>` с двенадцатью метриками |
 | storage::measurements::insert_or_get | `&SqlitePool`, `&NewMeasurement`, `&Device`, `received_at: &str` | `InsertOutcome {measurement, created}` |
 | storage::series::aggregate | `&SqlitePool`, `astronaut_id: &str`, `&SeriesQuery` | `Vec<BucketAggregate>` только непустых интервалов по возрастанию индекса |
 | storage::tasks::list | `&SqlitePool` | `Vec<Task>` |
@@ -145,7 +145,7 @@ sequence для попытки доставки. Неожиданная ошиб
 Лишняя строка определяет `has_more`, курсор берётся с последней возвращаемой записи.
 Внешний ответ — `{items, hasMore, nextCursor}`. Между страницами snapshot не удерживается.
 
-`latest_by_metric` читает все шесть метрик одним SQL-запросом и в одном снимке. Для каждой
+`latest_by_metric` читает все двенадцать метрик одним SQL-запросом и в одном снимке. Для каждой
 независимо выбираются последние effective, known measured и received записи с
 детерминированным `id DESC`. Индексированные выборки LIMIT 1 не обрезают сначала
 общую историю до 500 строк. Поэтому редкие показатели остаются в обзоре, а
