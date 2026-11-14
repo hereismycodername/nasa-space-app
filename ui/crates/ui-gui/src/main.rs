@@ -1,3 +1,6 @@
+// Windows release build: a window program, no console (otherwise Windows Terminal opens an extra tab)
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod figure;
 mod theme;
 mod widgets;
