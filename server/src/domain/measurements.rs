@@ -1,36 +1,162 @@
 use chrono::{DateTime, Utc};
 
+#[derive(Clone, Copy)]
+pub(crate) enum Aggregation {
+    Mean,
+    Last,
+}
+
+impl Aggregation {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Mean => "mean",
+            Self::Last => "last",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 pub(crate) struct MetricDefinition {
     pub metric: &'static str,
     pub unit: &'static str,
+    pub aggregation: Aggregation,
 }
 
 pub(crate) const METRICS: [MetricDefinition; 6] = [
     MetricDefinition {
         metric: "heartRate",
         unit: "bpm",
+        aggregation: Aggregation::Mean,
     },
     MetricDefinition {
         metric: "systolicPressure",
         unit: "mmHg",
+        aggregation: Aggregation::Mean,
     },
     MetricDefinition {
         metric: "diastolicPressure",
         unit: "mmHg",
+        aggregation: Aggregation::Mean,
     },
     MetricDefinition {
         metric: "temperature",
         unit: "°C",
+        aggregation: Aggregation::Mean,
     },
     MetricDefinition {
         metric: "sleepHours",
         unit: "h",
+        aggregation: Aggregation::Last,
     },
     MetricDefinition {
         metric: "mood",
         unit: "score",
+        aggregation: Aggregation::Last,
     },
 ];
+
+pub(crate) struct SeriesFilter {
+    pub astronaut_id: &'static str,
+    pub metric: MetricDefinition,
+    pub from_ms: i64,
+    pub to_ms: i64,
+    pub bucket_seconds: i64,
+}
+
+/// Select the smallest UTC-epoch-aligned bucket covering [from_ms, to_ms).
+pub(crate) fn series_bucket_seconds(
+    from_ms: i64,
+    to_ms: i64,
+    max_points: usize,
+) -> Result<i64, ValidationError> {
+    if from_ms >= to_ms {
+        return Err(ValidationError {
+            field: "to",
+            message: "to must be after from in UTC milliseconds",
+        });
+    }
+    if !(1..=500).contains(&max_points) {
+        return Err(ValidationError {
+            field: "maxPoints",
+            message: "maxPoints must be an integer from 1 to 500",
+        });
+    }
+    [10, 30, 60, 300, 900, 1800, 3600, 10800, 21600, 43200, 86400]
+        .into_iter()
+        .find(|seconds| {
+            let bucket_ms = seconds * 1000;
+            let count = (to_ms - 1).div_euclid(bucket_ms) - from_ms.div_euclid(bucket_ms) + 1;
+            count <= max_points as i64
+        })
+        .ok_or(ValidationError {
+            field: "to",
+            message: "Range requires more than maxPoints even with 1-day buckets; shorten the range or increase maxPoints",
+        })
+}
+
+pub(crate) struct BucketAggregate {
+    pub start_ms: i64,
+    pub mean: f64,
+    pub last: f64,
+    pub min: f64,
+    pub max: f64,
+    pub count: i64,
+}
+
+pub(crate) struct SeriesData {
+    pub buckets: Vec<BucketAggregate>,
+    pub excluded_unknown_time_count: i64,
+}
+
+pub(crate) struct SeriesPoint {
+    pub start_ms: i64,
+    pub value: Option<f64>,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub count: i64,
+}
+
+/// Storage supplies nonempty buckets in ascending order. Missing buckets stay explicit.
+pub(crate) fn fill_series(
+    filter: &SeriesFilter,
+    buckets: Vec<BucketAggregate>,
+) -> Vec<SeriesPoint> {
+    let bucket_ms = filter.bucket_seconds * 1000;
+    let mut start_ms = filter.from_ms.div_euclid(bucket_ms) * bucket_ms;
+    let mut buckets = buckets.into_iter().peekable();
+    let mut points = Vec::new();
+    while start_ms < filter.to_ms {
+        let bucket = if buckets
+            .peek()
+            .is_some_and(|bucket| bucket.start_ms == start_ms)
+        {
+            buckets.next()
+        } else {
+            None
+        };
+        points.push(match bucket {
+            Some(bucket) => SeriesPoint {
+                start_ms,
+                value: Some(match filter.metric.aggregation {
+                    Aggregation::Mean => bucket.mean,
+                    Aggregation::Last => bucket.last,
+                }),
+                min: Some(bucket.min),
+                max: Some(bucket.max),
+                count: bucket.count,
+            },
+            None => SeriesPoint {
+                start_ms,
+                value: None,
+                min: None,
+                max: None,
+                count: 0,
+            },
+        });
+        start_ms += bucket_ms;
+    }
+    points
+}
 
 pub(crate) struct HistoryFilter {
     pub astronaut_id: String,
@@ -181,6 +307,21 @@ pub(crate) struct Device {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn series_bucket_selection_accounts_for_alignment_and_range_limit() {
+        let week = 7 * 86400 * 1000;
+        assert_eq!(series_bucket_seconds(0, week, 200).unwrap(), 3600);
+        assert_eq!(series_bucket_seconds(0, 20_000, 2).unwrap(), 10);
+        assert_eq!(series_bucket_seconds(1, 20_001, 2).unwrap(), 30);
+        assert_eq!(series_bucket_seconds(-10_001, -1, 1).unwrap(), 30);
+        assert_eq!(
+            series_bucket_seconds(0, 501 * 86400 * 1000, 500)
+                .unwrap_err()
+                .field,
+            "to"
+        );
+    }
 
     fn input() -> NewMeasurement {
         NewMeasurement {

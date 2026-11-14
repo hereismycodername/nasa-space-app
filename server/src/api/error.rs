@@ -13,7 +13,7 @@ pub(crate) struct ApiError {
     status: StatusCode,
     code: &'static str,
     message: &'static str,
-    field: Option<&'static str>,
+    field: Option<String>,
 }
 impl ApiError {
     pub fn new(status: StatusCode, code: &'static str, message: &'static str) -> Self {
@@ -24,8 +24,8 @@ impl ApiError {
             field: None,
         }
     }
-    pub fn with_field(mut self, field: &'static str) -> Self {
-        self.field = Some(field);
+    pub fn with_field(mut self, field: impl Into<String>) -> Self {
+        self.field = Some(field.into());
         self
     }
 }
@@ -40,7 +40,7 @@ struct Problem {
     code: &'static str,
     message: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    field: Option<&'static str>,
+    field: Option<String>,
     // Kept for existing consumers of the pre-BE-01 error envelope.
     error: &'static str,
 }

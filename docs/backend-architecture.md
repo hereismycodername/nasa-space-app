@@ -1,10 +1,11 @@
-# Backend после BE-04
+# Backend после BE-05
 
 BE-01 разделяет сервер и фиксирует контракт. BE-02 добавляет сравнимое время UTC,
 явное происхождение времени истории и схему ежедневных задач с переносом данных.
 BE-03 нормализует время при сравнении повторов и делает сохранение измерения транзакционным.
 BE-04 добавляет фильтрованную историю и независимые последние значения по метрикам.
-Series и задачи по датам остаются в [плане](backend-plan.md).
+BE-05 добавляет ограниченные агрегированные ряды с явными пропусками.
+Задачи по датам остаются в [плане](backend-plan.md).
 
 ## Границы модулей
 
@@ -48,6 +49,7 @@ api преобразует wire DTO и решает, какой HTTP-ответ 
 | storage::measurements::device | `&SqlitePool`, `device_id: &str` | `Option<Device>` |
 | storage::measurements::history | `&SqlitePool`, `&HistoryFilter {astronaut_id, metric, from_ms, to_ms, limit}` | `MeasurementPage {items: Vec<Measurement>, has_more}` |
 | storage::measurements::latest_per_metric | `&SqlitePool`, `astronaut_id: &str` | `Vec<LatestMetric {metric, unit, latest_known_measurement, latest_unknown_time_measurement}>` (всегда шесть) |
+| storage::measurements::series | `&SqlitePool`, `&SeriesFilter {astronaut_id, metric, from_ms, to_ms, bucket_seconds}` | `SeriesData {buckets: Vec<BucketAggregate {start_ms, mean, last, min, max, count}>, excluded_unknown_time_count}` |
 | storage::measurements::latest_received | `&SqlitePool` | `Option<Measurement>` |
 | storage::measurements::insert_or_get | `&SqlitePool`, `&NewMeasurement`, `&Device`, `received_at: &str` | `InsertOutcome {measurement, created}` |
 | storage::tasks::list | `&SqlitePool` | `Vec<Task>` |
@@ -61,6 +63,8 @@ api преобразует wire DTO и решает, какой HTTP-ответ 
 
 - `NewMeasurement::validate(now: DateTime<Utc>) -> Result<(), ValidationError>`;
 - `Measurement::matches_payload(&NewMeasurement) -> Result<bool, chrono::ParseError>`;
+- `series_bucket_seconds(from_ms, to_ms, max_points) -> Result<i64, ValidationError>`;
+- `fill_series(&SeriesFilter, Vec<BucketAggregate>) -> Vec<SeriesPoint>`;
 - `assess(Option<&Measurement>, now: DateTime<Utc>) -> Result<Assessment, InvalidStoredTimestamp>`;
 - `completion_time(completed: bool, now: DateTime<Utc>) -> Option<DateTime<Utc>>`.
 
@@ -188,9 +192,19 @@ Tie-breaker — `id DESC`. `latest_received` для assessments не измен�
 
 История с metric использует существующий `measurements_metric_time` из 0002.
 
+### Ряды BE-05
+
+`METRICS` — общий реестр имени, единицы и агрегации; из него строится SQL latest.
+Domain выбирает минимальный шаг из фиксированной лестницы с UTC-выравниванием,
+применяет mean/last и заполняет пропуски. API валидирует query и сериализует UTC с Z.
+Storage одним SQL с `ROW_NUMBER` и `GROUP BY` возвращает непустые интервалы;
+отдельный COUNT неизвестного времени выполняется в той же read-транзакции.
+Фильтр `measured_at IS NOT NULL` использует частичный индекс
+`measurements_metric_known_time` из 0003; COUNT ограничен диапазоном индекса
+`measurements_metric_received_time`. Новая миграция не требуется.
+
 ## Точки последующего расширения
 
-- **BE-05:** series и агрегация для графиков.
 - **BE-06:** свежесть каждой метрики, единая модель качества, clockSkew.
 - **BE-07:** публичная дата миссии UTC, выбор ежедневного выполнения, идемпотентный PATCH.
 - **BE-08:** объяснимые демонстрационные правила.

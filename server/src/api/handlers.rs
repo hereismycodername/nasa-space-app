@@ -1,8 +1,8 @@
 use super::{
     dto::{
         AssessmentResponse, HealthResponse, HistoryQuery, LatestMeasurementsResponse,
-        MeasurementPageResponse, MeasurementResponse, NewMeasurementRequest, TaskResponse,
-        TaskUpdateRequest,
+        MeasurementPageResponse, MeasurementResponse, NewMeasurementRequest, SeriesQuery,
+        SeriesResponse, TaskResponse, TaskUpdateRequest,
     },
     error::{ApiError, ApiResult},
     extractors::{ApiJson, ApiPath, ApiQuery},
@@ -36,6 +36,14 @@ pub(crate) async fn latest(
     Ok(Json(LatestMeasurementsResponse {
         metrics: metrics.into_iter().map(Into::into).collect(),
     }))
+}
+pub(crate) async fn series(
+    State(pool): State<SqlitePool>,
+    ApiQuery(params): ApiQuery<Vec<(String, String)>>,
+) -> ApiResult<Json<SeriesResponse>> {
+    let filter = domain::measurements::SeriesFilter::try_from(SeriesQuery::try_from(params)?)?;
+    let data = storage::measurements::series(&pool, &filter).await?;
+    Ok(Json(SeriesResponse::new(&filter, data)))
 }
 pub(crate) async fn ingest(
     State(pool): State<SqlitePool>,

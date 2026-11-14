@@ -1,0 +1,15 @@
+{
+  "metric": "heartRate",
+  "unit": "bpm",
+  "from": "2026-11-07T00:00:00Z",
+  "to": "2026-11-07T00:00:30Z",
+  "bucketSeconds": 10,
+  "aggregation": "mean",
+  "timeBasis": "measuredAt",
+  "excludedUnknownTimeCount": 1,
+  "points": [
+    { "start": "2026-11-07T00:00:00Z", "value": 70.0, "min": 60.0, "max": 80.0, "count": 2 },
+    { "start": "2026-11-07T00:00:10Z", "value": null, "min": null, "max": null, "count": 0 },
+    { "start": "2026-11-07T00:00:20Z", "value": 90.0, "min": 90.0, "max": 90.0, "count": 1 }
+  ]
+}

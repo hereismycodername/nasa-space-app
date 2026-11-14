@@ -1,13 +1,159 @@
 //! HTTP serialization stays separate from domain rules and SQLite rows.
+use super::error::ApiError;
 use crate::domain::{
     assessments::Assessment,
     measurements::{
-        HistoryFilter, LatestMetric, Measurement, MeasurementPage, NewMeasurement, ValidationError,
-        METRICS,
+        fill_series, series_bucket_seconds, HistoryFilter, LatestMetric, Measurement,
+        MeasurementPage, NewMeasurement, SeriesData, SeriesFilter, ValidationError, METRICS,
     },
     tasks::Task,
 };
 use serde::{Deserialize, Serialize};
+
+#[derive(Default)]
+pub(crate) struct SeriesQuery {
+    metric: Option<String>,
+    from: Option<String>,
+    to: Option<String>,
+    max_points: Option<String>,
+}
+
+impl TryFrom<Vec<(String, String)>> for SeriesQuery {
+    type Error = ApiError;
+
+    fn try_from(params: Vec<(String, String)>) -> Result<Self, Self::Error> {
+        let mut query = Self::default();
+        for (field, value) in params {
+            let slot = match field.as_str() {
+                "metric" => &mut query.metric,
+                "from" => &mut query.from,
+                "to" => &mut query.to,
+                "maxPoints" => &mut query.max_points,
+                _ => {
+                    return Err(ApiError::new(
+                        axum::http::StatusCode::BAD_REQUEST,
+                        "INVALID_QUERY",
+                        "Unknown query parameter",
+                    )
+                    .with_field(field))
+                }
+            };
+            if slot.replace(value).is_some() {
+                return Err(ApiError::new(
+                    axum::http::StatusCode::BAD_REQUEST,
+                    "INVALID_QUERY",
+                    "Query parameter must occur only once",
+                )
+                .with_field(field));
+            }
+        }
+        Ok(query)
+    }
+}
+
+impl TryFrom<SeriesQuery> for SeriesFilter {
+    type Error = ValidationError;
+
+    fn try_from(query: SeriesQuery) -> Result<Self, Self::Error> {
+        let metric = query.metric.ok_or(ValidationError {
+            field: "metric",
+            message: "metric is required",
+        })?;
+        let metric = METRICS
+            .into_iter()
+            .find(|definition| definition.metric == metric)
+            .ok_or(ValidationError {
+                field: "metric",
+                message: "Unknown metric",
+            })?;
+        let timestamp = |value: Option<String>, field| -> Result<i64, ValidationError> {
+            let value = value.ok_or(ValidationError {
+                field,
+                message: "Timestamp is required",
+            })?;
+            chrono::DateTime::parse_from_rfc3339(&value)
+                .map(|time| time.timestamp_millis())
+                .map_err(|_| ValidationError {
+                    field,
+                    message: "Expected an RFC3339 timestamp with offset",
+                })
+        };
+        let from_ms = timestamp(query.from, "from")?;
+        let to_ms = timestamp(query.to, "to")?;
+        let max_points = query
+            .max_points
+            .map(|value| {
+                value.parse::<usize>().map_err(|_| ValidationError {
+                    field: "maxPoints",
+                    message: "maxPoints must be an integer from 1 to 500",
+                })
+            })
+            .transpose()?
+            .unwrap_or(200);
+        let bucket_seconds = series_bucket_seconds(from_ms, to_ms, max_points)?;
+        Ok(Self {
+            astronaut_id: "demo-astronaut",
+            metric,
+            from_ms,
+            to_ms,
+            bucket_seconds,
+        })
+    }
+}
+
+fn utc_timestamp(ms: i64) -> String {
+    chrono::DateTime::from_timestamp_millis(ms)
+        .expect("validated RFC3339 range and UTC bucket starts fit Chrono")
+        .to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SeriesResponse {
+    metric: &'static str,
+    unit: &'static str,
+    from: String,
+    to: String,
+    bucket_seconds: i64,
+    aggregation: &'static str,
+    time_basis: &'static str,
+    excluded_unknown_time_count: i64,
+    points: Vec<SeriesPointResponse>,
+}
+
+#[derive(Serialize)]
+struct SeriesPointResponse {
+    start: String,
+    value: Option<f64>,
+    min: Option<f64>,
+    max: Option<f64>,
+    count: i64,
+}
+
+impl SeriesResponse {
+    pub fn new(filter: &SeriesFilter, data: SeriesData) -> Self {
+        Self {
+            metric: filter.metric.metric,
+            unit: filter.metric.unit,
+            from: utc_timestamp(filter.from_ms),
+            to: utc_timestamp(filter.to_ms),
+            bucket_seconds: filter.bucket_seconds,
+            aggregation: filter.metric.aggregation.as_str(),
+            time_basis: "measuredAt",
+            excluded_unknown_time_count: data.excluded_unknown_time_count,
+            points: fill_series(filter, data.buckets)
+                .into_iter()
+                .map(|point| SeriesPointResponse {
+                    start: utc_timestamp(point.start_ms),
+                    value: point.value,
+                    min: point.min,
+                    max: point.max,
+                    count: point.count,
+                })
+                .collect(),
+        }
+    }
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

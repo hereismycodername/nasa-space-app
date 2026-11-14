@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Space Health Local API
-  version: 0.4.0
-  description: 'Implemented BE-04 contract for a local hackathon prototype. Measurement retries compare
+  version: 0.5.0
+  description: 'Implemented BE-05 contract for a local hackathon prototype. Measurement retries compare
     normalized UTC instants with nanosecond parser precision and preserve the first stored record.
     Measurements include timeBasis;
     history is ordered by the measurement time, or receipt time when unknown, using numeric UTC milliseconds.
@@ -11,7 +11,8 @@ info:
     code/message/optional field and legacy error. No authentication, authorization or rate limiting is implemented: use only
     synthetic data on a trusted local network. There are no 401/403/429 flows. Unknown /api routes return
     NOT_FOUND. History supports metric/from/to/limit filters and an items/hasMore envelope; latest returns
-    six independent metrics. Cursor pagination, missionDate and per-metric assessments remain future work.
+    six independent metrics. Series returns bounded UTC buckets with explicit gaps and metric-specific
+    aggregation. Cursor pagination, missionDate and per-metric assessments remain future work.
     Requests above 2 MiB are rejected by JSON body extraction. Version
     is a contract revision; /api paths remain unchanged.'
 servers:
@@ -124,7 +125,7 @@ paths:
         and null mean the same unknown time; unknown and known time conflict. Leap seconds remain distinct
         from the following ordinary second. Concurrent equivalent requests create one record: one receives
         201 and the others 200; conflicting payloads never overwrite the winner. Database failures return
-        500, never a successful save response. Numeric milliseconds are used only for history ordering.
+        500, never a successful save response. Numeric UTC milliseconds are used for history and series.
         No batch ingestion. Body limit is 2 MiB.'
       responses:
         '201':
@@ -175,6 +176,73 @@ paths:
                 externalValue: ./examples/measurement.equivalent-retry.request.json
               unknownTime:
                 externalValue: ./examples/measurement.unknown-time.request.json
+  /api/measurements/series:
+    get:
+      summary: Get bounded chart data for one metric
+      operationId: getSeries
+      tags:
+      - Measurements
+      description: >-
+        Selects demo-astronaut measurements by measured_at_ms in [from, to), in integer UTC
+        milliseconds. Missing measuredAt never contributes a point; excludedUnknownTimeCount counts
+        those rows for the same metric/astronaut by received_at_ms in [from, to).
+        Chooses the smallest bucket from 10s, 30s, 1m, 5m, 15m, 30m, 1h, 3h, 6h, 12h, 1d
+        whose aligned bucket count is at most maxPoints. Starts are floor(ms/bucket)*bucket
+        relative to the UTC epoch, including negative times; 1d means a UTC day.
+        The first start may precede from, but samples outside the requested range are excluded.
+        heartRate, systolicPressure, diastolicPressure and temperature use mean; sleepHours and
+        mood use last by measured_at_ms DESC, id DESC. All return min/max/count.
+        Every intersecting bucket is returned in ascending order; empty buckets have null
+        value/min/max and count=0. No interpolation or raw data changes.
+        Times in the response are normalized to UTC with Z. Unknown or repeated query parameters
+        return 400 INVALID_QUERY with the parameter name as field. Missing or invalid values return
+        400 VALIDATION_ERROR with field. If 1d buckets exceed maxPoints, field is to.
+      parameters:
+      - name: metric
+        in: query
+        required: true
+        description: Select exactly one metric.
+        schema:
+          $ref: '#/components/schemas/Metric'
+      - name: from
+        in: query
+        required: true
+        description: Inclusive RFC3339 timestamp with offset, truncated to UTC milliseconds. Encode + as %2B.
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        required: true
+        description: Exclusive RFC3339 timestamp with offset; must be after from in UTC milliseconds.
+        schema:
+          type: string
+          format: date-time
+      - name: maxPoints
+        in: query
+        required: false
+        description: Maximum number of returned buckets, including empty ones.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 200
+      responses:
+        '200':
+          description: Aligned series with explicit empty buckets; points.length never exceeds maxPoints.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeasurementSeries'
+              examples:
+                series:
+                  externalValue: ./examples/series.response.json
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/DatabaseError'
   /api/measurements/latest:
     get:
       summary: Get independent latest measurements for all six metrics
@@ -333,6 +401,65 @@ components:
       - score
       description: heartRate=bpm; systolicPressure/diastolicPressure=mmHg; temperature=°C; sleepHours=h;
         mood=score. A mismatched pair returns VALIDATION_ERROR.
+    MeasurementSeries:
+      type: object
+      additionalProperties: false
+      required: [metric, unit, from, to, bucketSeconds, aggregation, timeBasis, excludedUnknownTimeCount, points]
+      properties:
+        metric:
+          $ref: '#/components/schemas/Metric'
+        unit:
+          $ref: '#/components/schemas/Unit'
+        from:
+          type: string
+          format: date-time
+          description: Inclusive requested time, normalized to UTC milliseconds with Z.
+        to:
+          type: string
+          format: date-time
+          description: Exclusive requested time, normalized to UTC milliseconds with Z.
+        bucketSeconds:
+          type: integer
+          enum: [10, 30, 60, 300, 900, 1800, 3600, 10800, 21600, 43200, 86400]
+        aggregation:
+          type: string
+          enum: [mean, last]
+          description: Mean for pulse/pressures/temperature; last for sleepHours/mood.
+        timeBasis:
+          type: string
+          const: measuredAt
+        excludedUnknownTimeCount:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Unknown-time records of this metric/astronaut received in [from, to).
+        points:
+          type: array
+          minItems: 1
+          maxItems: 500
+          description: All intersecting buckets ordered by start ascending, at most maxPoints.
+          items:
+            $ref: '#/components/schemas/SeriesPoint'
+    SeriesPoint:
+      type: object
+      additionalProperties: false
+      required: [start, value, min, max, count]
+      properties:
+        start:
+          type: string
+          format: date-time
+          description: UTC epoch-aligned bucket start with Z; may precede from.
+        value:
+          type: [number, 'null']
+          description: Metric-specific mean or last; null when count is zero.
+        min:
+          type: [number, 'null']
+        max:
+          type: [number, 'null']
+        count:
+          type: integer
+          format: int64
+          minimum: 0
     MeasurementPage:
       type: object
       additionalProperties: false
