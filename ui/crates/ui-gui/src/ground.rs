@@ -144,13 +144,12 @@ impl<B: Backend> GuiApp<B> {
             card().show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 caption(ui, &format!("Uplink message to {}", name));
-                ui.horizontal_wrapped(|ui| {
-                    for t in ["Repeat the measurement in 1 hour.", "Check cabin CO2 and ventilation.", "Rest, hydrate, re-test later today.", "Schedule a private medical conference."] {
-                        if ui.small_button(t).clicked() {
-                            compose = t.to_string();
-                        }
+                for t in ["Repeat the measurement in 1 hour.", "Check cabin CO2 and ventilation.", "Rest, hydrate, re-test later today.", "Schedule a private medical conference."] {
+                    if ui.add_sized([ui.available_width(), 22.0], egui::Button::new(RichText::new(t).size(11.5))).clicked() {
+                        compose = t.to_string();
                     }
-                });
+                }
+                ui.add_space(4.0);
                 ui.add(egui::TextEdit::multiline(&mut compose).desired_rows(2).desired_width(f32::INFINITY).hint_text("Guidance for the crew member"));
                 ui.horizontal(|ui| {
                     if ui.add_enabled(!compose.trim().is_empty(), primary("Send")).clicked() {

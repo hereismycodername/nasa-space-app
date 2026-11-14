@@ -113,9 +113,9 @@ impl Card {
 pub fn vcard(ui: &mut Ui, outer_w: f32, outer_h: f32, content: impl FnOnce(&mut Ui)) {
     card().show(ui, |ui| {
         ui.vertical(|ui| {
-            ui.set_width(outer_w - 30.0);
+            ui.set_width(outer_w - 28.0);
             if outer_h > 0.0 {
-                ui.set_min_height(outer_h - 30.0);
+                ui.set_min_height(outer_h - 28.0);
             }
             content(ui)
         });
