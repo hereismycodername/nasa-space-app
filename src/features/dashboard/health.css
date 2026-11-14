@@ -30,7 +30,7 @@
 .historical-health { margin-top: 10px; border-left: 2px solid #6d6c6b; padding: 6px 9px; font-size: 11px; line-height: 1.6; color: #adb3bc; background: #ffffff04; }
 .historical-health strong { font-weight: 500; color: #d5c2ae; }
 .historical-health p + p { margin-top: 5px; }
-.health-alerts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; margin-top: 17px; padding-top: 14px; border-top: 1px solid var(--border); }
+.health-alerts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); align-items: start; gap: 16px; margin-top: 17px; padding-top: 14px; border-top: 1px solid var(--border); }
 .health-alert-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
 .health-disclaimer { padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--border); font-size: 11px; line-height: 1.7; color: var(--muted); }
 .emergency-guidance { margin-top: 14px; font-size: 12px; line-height: 1.7; }
@@ -55,9 +55,3 @@
 .system-checkin-actions > div { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .system-checkin-actions button { white-space: normal; text-align: left; font-size: 10px; justify-content: flex-start; }
 @media (max-width: 650px) { .health-panel .section-heading { flex-wrap: wrap; } .hazard-list { grid-template-columns: 1fr; } .health-panel { padding: 14px; } }
-
-/* Full explanations remain readable by scrolling; expanding details is explicit. */
-.health-overview { height: 156px; overflow: auto; scrollbar-gutter: stable; }
-.health-alerts { height: 244px; overflow: auto; scrollbar-gutter: stable; align-items: start; }
-.health-summary { height: 4.8em; overflow: auto; }
-.metric-health > .health-badge { min-height: 38px; }

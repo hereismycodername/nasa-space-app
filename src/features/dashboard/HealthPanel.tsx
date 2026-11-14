@@ -23,14 +23,14 @@ export function HealthDetails({ view }: { view: RuleView }) {
   const historical = !view.current && ['noAlert', 'attention', 'critical'].includes(rule.status)
   const currentAlert = view.current && ['attention', 'critical'].includes(rule.status)
   return <div className="health-details">
-    <div className="health-overview" tabIndex={0} role="region" aria-label="Объяснение оценки">
-    <p className="health-reason">{view.reason}</p>
-    {currentAlert ? <div className="health-next-action"><strong>{escalationLabels[rule.escalation]}</strong><p>{rule.suggestedAction}</p></div> : null}
-    {historical ? <div className={`historical-health historical-${rule.status}`}>
-      <strong>Предыдущая оценка: {healthLabels[rule.status]}</strong>
-      <p>{view.evaluatedAt ? formatTime(view.evaluatedAt) : ''} · не текущий статус</p>
-      <p>{rule.explanation}</p>
-    </div> : null}
+    <div className="health-overview">
+      <p className="health-reason">{view.reason}</p>
+      {currentAlert ? <div className="health-next-action"><strong>{escalationLabels[rule.escalation]}</strong><p>{rule.suggestedAction}</p></div> : null}
+      {historical ? <div className={`historical-health historical-${rule.status}`}>
+        <strong>Предыдущая оценка: {healthLabels[rule.status]}</strong>
+        <p>{view.evaluatedAt ? formatTime(view.evaluatedAt) : ''} · не текущий статус</p>
+        <p>{rule.explanation}</p>
+      </div> : null}
     </div>
     <details>
       <summary>{historical ? 'Предыдущая рекомендация и контекст' : 'Что делать и почему'}</summary>

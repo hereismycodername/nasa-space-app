@@ -113,5 +113,3 @@
 .object-dot-stale { background: #858e9b; }
 .telemetry-period { min-height: 32px; }
 .telemetry-refresh { display: inline-block; min-width: 110px; }
-.telemetry-channel > div { height: 228px; overflow: auto; scrollbar-gutter: stable; }
-.telemetry-channel > header { min-height: 68px; }
