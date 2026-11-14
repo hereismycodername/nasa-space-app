@@ -77,6 +77,9 @@ impl From<ValidationError> for ApiError {
 }
 impl From<InvalidStoredTimestamp> for ApiError {
     fn from(_: InvalidStoredTimestamp) -> Self {
+        eprintln!(
+            "Storage error: invalid timestamp in a stored measurement; check database integrity"
+        );
         Self::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             "DATABASE_ERROR",
@@ -97,6 +100,9 @@ impl From<sqlx::Error> for ApiError {
 
 impl From<InvalidSeriesData> for ApiError {
     fn from(_: InvalidSeriesData) -> Self {
+        eprintln!(
+            "Storage error: invalid aggregate in a measurement series; check database integrity"
+        );
         Self::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             "DATABASE_ERROR",

@@ -8,7 +8,7 @@ import { simulatorConfig } from '../simulator/config.mjs'
 
 const args = new Set(process.argv.slice(2))
 if (args.has('--help')) {
-  console.log('npm run demo [-- --no-build|--no-simulator]\nSIM_COUNT=N makes the demo finish after N confirmed samples.\nnpm run server: backend only, for Vite development.\nnpm run start: existing server binary + dist, without simulator.')
+  console.log('npm run demo [-- --no-build|--no-simulator]\nSIM_COUNT=N makes the demo finish after N confirmed samples.\nnpm run server: backend only, for Vite development.\nnpm run start: existing server binary + dist, without simulator.\nnpm run release: build dist and locked release server, without simulator; --simulator opts in.')
   process.exit(0)
 }
 const shutdown = new AbortController()
@@ -69,9 +69,14 @@ function occupied(host, port) {
 }
 
 try {
-  for (const arg of args) if (!['--no-build', '--no-simulator', '--server-only'].includes(arg)) throw new Error(`Unknown option: ${arg}`)
+  for (const arg of args) if (!['--no-build', '--no-simulator', '--server-only', '--release', '--simulator'].includes(arg)) throw new Error(`Unknown option: ${arg}`)
   requireNode()
   const serverOnly = args.has('--server-only')
+  const release = args.has('--release')
+  if (release && serverOnly) throw new Error('--release includes the UI; omit --server-only.')
+  if (args.has('--simulator') && (serverOnly || args.has('--no-simulator'))) throw new Error('--simulator cannot be combined with --server-only or --no-simulator.')
+  const withSimulator = !serverOnly && !args.has('--no-simulator') && (!release || args.has('--simulator'))
+  const profile = release ? 'release' : 'debug'
   const bind = process.env.BIND_ADDR ?? '127.0.0.1:8080'
   const bindParts = /^(\[[^\]]+\]|[^:\s/?#@]+):(\d+)$/.exec(bind)
   if (!bindParts || Number(bindParts[2]) < 1 || Number(bindParts[2]) > 65535) throw new Error('BIND_ADDR must be host:port, e.g. 127.0.0.1:8080 or 0.0.0.0:8080')
@@ -81,7 +86,7 @@ try {
   const base = `http://${host.includes(':') ? `[${host}]` : host}:${port}`
   // The demo's producer always targets the server started by this process.
   const simEnv = { ...process.env, API_URL: base, SHUTDOWN_STDIN: isWindows ? '1' : '0' }
-  if (!serverOnly && !args.has('--no-simulator')) simulatorConfig(simEnv)
+  if (withSimulator) simulatorConfig(simEnv)
   if (await occupied(host, Number(port))) throw new Error(`${bind} is already in use. Stop the existing server or choose another BIND_ADDR; no process was killed.`)
   const cargo = args.has('--no-build') && process.env.SERVER_BINARY ? null : cargoPath()
   let compiledBinary
@@ -92,7 +97,7 @@ try {
       await command(npm, [...prefix, 'run', 'build'])
     }
     let pendingOutput = ''
-    await command(cargo, ['build', '--locked', '--manifest-path', join(root, 'server/Cargo.toml'), '--bin', 'space-health-server', '--message-format=json'], chunk => {
+    await command(cargo, ['build', ...(release ? ['--release'] : []), '--locked', '--manifest-path', join(root, 'server/Cargo.toml'), '--bin', 'space-health-server', '--message-format=json'], chunk => {
       pendingOutput += chunk
       let newline
       while ((newline = pendingOutput.indexOf('\n')) >= 0) {
@@ -114,19 +119,19 @@ try {
     const metadata = spawnSync(cargo, ['metadata', '--no-deps', '--format-version', '1', '--manifest-path', join(root, 'server/Cargo.toml')], { cwd: root, encoding: 'utf8', timeout: 15_000 })
     if (metadata.status !== 0) throw new Error(`Cannot locate Cargo build output: ${metadata.stderr || metadata.error?.message}`)
     const target = JSON.parse(metadata.stdout).target_directory
-    const marker = join(target, 'space-health-demo-executable.json')
+    const marker = join(target, release ? 'space-health-release-executable.json' : 'space-health-demo-executable.json')
     if (compiledBinary) {
       binary = compiledBinary
       writeFileSync(marker, JSON.stringify({ executable: binary }) + '\n')
     } else if (process.env.CARGO_BUILD_TARGET) {
       const triple = process.env.CARGO_BUILD_TARGET
       if (!/^[a-zA-Z0-9_-]+$/.test(triple)) throw new Error('For a custom JSON build target, specify SERVER_BINARY with --no-build.')
-      binary = join(target, triple, 'debug', `space-health-server${isWindows ? '.exe' : ''}`)
+      binary = join(target, triple, profile, `space-health-server${isWindows ? '.exe' : ''}`)
     } else if (existsSync(marker)) {
       binary = JSON.parse(readFileSync(marker, 'utf8')).executable
-    } else binary = join(target, 'debug', `space-health-server${isWindows ? '.exe' : ''}`)
+    } else binary = join(target, profile, `space-health-server${isWindows ? '.exe' : ''}`)
   }
-  if (!existsSync(binary)) throw new Error('Server binary missing. Run npm run demo without --no-build first.')
+  if (!existsSync(binary)) throw new Error(`Server binary missing. Run npm run ${release ? 'release' : 'demo'} without --no-build first.`)
   const dist = process.env.FRONTEND_DIST ?? join(root, 'dist')
   if (!serverOnly && !existsSync(join(dist, 'index.html'))) throw new Error(`Built UI missing in ${dist}. Run npm run build or set FRONTEND_DIST.`)
   const server = launch(binary, [], { ...process.env, BIND_ADDR: bind, FRONTEND_DIST: dist, SHUTDOWN_STDIN: isWindows ? '1' : '0' })
@@ -138,14 +143,14 @@ try {
     await delay(100, undefined, { signal: shutdown.signal }).catch(() => {})
   }
   if (!ready) throw new Error('Server did not become ready. Check DATABASE_URL, write permissions and the error above.')
-  console.log(`Ready: ${base}${serverOnly ? '/api/health (run npm run dev separately)' : ''}; Ctrl+C stops all demo processes.`)
+  console.log(`Ready: ${base}${serverOnly ? '/api/health (run npm run dev separately)' : ''}; Ctrl+C stops all processes. Binary (${profile}): ${binary}`)
   if (bind.startsWith('0.0.0.0:') || bind.startsWith('[::]:')) console.log(`LAN clients: http://<this computer's LAN IP>:${port} (trusted network only).`)
-  const simulator = !serverOnly && !args.has('--no-simulator') ? launch(process.execPath, [join(root, 'simulator/sensors.mjs')], simEnv) : null
+  const simulator = withSimulator ? launch(process.execPath, [join(root, 'simulator/sensors.mjs')], simEnv) : null
   const stopped = new Promise(resolve => { if (shutdown.signal.aborted) resolve({ code: 0 }); else shutdown.signal.addEventListener('abort', () => resolve({ code: 0 }), { once: true }) })
   const result = await Promise.race([server.done, stopped, ...(simulator ? [simulator.done] : [])])
   if (result.code !== 0 && !shutdown.signal.aborted) throw result.error ?? new Error(`Demo process exited (${result.code ?? result.signal})`)
 } catch (error) {
-  if (!shutdown.signal.aborted) { console.error(`Demo: ${error.message}\nRun npm run doctor for environment diagnostics.`); process.exitCode = 1 }
+  if (!shutdown.signal.aborted) { console.error(`Launcher: ${error.message}\nRun npm run doctor for environment diagnostics.`); process.exitCode = 1 }
 } finally {
   // Stop producers before storage, including any in-flight delivery.
   for (const child of [...children].reverse()) await stopChild(child)
