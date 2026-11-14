@@ -1,4 +1,4 @@
-import type { DailyTask, HealthAssessment, Measurement, NewMeasurement } from '../shared/types'
+import type { DailyTask, HealthAssessment, HistoryParams, LatestMeasurementsResponse, Measurement, MeasurementPage, NewMeasurement } from '../shared/types'
 
 /** HTTP failure with the server's stable error code and optional input field. */
 export class ApiError extends Error {
@@ -46,7 +46,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
-export const getHistory = () => request<Measurement[]>('/measurements')
+export const getHistory = (params: HistoryParams = {}) => {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) query.set(key, String(value))
+  }
+  const suffix = query.size ? `?${query}` : ''
+  return request<MeasurementPage>(`/measurements${suffix}`)
+}
+export const getLatest = () => request<LatestMeasurementsResponse>('/measurements/latest')
 export const getAssessment = () => request<HealthAssessment>('/assessments')
 export const getTasks = () => request<DailyTask[]>('/tasks')
 export const saveMeasurement = (measurement: NewMeasurement) => request<Measurement>('/measurements', {

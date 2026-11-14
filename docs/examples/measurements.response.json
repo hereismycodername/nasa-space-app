@@ -1,16 +1,19 @@
-[
-  {
-    "id": "be0a62c3-e5c0-4677-98fa-5bea1d4cf430",
-    "deviceId": "simulator-01",
-    "astronautId": "demo-astronaut",
-    "sessionId": "example-boot-1",
-    "sequence": 0,
-    "metric": "heartRate",
-    "value": 72,
-    "unit": "bpm",
-    "measuredAt": "2026-11-13T08:00:00Z",
-    "receivedAt": "2026-11-13T08:00:01+00:00",
-    "timeBasis": "measuredAt",
-    "source": "simulator"
-  }
-]
+{
+  "items": [
+    {
+      "id": "be0a62c3-e5c0-4677-98fa-5bea1d4cf430",
+      "deviceId": "simulator-01",
+      "astronautId": "demo-astronaut",
+      "sessionId": "example-boot-1",
+      "sequence": 0,
+      "metric": "heartRate",
+      "value": 72,
+      "unit": "bpm",
+      "measuredAt": "2026-11-13T08:00:00Z",
+      "receivedAt": "2026-11-13T08:00:01+00:00",
+      "timeBasis": "measuredAt",
+      "source": "simulator"
+    }
+  ],
+  "hasMore": false
+}

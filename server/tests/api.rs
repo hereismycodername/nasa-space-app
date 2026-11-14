@@ -44,6 +44,190 @@ async fn call(app: &Router, method: &str, path: &str, body: Value) -> (StatusCod
 fn sample() -> Value {
     json!({"deviceId":"simulator-01","sessionId":"test-session","sequence":0,"metric":"heartRate","value":72,"unit":"bpm"})
 }
+
+#[tokio::test]
+async fn latest_keeps_rare_metrics_and_all_six_slots() {
+    let app = setup().await;
+    let mut sleep = sample();
+    sleep["metric"] = json!("sleepHours");
+    sleep["unit"] = json!("h");
+    sleep["value"] = json!(8);
+    sleep["measuredAt"] = json!("2020-01-01T00:00:00Z");
+    let (status, sleep) = call(&app, "POST", "/api/measurements", sleep).await;
+    assert_eq!(status, StatusCode::CREATED);
+    for sequence in 1..=105 {
+        let mut pulse = sample();
+        pulse["sequence"] = json!(sequence);
+        pulse["measuredAt"] = json!("2020-01-02T00:00:00Z");
+        assert_eq!(
+            call(&app, "POST", "/api/measurements", pulse).await.0,
+            StatusCode::CREATED
+        );
+    }
+    let (status, latest) = call(&app, "GET", "/api/measurements/latest", Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    let metrics = latest["metrics"].as_array().unwrap();
+    assert_eq!(metrics.len(), 6);
+    for (slot, (metric, unit)) in metrics.iter().zip([
+        ("heartRate", "bpm"),
+        ("systolicPressure", "mmHg"),
+        ("diastolicPressure", "mmHg"),
+        ("temperature", "°C"),
+        ("sleepHours", "h"),
+        ("mood", "score"),
+    ]) {
+        assert_eq!(slot["metric"], metric);
+        assert_eq!(slot["unit"], unit);
+        assert!(slot["latestUnknownTimeMeasurement"].is_null());
+        if metric == "heartRate" {
+            assert_eq!(slot["latestKnownMeasurement"]["metric"], "heartRate");
+        } else if metric == "sleepHours" {
+            assert_eq!(slot["latestKnownMeasurement"], sleep);
+        } else {
+            assert!(slot["latestKnownMeasurement"].is_null());
+        }
+    }
+}
+
+#[tokio::test]
+async fn latest_separates_known_time_from_last_unknown_reception() {
+    let (app, pool) = setup_with_pool().await;
+    let mut known = Vec::new();
+    for (sequence, time) in [
+        "2020-01-02T00:00:00Z",
+        "2020-01-02T05:00:00+05:00",
+        "2020-01-01T00:00:00Z",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut input = sample();
+        input["sequence"] = json!(sequence);
+        input["measuredAt"] = json!(time);
+        let (status, row) = call(&app, "POST", "/api/measurements", input).await;
+        assert_eq!(status, StatusCode::CREATED);
+        known.push(row);
+    }
+    sqlx::query("UPDATE measurements SET received_at=CASE sequence WHEN 0 THEN '2020-01-03T00:00:00Z' WHEN 1 THEN '2020-01-04T00:00:00Z' ELSE '2020-01-05T00:00:00Z' END")
+        .execute(&pool).await.unwrap();
+    let expected = [&known[0], &known[1]]
+        .into_iter()
+        .max_by_key(|row| row["id"].as_str().unwrap())
+        .unwrap();
+    let (_, latest) = call(&app, "GET", "/api/measurements/latest", Value::Null).await;
+    assert_eq!(
+        latest["metrics"][0]["latestKnownMeasurement"]["id"],
+        expected["id"]
+    );
+    assert!(latest["metrics"][0]["latestUnknownTimeMeasurement"].is_null());
+
+    let mut input = sample();
+    input["sequence"] = json!(3);
+    let (status, unknown) = call(&app, "POST", "/api/measurements", input).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (_, latest) = call(&app, "GET", "/api/measurements/latest", Value::Null).await;
+    assert_eq!(
+        latest["metrics"][0]["latestKnownMeasurement"]["id"],
+        expected["id"]
+    );
+    assert_eq!(
+        latest["metrics"][0]["latestUnknownTimeMeasurement"],
+        unknown
+    );
+
+    // The newest reception is known-time again; an older unknown row must disappear.
+    sqlx::query(
+        "UPDATE measurements SET received_at='2000-01-01T00:00:00Z' WHERE measured_at IS NULL",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (_, latest) = call(&app, "GET", "/api/measurements/latest", Value::Null).await;
+    assert!(latest["metrics"][0]["latestUnknownTimeMeasurement"].is_null());
+}
+
+#[tokio::test]
+async fn history_filters_numeric_utc_range_metric_and_limit() {
+    let (app, pool) = setup_with_pool().await;
+    for (sequence, time) in [
+        Some("2019-12-31T23:59:59.999Z"),
+        Some("2020-01-01T05:00:00+05:00"),
+        Some("2019-12-31T19:00:00-05:00"),
+        Some("2020-01-01T00:00:01Z"),
+        None,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut input = sample();
+        input["sequence"] = json!(sequence);
+        input["measuredAt"] = json!(time);
+        assert_eq!(
+            call(&app, "POST", "/api/measurements", input).await.0,
+            StatusCode::CREATED
+        );
+    }
+    sqlx::query(
+        "UPDATE measurements SET received_at='2020-01-01T00:00:00.500Z' WHERE measured_at IS NULL",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mut sleep = sample();
+    sleep["sequence"] = json!(5);
+    sleep["metric"] = json!("sleepHours");
+    sleep["unit"] = json!("h");
+    sleep["value"] = json!(8);
+    sleep["measuredAt"] = json!("2020-01-01T00:00:00Z");
+    assert_eq!(
+        call(&app, "POST", "/api/measurements", sleep).await.0,
+        StatusCode::CREATED
+    );
+    let range = "/api/measurements?metric=heartRate&from=2020-01-01T05:00:00%2B05:00&to=2019-12-31T19:00:01-05:00";
+    let (status, page) = call(&app, "GET", &format!("{range}&limit=2"), Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(page["hasMore"], true);
+    assert_eq!(page["items"].as_array().unwrap().len(), 2);
+    let (_, complete) = call(&app, "GET", &format!("{range}&limit=3"), Value::Null).await;
+    assert_eq!(complete["hasMore"], false);
+    let rows = complete["items"].as_array().unwrap();
+    assert_eq!(rows.len(), 3);
+    assert!(rows.iter().all(|row| row["metric"] == "heartRate"));
+    assert_eq!(rows[0]["sequence"], 4);
+    assert!(rows[1]["id"].as_str().unwrap() > rows[2]["id"].as_str().unwrap());
+    assert!(rows[1..]
+        .iter()
+        .all(|row| [json!(1), json!(2)].contains(&row["sequence"])));
+}
+
+#[tokio::test]
+async fn history_rejects_invalid_filters_and_unknown_parameters() {
+    let app = setup().await;
+    for (query, code, field) in [
+        ("metric=unknown", "VALIDATION_ERROR", Some("metric")),
+        (
+            "from=2020-01-01T00:00:00Z&to=2020-01-01T05:00:00%2B05:00",
+            "VALIDATION_ERROR",
+            Some("to"),
+        ),
+        ("unexpected=true", "INVALID_QUERY", None),
+        ("from=2020-01-01", "VALIDATION_ERROR", Some("from")),
+        ("limit=501", "VALIDATION_ERROR", Some("limit")),
+    ] {
+        let response = call_raw(
+            &app,
+            "GET",
+            &format!("/api/measurements?{query}"),
+            String::new(),
+            None,
+        )
+        .await;
+        assert_problem(&response, StatusCode::BAD_REQUEST, code);
+        if let Some(field) = field {
+            assert_eq!(response.2["field"], field);
+        }
+    }
+}
 #[tokio::test]
 async fn ingestion_is_idempotent_and_rejects_sequence_conflicts() {
     let app = setup().await;
@@ -68,7 +252,7 @@ async fn ingestion_is_idempotent_and_rejects_sequence_conflicts() {
         StatusCode::CONFLICT
     );
     let (_, history) = call(&app, "GET", "/api/measurements", Value::Null).await;
-    assert_eq!(history.as_array().unwrap().len(), 1);
+    assert_eq!(history["items"].as_array().unwrap().len(), 1);
 }
 #[tokio::test]
 async fn validation_and_server_owned_identity() {
@@ -266,7 +450,7 @@ async fn validation_exposes_a_stable_code_and_field_without_writing_data() {
     assert_problem(&response, StatusCode::BAD_REQUEST, "VALIDATION_ERROR");
     assert_eq!(response.2["field"], "unit");
     let (_, history) = call(&app, "GET", "/api/measurements", Value::Null).await;
-    assert_eq!(history, json!([]));
+    assert_eq!(history, json!({"items": [], "hasMore": false}));
 }
 
 #[tokio::test]
@@ -403,6 +587,7 @@ async fn history_uses_received_time_when_measurement_time_is_unknown() {
         .unwrap();
     let (status, history) = call(&app, "GET", "/api/measurements", Value::Null).await;
     assert_eq!(status, StatusCode::OK);
+    let history = &history["items"];
     assert_eq!(history[0]["id"], second["id"]);
     assert_eq!(history[1]["id"], first["id"]);
     assert_eq!(history[0]["deviceId"], "simulator-01");
@@ -465,7 +650,7 @@ async fn history_orders_by_utc_measurement_time_with_explicit_reception_fallback
         saved[0]["id"].as_str().unwrap(),
         saved[3]["id"].as_str().unwrap(),
     ];
-    let ids: Vec<_> = rows
+    let ids: Vec<_> = rows["items"]
         .as_array()
         .unwrap()
         .iter()

@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Space Health Local API
-  version: 0.3.0
-  description: 'Implemented BE-03 contract for a local hackathon prototype. Measurement retries compare
+  version: 0.4.0
+  description: 'Implemented BE-04 contract for a local hackathon prototype. Measurement retries compare
     normalized UTC instants with nanosecond parser precision and preserve the first stored record.
     Measurements include timeBasis;
     history is ordered by the measurement time, or receipt time when unknown, using numeric UTC milliseconds.
@@ -10,8 +10,9 @@ info:
     this server; these semantics differ from v0.1.1. API errors use application/problem+json with
     code/message/optional field and legacy error. No authentication, authorization or rate limiting is implemented: use only
     synthetic data on a trusted local network. There are no 401/403/429 flows. Unknown /api routes return
-    NOT_FOUND. Data filtering, pagination, missionDate and per-metric assessments are future work, not
-    available through this specification. Requests above 2 MiB are rejected by JSON body extraction. Version
+    NOT_FOUND. History supports metric/from/to/limit filters and an items/hasMore envelope; latest returns
+    six independent metrics. Cursor pagination, missionDate and per-metric assessments remain future work.
+    Requests above 2 MiB are rejected by JSON body extraction. Version
     is a contract revision; /api paths remain unchanged.'
 servers:
 - url: http://127.0.0.1:8080
@@ -50,32 +51,60 @@ paths:
           $ref: '#/components/responses/DatabaseError'
   /api/measurements:
     get:
-      summary: Read the latest stored history
+      summary: Read filtered measurement history
       operationId: listMeasurements
       tags:
       - Measurements
-      description: Returns at most 500 rows across all metrics and the demo profile, ordered by effective
+      description: Returns measurements for demo-astronaut, ordered by effective
         UTC milliseconds descending then id descending. Effective time is measuredAt when known, otherwise
         receivedAt; timeBasis identifies the selected field. Sub-millisecond fractions are truncated for
         ordering, while original timestamp strings are preserved. Receipt time does not establish measurement
-        freshness. No filtering or pagination is implemented in BE-03. Query parameters
-        are decoded but ignored; metric/from/to/limit are not effective options. Empty history returns
-        [].
+        freshness. Optional filters use the half-open range [from, to) in numeric UTC milliseconds.
+        Unknown query parameters return 400 INVALID_QUERY. Invalid metric, timestamps, limit or from >= to
+        return 400 VALIDATION_ERROR with field (to for an invalid range). hasMore is computed by fetching
+        limit + 1 matching rows; there is no cursor. Empty history returns items=[] and hasMore=false.
+      parameters:
+      - name: metric
+        in: query
+        required: false
+        description: Select exactly one metric.
+        schema:
+          $ref: '#/components/schemas/Metric'
+      - name: from
+        in: query
+        required: false
+        description: Inclusive effective time, RFC3339 with offset. Encode the plus sign as %2B.
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        required: false
+        description: Exclusive effective time, RFC3339 with offset. Must be after from in UTC milliseconds.
+        schema:
+          type: string
+          format: date-time
+      - name: limit
+        in: query
+        required: false
+        description: Maximum returned items; hasMore indicates further matching records.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 100
       responses:
         '200':
-          description: Up to 500 measurement records.
+          description: Bounded page of matching measurement records.
           content:
             application/json:
               schema:
-                type: array
-                maxItems: 500
-                items:
-                  $ref: '#/components/schemas/Measurement'
+                $ref: '#/components/schemas/MeasurementPage'
               examples:
                 history:
                   externalValue: ./examples/measurements.response.json
                 empty:
-                  value: []
+                  value: {items: [], hasMore: false}
         '400':
           $ref: '#/components/responses/BadRequest'
         '405':
@@ -146,6 +175,32 @@ paths:
                 externalValue: ./examples/measurement.equivalent-retry.request.json
               unknownTime:
                 externalValue: ./examples/measurement.unknown-time.request.json
+  /api/measurements/latest:
+    get:
+      summary: Get independent latest measurements for all six metrics
+      operationId: getLatestMeasurements
+      tags:
+      - Measurements
+      description: 'Always returns six metrics for demo-astronaut in order heartRate, systolicPressure,
+        diastolicPressure, temperature, sleepHours, mood, with their units. latestKnownMeasurement selects
+        a row with measuredAt present by measured_at_ms DESC, id DESC; receipt time has no effect.
+        latestUnknownTimeMeasurement is the row selected by received_at_ms DESC, id DESC only if its
+        measuredAt is null; otherwise this field is null. Both fields are null for a metric without data.
+        Fields contain full Measurement objects. No freshness or status is computed (BE-06).'
+      responses:
+        '200':
+          description: Six metric slots, including those without measurements.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LatestMeasurements'
+              examples:
+                latest:
+                  externalValue: ./examples/latest.response.json
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/DatabaseError'
   /api/assessments:
     get:
       summary: Get the prototype data freshness status
@@ -278,6 +333,47 @@ components:
       - score
       description: heartRate=bpm; systolicPressure/diastolicPressure=mmHg; temperature=°C; sleepHours=h;
         mood=score. A mismatched pair returns VALIDATION_ERROR.
+    MeasurementPage:
+      type: object
+      additionalProperties: false
+      required: [items, hasMore]
+      properties:
+        items:
+          type: array
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/Measurement'
+        hasMore:
+          type: boolean
+    LatestMeasurements:
+      type: object
+      additionalProperties: false
+      required: [metrics]
+      properties:
+        metrics:
+          type: array
+          minItems: 6
+          maxItems: 6
+          description: Fixed order heartRate, systolicPressure, diastolicPressure, temperature, sleepHours, mood.
+          items:
+            $ref: '#/components/schemas/LatestMetric'
+    LatestMetric:
+      type: object
+      additionalProperties: false
+      required: [metric, unit, latestKnownMeasurement, latestUnknownTimeMeasurement]
+      properties:
+        metric:
+          $ref: '#/components/schemas/Metric'
+        unit:
+          $ref: '#/components/schemas/Unit'
+        latestKnownMeasurement:
+          oneOf:
+          - $ref: '#/components/schemas/Measurement'
+          - type: 'null'
+        latestUnknownTimeMeasurement:
+          oneOf:
+          - $ref: '#/components/schemas/Measurement'
+          - type: 'null'
     NewMeasurement:
       type: object
       additionalProperties: false
