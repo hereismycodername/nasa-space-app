@@ -10,14 +10,20 @@ const base = 'http://127.0.0.1:18080'
 let server
 async function stop() {
   if (server && server.exitCode === null) {
-    await new Promise(resolve => { server.once('exit', resolve); server.kill('SIGINT') })
+    const stopped = new Promise(resolve => server.once('exit', resolve))
+    if (process.platform === 'win32') server.stdin.end('shutdown\n')
+    else server.kill('SIGINT')
+    const exited = await Promise.race([stopped.then(() => true), delay(10_000, false, { ref: false })])
+    if (!exited) server.kill('SIGKILL')
+    await stopped
   }
 }
 async function start() {
   server = spawn('./target/debug/space-health-server', [], {
-    env: { ...process.env, BIND_ADDR: '127.0.0.1:18080', DATABASE_URL: `sqlite://${directory}/smoke.db` },
-    stdio: 'inherit',
+    env: { ...process.env, BIND_ADDR: '127.0.0.1:18080', DATABASE_URL: `sqlite://${directory}/smoke.db`, SHUTDOWN_STDIN: process.platform === 'win32' ? '1' : '0' },
+    stdio: [process.platform === 'win32' ? 'pipe' : 'inherit', 'inherit', 'inherit'],
   })
+  server.stdin?.on('error', () => { /* server may have exited before shutdown */ })
   server.on('error', error => console.error(error))
   for (let attempt = 0; attempt < 50; attempt++) {
     if (server.exitCode !== null) throw new Error('Server exited before becoming ready')

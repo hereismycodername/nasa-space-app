@@ -30,6 +30,7 @@ coverage/
 
 /target/
 /ui/target/
+/demo/
 *.db
 *.db-shm
 *.db-wal

@@ -5,15 +5,22 @@ import { createServer } from 'node:http'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { apiOrigin, simulatorConfig } from './config.mjs'
+import { heartRateValue } from './profile.mjs'
 
 test('API origin accepts /api without duplicating it; malformed configuration is rejected', () => {
   for (const suffix of ['', '/', '/api', '/api/']) assert.equal(apiOrigin(`http://localhost:8080${suffix}`), 'http://localhost:8080')
   for (const value of ['localhost:8080', 'ftp://host', 'http://host/api/measurements', 'http://host?x=1', 'http://user:pass@host']) assert.throws(() => apiOrigin(value))
   for (const env of [{ SIM_COUNT: '-1' }, { SIM_COUNT: '' }, { SIM_INTERVAL_MS: '99' }, { SIM_INTERVAL_MS: '9999999999' }, { SIM_COUNT: '1.5' }]) assert.throws(() => simulatorConfig(env))
+  assert.equal(simulatorConfig({}).profile, 'normal')
+  assert.throws(() => simulatorConfig({ SIM_PROFILE: 'unknown' }), /SIM_PROFILE must be normal or attention/)
+  for (const fluctuation of [0, 0.5, 1]) {
+    assert.equal(heartRateValue(72, 'normal', fluctuation), 72)
+    assert.equal(heartRateValue(72, 'attention', fluctuation) - 72, 12 + 3 * fluctuation)
+  }
 })
 
 function simulator(env) {
-  const child = spawn(process.execPath, ['simulator/sensors.mjs'], { env: { ...process.env, SIM_REQUEST_TIMEOUT_MS: '500', SIM_RETRY_MS: '100', ...env }, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(process.execPath, ['simulator/sensors.mjs'], { env: { ...process.env, SIM_REQUEST_TIMEOUT_MS: '500', SIM_RETRY_MS: '100', SHUTDOWN_STDIN: process.platform === 'win32' ? '1' : '0', ...env }, stdio: [process.platform === 'win32' ? 'pipe' : 'ignore', 'pipe', 'pipe'] })
   let output = ''
   child.stdout.on('data', chunk => { output += chunk })
   child.stderr.on('data', chunk => { output += chunk })
@@ -41,17 +48,29 @@ test('finite simulator retries exact payload, posts to /api once and exits', { t
   } finally { run.child.kill('SIGKILL'); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
 })
 
-test('SIGTERM interrupts a long retry wait', { timeout: 5000 }, async () => {
-  const server = createServer((_request, response) => { response.writeHead(503); response.end() })
-  server.listen(0, '127.0.0.1'); await once(server, 'listening')
-  const run = simulator({ API_URL: `http://127.0.0.1:${server.address().port}`, SIM_RETRY_MS: '60000', SIM_INTERVAL_MS: '60000' })
-  try {
-    for (let n = 0; n < 100 && !run.output().includes('retrying'); n++) await delay(10)
-    assert.match(run.output(), /retrying/)
-    run.child.kill('SIGTERM')
-    const result = await Promise.race([run.done, delay(1000, undefined, { ref: false }).then(() => { throw new Error('Stop did not cancel retry wait') })])
-    assert.equal(result[0], 0)
-  } finally { run.child.kill('SIGKILL'); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
+test('shutdown interrupts an active request, retry wait and interval (SIGTERM on Unix, stdin on Windows)', { timeout: 5000 }, async () => {
+  for (const phase of ['request', 'retry', 'interval']) {
+    let received = false
+    const server = createServer(async (request, response) => {
+      const chunks = []
+      for await (const chunk of request) chunks.push(chunk)
+      received = true
+      if (phase === 'request') return // Hold the response until cancellation.
+      response.writeHead(phase === 'retry' ? 503 : 201, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify({ ...JSON.parse(Buffer.concat(chunks).toString()), id: 'saved-id', source: 'simulator' }))
+    })
+    server.listen(0, '127.0.0.1'); await once(server, 'listening')
+    const run = simulator({ API_URL: `http://127.0.0.1:${server.address().port}`, SIM_REQUEST_TIMEOUT_MS: '60000', SIM_RETRY_MS: '60000', SIM_INTERVAL_MS: '60000' })
+    try {
+      const reached = () => phase === 'request' ? received : run.output().includes(phase === 'retry' ? 'retrying' : '0:')
+      for (let n = 0; n < 100 && !reached(); n++) await delay(10)
+      assert.ok(reached(), `${phase}: ${run.output()}`)
+      if (process.platform === 'win32') run.child.stdin.end('shutdown\n')
+      else run.child.kill('SIGTERM')
+      const result = await Promise.race([run.done, delay(1000, undefined, { ref: false }).then(() => { throw new Error(`Stop did not cancel ${phase}`) })])
+      assert.equal(result[0], 0, `${phase}: ${run.output()}`)
+    } finally { run.child.kill('SIGKILL'); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
+  }
 })
 
 test('4xx is actionable and stops instead of retrying forever', { timeout: 5000 }, async () => {
