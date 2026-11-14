@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { generateHistory } from './history.mjs'
+import { generateHistory, HISTORY_METRICS } from './history.mjs'
 
 const options = { scenario: 'baseline', seed: 42, reference: '2026-11-14T12:00:00Z' }
-const units = { heartRate: 'bpm', temperature: '°C', sleepHours: 'h', mood: 'score' }
+const units = { heartRate: 'bpm', systolicPressure: 'mmHg', diastolicPressure: 'mmHg', temperature: '°C', sleepHours: 'h', mood: 'score' }
 const key = row => `${row.deviceId}/${row.sessionId}/${row.sequence}`
 
 describe('synthetic history', () => {
@@ -10,7 +10,8 @@ describe('synthetic history', () => {
     const rows = generateHistory(options)
     expect(JSON.stringify(generateHistory(options))).toBe(JSON.stringify(rows))
     expect(generateHistory({ ...options, seed: 43 }).map(row => row.value)).not.toEqual(rows.map(row => row.value))
-    const attentionPulse = generateHistory({ ...options, scenario: 'attention' }).filter(row => row.metric === 'heartRate')
+    const attention = generateHistory({ ...options, scenario: 'attention' })
+    const attentionPulse = attention.filter(row => row.metric === 'heartRate')
     const normalPulse = rows.filter(row => row.metric === 'heartRate')
     for (const [index, row] of attentionPulse.entries()) {
       const delta = row.value - normalPulse[index].value
@@ -23,7 +24,28 @@ describe('synthetic history', () => {
     expect(new Set(rows.map(row => row.sequence)).size).toBe(rows.length)
     expect(rows.map(row => row.sequence)).toEqual(rows.map((_, index) => index))
     expect(Object.fromEntries(Object.keys(units).map(metric => [metric, rows.filter(row => row.metric === metric).length])))
-      .toEqual({ heartRate: 2016, temperature: 21, sleepHours: 7, mood: 7 })
+      .toEqual({ heartRate: 2016, systolicPressure: 14, diastolicPressure: 14, temperature: 21, sleepHours: 7, mood: 7 })
+    expect(new Set(rows.map(row => row.metric))).toEqual(new Set(HISTORY_METRICS))
+    for (const readings of [rows, attention]) {
+      for (const systolic of readings.filter(row => row.metric === 'systolicPressure')) {
+        const diastolic = readings.find(row => row.metric === 'diastolicPressure' && row.measuredAt === systolic.measuredAt)
+        expect(diastolic).toBeDefined()
+        expect(systolic.value - diastolic.value).toBeGreaterThanOrEqual(25)
+        expect(new Date(systolic.measuredAt).getUTCMinutes()).toBe(30)
+        expect([7, 19]).toContain(new Date(systolic.measuredAt).getUTCHours())
+      }
+    }
+    for (const [metric, minimum, maximum] of [['systolicPressure', 10, 14], ['diastolicPressure', 6, 9]]) {
+      for (const baseline of rows.filter(row => row.metric === metric)) {
+        const raised = attention.find(row => row.metric === metric && row.measuredAt === baseline.measuredAt)
+        const delta = raised.value - baseline.value
+        if (Date.parse(baseline.measuredAt) < Date.parse(options.reference) - 3 * 86400_000) expect(delta).toBe(0)
+        else {
+          expect(delta).toBeGreaterThanOrEqual(minimum - 1e-9)
+          expect(delta).toBeLessThanOrEqual(maximum + 1e-9)
+        }
+      }
+    }
     for (const row of rows) {
       expect(row.deviceId).toBe('simulator-01')
       expect(row.sessionId).toBe('demo-baseline-42')
@@ -47,6 +69,7 @@ describe('synthetic history', () => {
     expect(Math.max(...stale.filter(row => row.metric === 'sleepHours').map(row => Date.parse(row.measuredAt))))
       .toBeLessThanOrEqual(end - 2 * 86400_000)
     const delayed = generateHistory({ ...options, scenario: 'delayed' })
+    expect(delayed.filter(row => row.metric !== 'heartRate' && Date.parse(row.measuredAt) >= end - 1800_000)).toEqual([])
     const buffer = delayed.slice(-9, -3)
     expect(buffer).toHaveLength(6)
     expect(buffer.every(row => row.metric === 'heartRate' && Date.parse(row.measuredAt) >= end - 1800_000

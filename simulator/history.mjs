@@ -1,8 +1,9 @@
-import { heartRateValue } from './profile.mjs'
+import { bloodPressureValues, heartRateValue } from './profile.mjs'
 
 const MINUTE = 60_000
 const DAY = 24 * 60 * MINUTE
 export const SCENARIOS = ['baseline', 'attention', 'stale', 'delayed']
+export const HISTORY_METRICS = ['heartRate', 'systolicPressure', 'diastolicPressure', 'temperature', 'sleepHours', 'mood']
 
 // Mulberry32: the state is local to each generation, including the buffer shuffle.
 function randomFor(seed) {
@@ -65,6 +66,25 @@ export function generateHistory({ scenario, seed, reference }) {
       } else {
         add(time, 'temperature', round(36.4 + random() * 0.5), '°C')
       }
+    }
+  }
+  // Draw pressure after the existing schedules to preserve their seeded values.
+  for (let day = Math.floor(start / DAY) * DAY; day < end; day += DAY) {
+    const restingSystolic = 112 + random() * 8
+    const restingDiastolic = 69 + random() * 7
+    for (const minute of [7 * 60 + 30, 19 * 60 + 30]) {
+      const time = day + minute * MINUTE
+      if (time < start || time >= end) continue
+      const evening = minute > 12 * 60
+      const fluctuation = random()
+      const profile = scenario === 'attention' && time >= end - 3 * DAY ? 'attention' : 'normal'
+      const pressure = bloodPressureValues(
+        restingSystolic + (fluctuation - 0.5) * 2 + (evening ? 3 : 0),
+        restingDiastolic + (random() - 0.5) * 2 + (evening ? 2 : 0),
+        profile, fluctuation,
+      )
+      add(time, 'systolicPressure', pressure.systolic, 'mmHg')
+      add(time, 'diastolicPressure', pressure.diastolic, 'mmHg')
     }
   }
   rows.sort((a, b) => a.measuredAt.localeCompare(b.measuredAt))

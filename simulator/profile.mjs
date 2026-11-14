@@ -4,3 +4,13 @@ export function heartRateValue(normalValue, profile, fluctuation) {
   const offset = profile === 'attention' ? 12 + 3 * fluctuation : 0
   return Math.round((normalValue + offset) * 100) / 100
 }
+
+// The same synthetic attention window as pulse: pressure remains historical only.
+export function bloodPressureValues(systolic, diastolic, profile, fluctuation) {
+  const attention = profile === 'attention'
+  const round = value => Math.round(value * 10) / 10
+  return {
+    systolic: round(systolic + (attention ? 10 + 4 * fluctuation : 0)),
+    diastolic: round(diastolic + (attention ? 6 + 3 * fluctuation : 0)),
+  }
+}
