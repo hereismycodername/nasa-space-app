@@ -15,10 +15,17 @@ const shutdown = new AbortController()
 const stop = () => shutdown.abort()
 process.once('SIGINT', stop)
 process.once('SIGTERM', stop)
+if (process.env.SHUTDOWN_STDIN === '1') {
+  process.stdin.on('data', stop)
+  process.stdin.on('end', stop)
+}
 const children = new Set()
 
 function launch(command, arguments_, env = process.env, capture = false) {
-  const child = spawn(command, arguments_, { cwd: root, env, stdio: capture ? ['inherit', 'pipe', 'inherit'] : 'inherit', detached: !isWindows })
+  const controlled = env.SHUTDOWN_STDIN === '1'
+  const child = spawn(command, arguments_, { cwd: root, env, stdio: [controlled ? 'pipe' : 'inherit', capture ? 'pipe' : 'inherit', 'inherit'], detached: !isWindows })
+  child.controlled = controlled
+  child.stdin?.on('error', () => { /* process may exit during shutdown */ })
   children.add(child)
   child.done = new Promise(resolve => {
     child.once('error', error => { console.error(`Cannot launch ${command}: ${error.message}`); resolve({ code: 1, error }) })
@@ -31,8 +38,9 @@ function signal(child, value) {
   try { if (isWindows) child.kill(value); else process.kill(-child.pid, value) } catch (error) { if (error.code !== 'ESRCH') console.error(error.message) }
 }
 async function stopChild(child) {
-  signal(child, 'SIGINT')
-  await Promise.race([child.done, delay(4000, undefined, { ref: false })])
+  if (child.controlled && child.stdin.writable) child.stdin.end('shutdown\n')
+  else signal(child, 'SIGINT')
+  await Promise.race([child.done, delay(10_000, undefined, { ref: false })])
   signal(child, 'SIGKILL')
   await child.done
 }
@@ -68,7 +76,7 @@ try {
   const host = listen.hostname === '0.0.0.0' ? '127.0.0.1' : listen.hostname === '[::]' ? '::1' : listen.hostname.replace(/^\[|\]$/g, '')
   const base = `http://${host.includes(':') ? `[${host}]` : host}:${port}`
   // The demo's producer always targets the server started by this process.
-  const simEnv = { ...process.env, API_URL: base }
+  const simEnv = { ...process.env, API_URL: base, SHUTDOWN_STDIN: '1' }
   if (!serverOnly && !args.has('--no-simulator')) simulatorConfig(simEnv)
   if (await occupied(host, Number(port))) throw new Error(`${bind} is already in use. Stop the existing server or choose another BIND_ADDR; no process was killed.`)
   const cargo = args.has('--no-build') && process.env.SERVER_BINARY ? null : cargoPath()
@@ -117,7 +125,7 @@ try {
   if (!existsSync(binary)) throw new Error('Server binary missing. Run npm run demo without --no-build first.')
   const dist = process.env.FRONTEND_DIST ?? join(root, 'dist')
   if (!serverOnly && !existsSync(join(dist, 'index.html'))) throw new Error(`Built UI missing in ${dist}. Run npm run build or set FRONTEND_DIST.`)
-  const server = launch(binary, [], { ...process.env, BIND_ADDR: bind, FRONTEND_DIST: dist })
+  const server = launch(binary, [], { ...process.env, BIND_ADDR: bind, FRONTEND_DIST: dist, SHUTDOWN_STDIN: '1' })
   let ready = false
   for (let attempt = 0; attempt < 100 && !shutdown.signal.aborted; attempt++) {
     if (!children.has(server)) throw new Error('Server exited before readiness; see its error above.')
@@ -138,4 +146,5 @@ try {
   await Promise.all([...children].map(stopChild))
   process.off('SIGINT', stop)
   process.off('SIGTERM', stop)
+  process.stdin.pause()
 }

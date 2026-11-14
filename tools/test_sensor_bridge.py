@@ -123,7 +123,7 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(requests[0], requests[1])
         self.assertEqual(requests[0][0], "/api/measurements")
         self.assertIsNone(json.loads(requests[0][1])["measuredAt"])
-        with sqlite3.connect(self.path) as db:
+        with contextlib.closing(sqlite3.connect(self.path)) as db:
             self.assertEqual(db.execute("SELECT count(*) FROM pending").fetchone()[0], 0)
 
     def test_terminal_error_keeps_payload_for_restart(self):
@@ -143,6 +143,7 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(requests[0][1], requests[1][1])
         self.assertIn("Delivery unconfirmed", result.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "SIGTERM is forced termination on Windows")
     def test_sigterm_during_retry_retains_payload_and_stops_promptly(self):
         with fake_api([503] * 100) as (url, requests):
             command = self.command(url) + ["--retry-seconds", "60"]
@@ -157,7 +158,7 @@ class BridgeTests(unittest.TestCase):
                 process.send_signal(signal.SIGTERM)
                 _, stderr = process.communicate(timeout=1)
                 self.assertEqual(process.returncode, 0, stderr)
-                with sqlite3.connect(self.path) as db:
+                with contextlib.closing(sqlite3.connect(self.path)) as db:
                     pending = db.execute("SELECT payload FROM pending").fetchone()[0]
                 self.assertEqual(pending.encode(), requests[0][1])
             finally:
