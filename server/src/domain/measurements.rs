@@ -38,12 +38,11 @@ impl NewMeasurement {
                 message: "Invalid deviceId, sessionId or sequence",
             });
         }
-        let expected = definition_for(&self.metric)
-            .ok_or(ValidationError {
-                field: "metric",
-                message: "Unknown metric",
-            })?
-            .unit;
+        let definition = definition_for(&self.metric).ok_or(ValidationError {
+            field: "metric",
+            message: "Unknown metric",
+        })?;
+        let expected = definition.unit;
         if self.unit != expected || !self.value.is_finite() {
             return Err(ValidationError {
                 field: if self.unit != expected {
@@ -66,12 +65,7 @@ impl NewMeasurement {
                 });
             }
         }
-        let valid = match self.metric.as_str() {
-            "sleepHours" => (0.0..=24.0).contains(&self.value),
-            "mood" => (1.0..=5.0).contains(&self.value),
-            _ => self.value > 0.0,
-        };
-        if !valid {
+        if !definition.bounds.contains(self.value) {
             return Err(ValidationError {
                 field: "value",
                 message: "Value outside input bounds",
