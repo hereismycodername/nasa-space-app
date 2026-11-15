@@ -16,6 +16,8 @@
     "start": "node scripts/run.mjs --no-build --no-simulator",
     "doctor": "node scripts/doctor.mjs",
     "simulator": "node simulator/sensors.mjs",
+    "pitch": "node scripts/pitch.mjs",
+    "pitch:sensors": "node simulator/pitch.mjs",
     "test:tooling": "node --test simulator/*.node-test.mjs scripts/*.node-test.mjs",
     "test:bridge": "python3 -B -m unittest discover -s tools -p \"test_*.py\"",
     "test:tools": "npm run test:tooling && npm run test:bridge",
