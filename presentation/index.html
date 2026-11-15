@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AstroCheck — питч, 3 минуты</title>
+<link rel="stylesheet" href="deck.css">
+<link rel="stylesheet" href="motion.css">
+</head>
+<body class="booting">
+<div id="stage">
+  <div class="grid-bg"></div>
+
+  <header class="topbar">
+    <div class="brand">ASTROCHECK</div>
+    <div class="ctx"><i class="sq"></i>Pitch · NASA Space Apps 2026</div>
+    <div class="spacer"></div>
+    <div class="clock" id="clock"><i class="sq"></i>T+ <b id="clock-now">00:00</b> / 03:00</div>
+    <div class="section-switch" id="sections"><span data-sec="problem">Проблема</span><span data-sec="solution">Решение</span><span data-sec="result">Итог</span></div>
+  </header>
+
+  <main class="slides">
+
+    <!-- 1 ─────────────────────────────────────────────── title -->
+    <section class="slide s-title" data-title="AstroCheck" data-sec="problem" data-dur="15">
+      <div class="left">
+        <div class="kicker"><i class="sq"></i>NASA Space Apps 2026 · Astronaut Health Monitor</div>
+        <div class="wordmark">ASTROCHECK</div>
+        <p class="tagline">Самоконтроль здоровья экипажа — <em>когда Земля не на связи</em></p>
+        <ul class="panel selftest">
+          <li><b>BIT</b>SELF-TEST<i></i><em>6/6 OK</em></li>
+          <li><b>DB</b>SQLITE · LOCAL<i></i><em>OK</em></li>
+          <li><b>LINK</b>EARTH<i></i><em class="warn">NO SIGNAL</em></li>
+          <li><b>MODE</b>AUTONOMOUS<i></i><em class="accent">READY</em></li>
+        </ul>
+      </div>
+      <div class="panel figpanel" data-fig data-h="800" data-top="66" data-mode="organs" data-status='{"brain":"warn","heart":"warn"}'>
+        <div class="cap">Anatomy · BodyParts3D</div>
+      </div>
+      <aside class="notes">Мы — команда AstroCheck. Наш инструмент помогает астронавту самому оценить своё здоровье в полёте и понять, что делать дальше, — даже когда Земля не на связи.</aside>
+    </section>
+
+    <!-- 2 ─────────────────────────────────────────────── problem -->
+    <section class="slide s-problem" data-title="Проблема" data-sec="problem" data-dur="25">
+      <div class="kicker"><b>01</b>Проблема</div>
+      <h1>До Марса врач <em>не дозвонится</em></h1>
+      <p class="lead">Ответ на вопрос «что со мной?» придёт <b>через 40 минут</b> — или не придёт совсем.</p>
+
+      <div class="panel linkpanel">
+        <div class="delay"><div class="num">40<small>МИН</small></div><span><b>ждать ответа врача</b>сигнал идёт 20 минут туда и 20 обратно</span></div>
+        <div class="state"><span class="tag warn">Связь · с задержкой</span></div>
+        <div class="row">
+          <div class="node earth"><i></i><div>EARTH<small>FLIGHT SURGEON</small></div></div>
+          <div class="track"></div>
+          <div class="packet"></div>
+          <div class="node ship"><i></i><div>CREW<small>MARS TRANSIT</small></div></div>
+        </div>
+        <div class="msg"><b>CREW ▸</b>«Давление 150, болит голова. Что делать?»</div>
+      </div>
+
+      <div class="cap hz-cap">5 опасностей полёта · NASA Human Research Program</div>
+      <div class="hazards">
+        <div class="panel hazard"><div class="n">01 · RADIATION</div><h3>Радиация</h3><p>Долгосрочные риски, нужна дозиметрия</p></div>
+        <div class="panel hazard"><div class="n">02 · ISOLATION</div><h3>Изоляция</h3><p>Стресс, сон и циркадный ритм</p></div>
+        <div class="panel hazard"><div class="n">03 · DISTANCE</div><h3>Удалённость от Земли</h3><p>Помощь и связь задерживаются</p></div>
+        <div class="panel hazard"><div class="n">04 · GRAVITY</div><h3>Гравитация</h3><p>Кровообращение, кости и мышцы</p></div>
+        <div class="panel hazard"><div class="n">05 · ENVIRONMENT</div><h3>Замкнутая среда</h3><p>Воздух, шум, микроорганизмы</p></div>
+      </div>
+      <aside class="notes">На МКС врач доступен почти в реальном времени. По пути к Марсу сигнал идёт до двадцати минут в одну сторону — ответ придёт через сорок, а бывают и полные разрывы связи. NASA выделяет пять опасностей полёта: радиация, изоляция, удалённость от Земли, гравитация и замкнутая среда. Экипаж должен уметь оценивать себя сам.</aside>
+    </section>
+
+    <!-- 3 ─────────────────────────────────────────────── solution -->
+    <section class="slide s-solution" data-title="Решение" data-sec="solution" data-dur="25">
+      <div class="left">
+        <div class="kicker"><b>02</b>Решение</div>
+        <h1>AstroCheck: самоконтроль<br><em>без связи с Землёй</em></h1>
+        <ol class="steps">
+          <li class="panel step"><span class="n">01</span><div><h3>Наблюдение</h3><p>12 показателей: датчики и ручной ввод</p></div></li>
+          <li class="panel step on"><span class="n">02</span><div><h3>Объяснение</h3><p>Почему это важно именно в полёте</p></div></li>
+          <li class="panel step"><span class="n">03</span><div><h3>Действие</h3><p>Что сделать прямо сейчас</p></div></li>
+          <li class="panel step"><span class="n">04</span><div><h3>Эскалация</h3><p>Когда звать экипаж и полётного врача</p></div></li>
+        </ol>
+      </div>
+      <div class="shot" id="shot-solution">
+        <div class="bar"><i></i><i></i><i></i><span>AstroCheck · веб-клиент · реальный экран</span><em>● LIVE DATA · SIMULATOR</em></div>
+        <div class="view">
+          <img src="assets/screens/web-crew-overview.webp" alt="Экран «Обзор состояния» веб-клиента AstroCheck">
+          <div class="focus" style="left:320px;top:193px;width:746px;height:166px"><span>02 · Объяснение</span></div>
+        </div>
+      </div>
+      <aside class="notes">AstroCheck — бортовой самоконтроль. Четыре шага. Наблюдение: двенадцать показателей с датчиков и ручного ввода. Объяснение: почему это важно именно в полёте. Действие: что сделать сейчас. Эскалация: когда звать экипаж и полётного врача. Всё хранится локально — ни интернет, ни связь с Землёй не нужны.</aside>
+    </section>
+
+    <!-- 4 ─────────────────────────────────────────────── body map -->
+    <section class="slide s-body" data-title="Карта тела" data-sec="solution" data-dur="25">
+      <div class="panel figpanel" data-fig data-h="800" data-top="84" data-mode="organs" data-status='{"brain":"warn","heart":"warn"}'>
+        <div class="layer-tabs"><span class="on" data-mode="organs">Organs</span><span data-mode="skeleton">Skeleton</span><span data-mode="xray">X-ray</span></div>
+        <svg class="cursor" viewBox="0 0 30 30" style="left:372px;top:152px"><path d="M4 2 L4 24 L10 18.5 L14.5 28 L18 26.4 L13.6 17 L22 17 Z" fill="#e6e9ed" stroke="#080a0d" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="right">
+        <div class="kicker"><b>03</b>Интерфейс</div>
+        <h1>Тело — <em>это интерфейс</em></h1>
+        <p class="lead">Клик по органу открывает его показатели, статус и ввод.</p>
+        <div class="panel detail">
+          <div class="head"><h3>Сон, самочувствие и голова</h3><span class="tag warn">Требует внимания</span></div>
+          <div class="tiles">
+            <div class="panel tile warn"><span>Сон</span><b class="num">4,1<small>ч</small></b></div>
+            <div class="panel tile warn"><span>Самочувствие</span><b class="num">2<small>/ 5</small></b></div>
+            <div class="panel tile"><span>Головная боль</span><b class="num">5<small>/ 10</small></b></div>
+          </div>
+          <div class="act"><span class="btn">+ Внести измерение</span><span class="saved">■ СОХРАНЕНО · ПОДТВЕРЖДЕНО СЕРВЕРОМ</span></div>
+        </div>
+        <ul class="points">
+          <li><span><b>Реальная анатомия</b> BodyParts3D: размеры и положение органов измерены, а не нарисованы</span></li>
+          <li><span><b>Три слоя</b> — органы, скелет, рентген; в браузере модель вращается в 3D</span></li>
+          <li><span><b>Статус — тонкий контур:</b> цвет появляется только при отклонении</span></li>
+        </ul>
+      </div>
+      <aside class="notes">Главный элемент интерфейса — тело. Это реальная анатомия из открытого набора BodyParts3D: органы, скелет, рентген. Статус системы виден по тонкому контуру. Кликаешь по голове — открываются связанные показатели: сон, самочувствие, головная боль. Симптом вносится одним кликом и сразу попадает в историю.</aside>
+    </section>
+
+    <!-- 5 ─────────────────────────────────────────────── assessment -->
+    <section class="slide s-assess" data-title="Оценка и действие" data-sec="solution" data-dur="25">
+      <div class="kicker"><b>04</b>Оценка</div>
+      <h1>Не диагноз — <em>понятный следующий шаг</em></h1>
+      <div class="rulerow">
+        <div class="panel metric">
+          <div class="head"><div class="cap">Сон · 7 суток</div><span class="tag warn">Требует внимания</span></div>
+          <div class="val"><b class="num">4,1</b><small>ч</small><span>3 суток подряд<br>ориентир ≥ 7 ч</span></div>
+          <div class="bars">
+            <i style="height:149px"></i><i style="height:141px"></i><i style="height:153px"></i><i style="height:145px"></i>
+            <i class="low" style="height:90px"></i><i class="low" style="height:96px"></i><i class="low" style="height:80px"></i>
+            <div class="thr" style="bottom:137px"><span>7 ч</span></div>
+          </div>
+          <div class="days"><span>09</span><span>10</span><span>11</span><span>12</span><span>13</span><span>14</span><span>15</span></div>
+        </div>
+        <div class="connector"><span>ПРАВИЛО</span></div>
+        <div class="panel guide">
+          <div class="head"><div class="cap">Объяснение и следующий шаг</div><span class="ruleid">be08-sleepHours</span></div>
+          <dl>
+            <div><dt>Почему важно</dt><dd>Сон меньше 7 часов — ниже ориентира для взрослых. В изоляции недосып бьёт по вниманию и работоспособности.</dd></div>
+            <div class="key"><dt>Что сделать</dt><dd>Запланировать защищённое время сна, обсудить нагрузку с экипажем.</dd></div>
+            <div><dt>Эскалация</dt><dd>При повторении — полётный врач или специалист поддержки.</dd></div>
+            <div><dt>Источник</dt><dd><span class="src">CDC · SLEEP</span><span class="src">NASA HRP · ISOLATION</span></dd></div>
+          </dl>
+        </div>
+      </div>
+      <div class="legend"><div class="cap">Статусы</div><span class="tag">Без срабатываний</span><span class="tag warn">Требует внимания</span><span class="tag crit">Срочно</span><span class="tag none">Не оценено</span></div>
+      <div class="alert"><b>СРОЧНО</b>Систолическое давление выше 180 — немедленно сообщить ответственному за медпомощь, не дожидаясь ответа Земли.</div>
+      <aside class="notes">Система не ставит диагноз — она объясняет. Три дня сон меньше семи часов: срабатывает правило, статус меняется на «требует внимания». Астронавт видит причину, следующий шаг и момент, когда нужно подключать врача. У каждого правила — ссылка на источник: NASA, AHA, NHS, CDC. При критическом значении — отдельный красный сигнал.</aside>
+    </section>
+
+    <!-- 6 ─────────────────────────────────────────────── honest data -->
+    <section class="slide s-data" data-title="Честные данные" data-sec="solution" data-dur="20">
+      <div class="kicker"><b>05</b>Данные</div>
+      <h1>Данные <em>без приукрашивания</em></h1>
+      <div class="datarow">
+        <div class="panel chart">
+          <div class="head"><div class="cap">Пульс · уд/мин · среднее за час</div><div class="period"><span>24 ЧАСА</span><span class="on">7 ДНЕЙ</span><span>30 ДНЕЙ</span></div></div>
+          <svg id="pulse-chart" viewBox="0 0 1130 500" role="img" aria-label="График пульса за семь дней с пропуском в данных"></svg>
+        </div>
+        <div class="fresh">
+          <div class="cap">Свежесть каждого показателя</div>
+          <div class="panel item"><h3>Пульс</h3><span class="tag">Свежее · 2 с</span><p>Поток с датчика каждые две секунды.</p></div>
+          <div class="panel item"><h3>Сон</h3><span class="tag none">Устарело · 26 ч</span><p>Замеру больше суток — в оценку не идёт.</p></div>
+          <div class="panel item"><h3>Температура</h3><span class="tag warn">Время неизвестно</span><p>У прибора нет часов: время приёма не подменяет время замера.</p></div>
+          <div class="panel item"><h3>Давление</h3><span class="tag crit">Часы спешат</span><p>Метка из будущего — расхождение показано, а не скрыто.</p></div>
+        </div>
+      </div>
+      <ul class="facts">
+        <li><b>Пропуски не дорисовываем</b><span>разрыв линии остаётся разрывом</span></li>
+        <li><b>Старое не выдаём за текущее</b><span>у каждого показателя своё окно свежести</span></li>
+        <li><b>Повтор без дублей</b><span>датчик может отправить пакет ещё раз</span></li>
+      </ul>
+      <aside class="notes">Мы честны с данными. На графике пропуски остаются пропусками — мы их не дорисовываем. Каждое значение помечено свежестью: если замеру больше суток, система так и скажет и не станет оценивать по нему состояние. Повторная отправка с датчика не создаёт дублей.</aside>
+    </section>
+
+    <!-- 7 ─────────────────────────────────────────────── architecture -->
+    <section class="slide s-arch" data-title="Архитектура" data-sec="solution" data-dur="25">
+      <div class="kicker"><b>06</b>Как устроено</div>
+      <h1>Один сервер — <em>три интерфейса</em></h1>
+      <div class="arch">
+        <svg class="wires" viewBox="0 0 1776 546" preserveAspectRatio="none">
+          <path d="M370 85 H422 V233 H474"/><path d="M370 273 H474"/><path d="M370 461 H422 V313 H474"/>
+          <path d="M874 233 H926 V85 H978"/><path d="M874 273 H978"/><path d="M874 313 H926 V461 H978"/>
+          <rect x="417" y="150" width="10" height="10"/><rect x="430" y="268" width="10" height="10"/><rect x="417" y="380" width="10" height="10"/>
+          <rect x="921" y="150" width="10" height="10"/><rect x="934" y="268" width="10" height="10"/><rect x="921" y="380" width="10" height="10"/>
+        </svg>
+        <div class="col">
+          <div class="panel src-box"><div class="n">Source · 01</div><h3>Датчики</h3><p>HTTP или шлюз USB/UART с очередью</p></div>
+          <div class="panel src-box"><div class="n">Source · 02</div><h3>Ручной ввод</h3><p>Клик по схеме тела, форма измерения</p></div>
+          <div class="panel src-box"><div class="n">Source · 03</div><h3>Симулятор</h3><p>Синтетические сценарии для показа</p></div>
+        </div>
+        <div class="panel core">
+          <div class="cap">Local core</div>
+          <h3>Rust + SQLite<small>AXUM · ОДИН HTTP API</small></h3>
+          <div class="seg"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div>
+          <ul class="log">
+            <li><span><b>POST</b> /api/measurements</span><em>201</em></li>
+            <li><span><b>GET</b> /api/measurements/latest</span><em>200</em></li>
+            <li><span><b>GET</b> /api/assessments</span><em>200</em></li>
+            <li><span><b>GET</b> /api/measurements/series</span><em>200</em></li>
+          </ul>
+          <ul>
+            <li>Работает без интернета, в сети корабля</li>
+            <li>Приём без дублей, история, графики</li>
+            <li>Правила оценки — только на сервере</li>
+          </ul>
+        </div>
+        <div class="col">
+          <div class="panel ui-box"><div class="thumb"><img src="assets/screens/web-ground-console.webp" alt="Веб-клиент: консоль Земли"></div><div><div class="n">React · Three.js</div><h3>Веб: экипаж и Земля</h3><p>3D-модель, динамика, консоль врача</p></div></div>
+          <div class="panel ui-box"><div class="thumb"><img src="assets/screens/crew-overview.png" alt="Оконное приложение"></div><div><div class="n">Rust · egui</div><h3>Окно</h3><p>Приборная панель без браузера</p></div></div>
+          <div class="panel ui-box"><div class="thumb"><canvas id="term-canvas" width="524" height="294"></canvas></div><div><div class="n">Rust · ratatui</div><h3>Терминал</h3><p>По SSH, без дисплея, фигура точками Брайля</p></div></div>
+        </div>
+      </div>
+      <div class="stats">
+        <div><b class="num">12</b><span>показателей здоровья</span></div>
+        <div><b class="num">3</b><span>интерфейса на одном API</span></div>
+        <div><b class="num">2</b><span>роли: экипаж и Земля</span></div>
+        <div class="key"><b class="num">0</b><span>зависимостей от интернета</span></div>
+        <div><b class="num">200+</b><span>автотестов</span></div>
+      </div>
+      <aside class="notes">Архитектура простая. Датчики, ручной ввод и симулятор пишут в один локальный сервер на Rust с базой SQLite. К нему подключаются три интерфейса: веб с 3D-моделью, оконное приложение и лёгкий терминал. Тот же сервер даёт вид для экипажа и консоль для полётного врача на Земле. Всё покрыто более чем двумястами автотестов.</aside>
+    </section>
+
+    <!-- 8 ─────────────────────────────────────────────── close -->
+    <section class="slide s-close" data-title="Итог" data-sec="result" data-dur="20">
+      <div class="kicker"><b>07</b>Итог</div>
+      <h1 style="font-size:62px">Наблюдение. Объяснение. Действие. Эскалация.<br><em>Без интернета.</em></h1>
+      <div class="closerow">
+        <div class="panel listp">
+          <div class="cap">Работает сейчас</div>
+          <ul>
+            <li><i></i><span>Приём с датчиков и ручной ввод<small>HTTP API и шлюз USB/UART с очередью подтверждения</small></span></li>
+            <li><i></i><span>12 показателей, история и графики<small>24 часа, 7 и 30 дней, пропуски видны</small></span></li>
+            <li><i></i><span>Объяснимые правила с источниками<small>без срабатываний · внимание · срочно · не оценено</small></span></li>
+            <li><i></i><span>Экипаж и Земля, три интерфейса<small>веб с 3D, окно, терминал — один локальный сервер</small></span></li>
+          </ul>
+        </div>
+        <div class="panel listp next">
+          <div class="cap">Дальше</div>
+          <ul>
+            <li><i></i><span>Реальные датчики<small>прошивка и калибровка под готовый шлюз</small></span></li>
+            <li><i></i><span>Испытание на бортовом компьютере<small>Raspberry Pi — пока не проверено</small></span></li>
+            <li><i></i><span>Правила для всех 12 показателей<small>сейчас оцениваются шесть</small></span></li>
+            <li><i></i><span>Ежедневные задачи по дате миссии<small>следующий этап сервера</small></span></li>
+          </ul>
+        </div>
+      </div>
+      <div class="closing">
+        <div><div class="thanks">Спасибо! Покажем вживую?</div><div class="repo">REPO · <b>github.com/hereismycodername/nasa-space-app</b></div></div>
+        <p class="disclaimer">Демонстрационный инструмент самонаблюдения, не медицинское изделие. Данные на показе синтетические; пороги сверены с открытыми источниками NASA, AHA, NHS и CDC.</p>
+      </div>
+      <aside class="notes">Итог: наблюдение, объяснение, действие, эскалация — без интернета. Это работает уже сейчас, на синтетических данных. Следующие шаги — реальные датчики через готовый шлюз и проверка на бортовом компьютере. Спасибо! Готовы показать живое демо и ответить на вопросы.</aside>
+    </section>
+  </main>
+
+  <div id="notes"><div class="cap"><span id="notes-title">Заметки</span><span id="notes-time"></span></div><p id="notes-text"></p></div>
+  <div id="help">
+    <div><b>→ / Space</b>следующий слайд</div>
+    <div><b>←</b>предыдущий слайд</div>
+    <div><b>1 … 8</b>перейти к слайду</div>
+    <div><b>N</b>заметки докладчика</div>
+    <div><b>T</b>показать таймер и план</div>
+    <div><b>P</b>пауза таймера</div>
+    <div><b>R</b>сбросить таймер</div>
+    <div><b>A</b>автопоказ на 3 минуты</div>
+    <div><b>F</b>полный экран</div>
+    <div><b>0</b>повторить анимацию слайда</div>
+    <div><b>M</b>анимация вкл / выкл</div>
+  </div>
+
+  <footer class="statusbar">
+    <span>SLIDE <b id="sb-count">01/08</b></span>
+    <span class="progress" id="sb-progress"></span>
+    <span><b id="sb-title"></b></span>
+    <span id="sb-budget"></span>
+    <span class="end"><i class="sq"></i>РАБОТАЕТ БЕЗ ИНТЕРНЕТА</span>
+  </footer>
+</div>
+
+<script src="assets/anatomy/manifest.js"></script>
+<script src="assets/terminal-figure.js"></script>
+<script>setTimeout(function () { document.body.classList.remove('booting') }, 3000)</script>
+<script src="deck.js"></script>
+<script src="motion.js"></script>
+</body>
+</html>

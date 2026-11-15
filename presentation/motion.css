@@ -1,0 +1,97 @@
+/* Motion layer for the AstroCheck pitch deck.
+   The rules in deck.css are the finished look of every element. motion.js animates *from* a start state and
+   lets go, so with scripts off (or ?static) the deck is still complete. Everything here is either a hook the
+   scenes need (transform origins, transitions, helper elements) or an idle loop that runs only on the slide
+   that is on screen while motion is on. */
+
+:root { --e-out: cubic-bezier(.16, 1, .3, 1); --e-inout: cubic-bezier(.65, 0, .35, 1); --e-back: cubic-bezier(.34, 1.56, .64, 1); }
+
+/* ---------------------------------------------------------------- boot and slide change */
+body.booting .slides { visibility: hidden; }
+.slide.is-leaving { visibility: visible; opacity: 1; pointer-events: none; z-index: 2; }
+#sweep { position: absolute; top: 64px; bottom: 40px; left: 0; width: 2px; background: #9cc2ff; box-shadow: 0 0 30px 7px #3a7bef77; opacity: 0; z-index: 15; pointer-events: none; }
+.statusbar .progress i { transition: background-color .5s var(--e-out); }
+.section-switch span { transition: background-color .35s, color .35s, border-color .35s; }
+
+/* ---------------------------------------------------------------- split text: words rise out of a mask, hook words are wiped in */
+.w { display: inline-block; position: relative; overflow: hidden; overflow: clip; padding: .14em .05em .18em; margin: -.14em -.05em -.18em; }
+.w-i { display: inline-block; }
+.w .wipe { position: absolute; left: .02em; right: .02em; top: .2em; bottom: .15em; background: var(--accent); scale: 0 1; pointer-events: none; }
+.ch { display: inline-block; }
+.wipe-edge { position: absolute; background: #9cc2ff; box-shadow: 0 0 18px 3px #3a7bef99; opacity: 0; pointer-events: none; z-index: 8; }
+
+/* ---------------------------------------------------------------- anatomy figure */
+.fig .lay { transition: opacity .6s var(--e-inout); }
+.fig .org, .fig .out { transition: opacity .3s; }
+.fig .org.dim { opacity: .28; }
+.fig .out.on.dim { opacity: .2 !important; animation: none !important; }
+.callout, .marker { transition: opacity .3s; }
+.callout.dim, .marker.dim { opacity: .35; }
+.layer-tabs span { transition: background-color .3s, color .3s, border-color .3s; }
+.scanline { position: absolute; left: -9%; right: -9%; top: 0; height: 2px; opacity: 0; pointer-events: none; z-index: 9;
+  background: linear-gradient(90deg, transparent, #9cc2ff 16%, #e3eeff 50%, #9cc2ff 84%, transparent); box-shadow: 0 0 22px 4px #3a7bef77; }
+.scanline::before { content: ''; position: absolute; left: 6%; right: 6%; bottom: 2px; height: 96px; background: linear-gradient(to top, #3a7bef30, transparent); }
+.marker::before { content: ''; position: absolute; inset: -5px; border: 1px solid currentColor; opacity: 0; }
+
+.motion-on .slide.is-active .fig .org[data-name="Heart"] { animation: beat 1.1s linear infinite; }
+.motion-on .slide.is-active .fig .org[data-pulse="2"] { animation: breathe 4.2s ease-in-out infinite; }
+.motion-on .slide.is-active .fig .out.on { animation: outpulse 2.4s ease-in-out infinite; }
+.motion-on .slide.is-active .fig .out.on[data-sys="heart"] { animation: outpulse 2.4s ease-in-out infinite, beat 1.1s linear infinite; }
+.motion-on .slide.is-active .marker.warn::before, .motion-on .slide.is-active .marker.crit::before { animation: ping 2.4s var(--e-out) infinite; }
+@keyframes beat { 0%, 34%, 100% { scale: 1; } 9% { scale: 1.055; } 17% { scale: 1.012; } 24% { scale: 1.036; } }
+@keyframes breathe { 0%, 100% { scale: 1; } 50% { scale: 1.022; } }
+@keyframes outpulse { 0%, 100% { opacity: .92; } 50% { opacity: .45; } }
+@keyframes ping { 0% { scale: 1; opacity: .8; } 75%, 100% { scale: 2.3; opacity: 0; } }
+@keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: .3; } }
+
+/* ---------------------------------------------------------------- 1 title */
+.selftest li i { transform-origin: 0 50%; }
+.motion-on .slide.is-active .selftest em.warn { animation: softblink 1.6s ease-in-out infinite; }
+@keyframes softblink { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+
+/* ---------------------------------------------------------------- 2 problem */
+.linkpanel .delay .num { transform-origin: 60% 70%; min-width: 250px; text-align: right; }
+.linkpanel .msg.reply { opacity: 0; }
+.linkpanel .msg.reply b { color: #86b2fc; }
+.hazard { transition: border-color .35s, background-color .35s; }
+.hazard h3 { transition: color .35s; }
+.hazard.hot { border-color: var(--accent); background: #3a7bef14; }
+.hazard.hot .n { color: #86b2fc; }
+
+/* ---------------------------------------------------------------- 3 solution: camera over the real screen */
+.shot .view .cam { position: relative; transform-origin: 0 0; transition: transform 1.05s var(--e-inout); }
+.focus { transition: left .9s var(--e-inout), top .9s var(--e-inout), width .9s var(--e-inout), height .9s var(--e-inout), opacity .45s; }
+.step { transition: border-color .4s, background-color .4s; }
+.step .n { transition: color .4s; }
+
+/* ---------------------------------------------------------------- 4 body map */
+.cursor { left: 0; top: 0; transition: translate .85s var(--e-inout), opacity .3s; filter: drop-shadow(0 2px 3px #000a); }
+.click-ring { position: absolute; left: 0; top: 0; width: 36px; height: 36px; margin: -18px 0 0 -18px; border: 2px solid #e6e9ed; opacity: 0; pointer-events: none; z-index: 9; }
+.btn { transition: filter .15s, scale .15s; }
+.btn.press { filter: brightness(1.35); scale: .96; }
+.tile .caret { display: inline-block; width: .42em; height: .78em; margin-left: 3px; vertical-align: -.04em; background: var(--accent); animation: blink .7s linear infinite; }
+
+/* ---------------------------------------------------------------- 5 assessment */
+.bars i { transform-origin: 50% 100%; }
+.motion-on .slide.is-active .alert b::before { animation: blink .9s linear infinite; }
+
+/* ---------------------------------------------------------------- 6 honest data */
+.chart svg .pen { fill: #eef4ff; opacity: 0; transform-box: fill-box; transform-origin: center; filter: drop-shadow(0 0 7px #9db9e8); }
+.chart svg .pen.wait { animation: blink .45s linear infinite; }
+.chart svg .pen.live { animation: penlive 1.6s ease-in-out infinite; }
+@keyframes penlive { 0%, 100% { scale: 1; } 50% { scale: 1.7; } }
+
+/* ---------------------------------------------------------------- 7 architecture */
+.motion-on .arch .wires rect { display: none; }
+.arch .wires .wire-hot { stroke: #9cc2ff; stroke-width: 2; stroke-dasharray: none; opacity: 0; filter: drop-shadow(0 0 5px #3a7bef); }
+.pk { position: absolute; left: 0; top: 0; width: 10px; height: 10px; margin: -5px 0 0 -5px; background: var(--accent); box-shadow: 0 0 12px 1px #3a7befcc; opacity: 0; z-index: 3; pointer-events: none; }
+.core .log li { transition: color .25s; }
+.core .log li em { transition: color .25s; }
+.core .log li.hit { color: var(--txt); }
+.core .log li.hit em { color: #cfe0ff; }
+.ui-box .thumb .alt { position: absolute; inset: 0; opacity: 0; }
+.ui-box .thumb img { transform-origin: 0 0; }
+.motion-on .slide.is-active .ui-box .thumb img { animation: kenburns 16s ease-in-out infinite alternate; }
+.motion-on .slide.is-active .ui-box .thumb .alt { animation: kenburns 16s ease-in-out infinite alternate, crossfade 9s ease-in-out infinite; }
+@keyframes kenburns { from { scale: 1; translate: 0 0; } to { scale: 1.3; translate: -8% -6%; } }
+@keyframes crossfade { 0%, 38% { opacity: 0; } 50%, 88% { opacity: 1; } 100% { opacity: 0; } }
