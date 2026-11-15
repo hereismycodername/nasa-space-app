@@ -13,6 +13,7 @@
     "check": "npm run lint && npm run test && npm run build",
     "server": "node scripts/run.mjs --server-only",
     "demo": "node scripts/run.mjs",
+    "release": "node scripts/run.mjs --release",
     "start": "node scripts/run.mjs --no-build --no-simulator",
     "doctor": "node scripts/doctor.mjs",
     "simulator": "node simulator/sensors.mjs",

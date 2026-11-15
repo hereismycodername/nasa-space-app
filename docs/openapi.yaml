@@ -1,15 +1,15 @@
 openapi: 3.1.0
 info:
   title: Space Health Local API
-  version: 0.8.1
+  version: 0.9.0
   description: 'BE-08 adds explainable demonstration rules while preserving the BE-06 contract. Latest and assessments return independent
     quality for all twelve registered metrics with one server evaluatedAt per response. Explicit demo freshness policies
     are not medical thresholds. History, series, raw measurements and ingestion identity remain unchanged.
     Reads use demo-astronaut. Assessment status/explanation are a deprecated summary of one latest received
     record; new consumers use metrics for quality and health for rule results. Rules are not a validated medical
     device, diagnosis or NASA medical protocol. No authentication, authorization or rate limiting is implemented:
-    synthetic data on a trusted local network only, with no 401/403/429 flows. Public missionDate remains future work.
-    JSON bodies above 2 MiB are rejected. This additive revision keeps /api paths and ingestion identity,
+    synthetic data on a trusted local network only, with no 401/403/429 flows. Daily tasks use explicit UTC missionDate and idempotent completion.
+    JSON bodies above 2 MiB are rejected. This revision keeps /api paths and ingestion identity,
     extends the metric registry from six to twelve, and retains explicit legacy six-metric response compatibility.'
 servers:
 - url: http://127.0.0.1:8080
@@ -23,7 +23,7 @@ tags:
 - name: Assessments
   description: Independent data quality, explainable demonstration rules, flight context and suggested actions.
 - name: Tasks
-  description: Undated persistent checklist.
+  description: Daily checklist for the server-selected demo astronaut and explicit mission date.
 paths:
   /api/health:
     get:
@@ -195,7 +195,7 @@ paths:
         for freshness. Raw measurements remain unchanged. No query parameters are accepted.
       responses:
         '200':
-          description: Six metric entries, explicit missing values and independent data quality.
+          description: Twelve metric entries on current servers; six on legacy servers, with explicit missing values and independent data quality.
           content:
             application/json:
               schema:
@@ -333,23 +333,29 @@ paths:
           $ref: '#/components/responses/DatabaseError'
   /api/tasks:
     get:
-      summary: List the current undated checklist
+      summary: List daily tasks for a UTC mission date
       operationId: listTasks
       tags:
       - Tasks
-      description: Returns all tasks ordered by id ascending. No pagination or mission date selection
-        is implemented. Query parameters are decoded but ignored, including date. These are persistent
-        undated checklist entries, not daily task instances. BE-02 stores templates and dated completions
-        internally; the public dated workflow is planned for BE-07.
+      description: Returns all templates ordered by id ascending with completions for demo-astronaut
+        and the requested date. Without date, the server reads today's UTC date once and returns it
+        as missionDate. An empty day includes all templates with completedAt null. Unknown and
+        repeated query fields are rejected. Invalid dates return 400 VALIDATION_ERROR with field date.
+      parameters:
+      - name: date
+        in: query
+        required: false
+        description: Canonical calendar date; timestamps and non-padded dates are invalid.
+        schema:
+          $ref: '#/components/schemas/MissionDate'
+        example: '2026-11-13'
       responses:
         '200':
-          description: Checklist; empty list if no tasks.
+          description: Mission date and its daily checklist.
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Task'
+                $ref: '#/components/schemas/TasksResponse'
               examples:
                 tasks:
                   externalValue: ./examples/tasks.response.json
@@ -364,29 +370,37 @@ paths:
     - name: id
       in: path
       required: true
-      description: Existing task identifier, such as daily-check.
+      description: Existing template identifier, such as daily-check.
       schema:
         type: string
     patch:
-      summary: Set task completion
+      summary: Set completion for an explicit mission date
       operationId: updateTask
       tags:
       - Tasks
-      description: Sets completedAt to server UTC time when completed=true, or null when false. Repeating
-        true sets a new timestamp in BE-06; daily/idempotent task completion is planned for BE-07. Unknown
-        request fields, including date, are rejected. Body limit is 2 MiB.
+      description: Requires missionDate and completed. Uses demo-astronaut and actual server UTC time.
+        Repeating true preserves the first completedAt; false clears only this day's mark.
+        Completing again after cancellation creates a new timestamp. Clients cannot set completedAt
+        or astronautId. Invalid or missing missionDate returns 400 VALIDATION_ERROR with field missionDate.
+        Missing completed, wrong types and unknown body fields return 400 INVALID_BODY.
+        Body limit is 2 MiB.
       responses:
         '200':
-          description: Updated task.
+          description: Confirmed task with the requested missionDate.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Task'
+                $ref: '#/components/schemas/TaskUpdateResponse'
               examples:
                 completed:
                   externalValue: ./examples/task.response.json
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: INVALID_JSON, INVALID_BODY, INVALID_PATH or VALIDATION_ERROR. Missing or invalid
+            missionDate uses VALIDATION_ERROR with field missionDate.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '404':
           $ref: '#/components/responses/NotFound'
         '405':
@@ -395,8 +409,6 @@ paths:
           $ref: '#/components/responses/PayloadTooLarge'
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
-        '422':
-          $ref: '#/components/responses/InvalidBody'
         '500':
           $ref: '#/components/responses/DatabaseError'
       requestBody:
@@ -408,6 +420,7 @@ paths:
             examples:
               complete:
                 externalValue: ./examples/task-update.request.json
+
 components:
   schemas:
     Metric:
@@ -1001,13 +1014,13 @@ components:
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
         - metric: diastolicPressure
@@ -1017,13 +1030,13 @@ components:
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
         - metric: temperature
@@ -1033,13 +1046,13 @@ components:
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
         - metric: sleepHours
@@ -1049,13 +1062,13 @@ components:
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 86400
+            freshForSeconds: 93600
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 86400
+            freshForSeconds: 93600
             ageSeconds: null
             clockSkew: false
         - metric: mood
@@ -1065,13 +1078,13 @@ components:
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 86400
+            freshForSeconds: 93600
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 86400
+            freshForSeconds: 93600
             ageSeconds: null
             clockSkew: false
         evaluatedAt: '2026-11-13T08:00:03Z'
@@ -1141,10 +1154,14 @@ components:
           - 15
           - 60
           - 3600
+          - 7200
+          - 46800
           - 86400
-          description: 'Demo policy in seconds: heartRate 15; spo2 60; both pressures, temperature, glucose, headache
-            and backPain 3600; sleepHours, mood, visionBlur and exerciseMinutes 86400. These operational
-            freshness windows are not medical thresholds.'
+          - 93600
+          description: 'Demo policy in seconds: heartRate 15; spo2 7200; both pressures, temperature, headache
+            and backPain 46800; sleepHours, mood, glucose, visionBlur and exerciseMinutes 93600. These operational
+            freshness windows are not medical thresholds. Values 60, 3600 and 86400 are retained only for
+            older server responses and the documented legacy fixtures.'
         ageSeconds:
           type:
           - number
@@ -1668,67 +1685,73 @@ components:
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
         - metric: diastolicPressure
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
         - metric: temperature
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 3600
+            freshForSeconds: 46800
             ageSeconds: null
             clockSkew: false
         - metric: sleepHours
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 86400
+            freshForSeconds: 93600
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 86400
+            freshForSeconds: 93600
             ageSeconds: null
             clockSkew: false
         - metric: mood
           quality:
             status: missing
             measurementId: null
-            freshForSeconds: 86400
+            freshForSeconds: 93600
             ageSeconds: null
             clockSkew: false
           latestReceivedQuality:
             status: missing
             measurementId: null
-            freshForSeconds: 86400
+            freshForSeconds: 93600
             ageSeconds: null
             clockSkew: false
+    MissionDate:
+      type: string
+      format: date
+      pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+      description: Valid canonical calendar date YYYY-MM-DD, without time or offset.
+      example: '2026-11-13'
     Task:
       type: object
       additionalProperties: false
@@ -1746,17 +1769,53 @@ components:
           - string
           - 'null'
           format: date-time
-          description: Server UTC timestamp, or null for incomplete. The BE-06 public API has no missionDate; repeated
-            completed=true updates this timestamp.
+          description: First server UTC completion timestamp for this mission date, or null.
+    TasksResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - missionDate
+      - tasks
+      properties:
+        missionDate:
+          $ref: '#/components/schemas/MissionDate'
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+    TaskUpdateResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - missionDate
+      - id
+      - title
+      - completedAt
+      properties:
+        missionDate:
+          $ref: '#/components/schemas/MissionDate'
+        id:
+          type: string
+        title:
+          type: string
+        completedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: First server UTC completion timestamp for this mission date, or null.
     TaskUpdate:
       type: object
       additionalProperties: false
       required:
+      - missionDate
       - completed
       properties:
+        missionDate:
+          $ref: '#/components/schemas/MissionDate'
         completed:
           type: boolean
-          description: true sets completedAt to server time; false clears it.
+          description: true creates a mark only if missing; false clears only this date's mark.
     Problem:
       type: object
       description: Problem Details for API errors, including JSON/query/path extraction. code is stable

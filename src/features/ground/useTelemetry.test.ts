@@ -79,8 +79,12 @@ it('retains the last complete history on failure without claiming a successful r
   const saved = onChange.mock.lastCall![0]
   vi.mocked(getMeasurementSeries).mockRejectedValueOnce(new Error('offline'))
   await vi.advanceTimersByTimeAsync(15000)
+  expect(onChange.mock.calls.slice(2).find(([state]) => state.loading)?.[0]).toMatchObject({ series: saved.series, window: saved.window })
   expect(onChange.mock.lastCall![0]).toMatchObject({ series: saved.series, window: saved.window, loading: false })
   expect(onChange.mock.lastCall![0].error).toContain('Не удалось')
+  dispose()
+  dispose = startTelemetryPolling(['heartRate'], 30, onChange, saved)
+  expect(onChange.mock.lastCall![0]).toMatchObject({ series: saved.series, window: saved.window, loading: true })
 })
 
 it('does not request data for an empty selection', async () => {

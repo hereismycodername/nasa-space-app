@@ -3,7 +3,7 @@ import type { DataQuality, FreshnessStatus, LatestMeasurements } from '../../sha
 export const freshnessLabels: Record<FreshnessStatus, string> = {
   missing: 'Нет измерения',
   fresh: 'Свежее измерение',
-  stale: 'Данные устарели',
+  stale: 'Ожидается новый замер',
   unknownTime: 'Время неизвестно',
   clockSkew: 'Расхождение часов',
 }
@@ -23,13 +23,28 @@ export function formatFreshnessWindow(seconds: number) {
   return `${seconds} с`
 }
 
+export function formatMeasurementAge(seconds: number | null) {
+  if (seconds === null || !Number.isFinite(seconds)) return 'Время последнего замера неизвестно'
+  const age = Math.max(0, seconds)
+  const relative = age < 1 ? 'только что' : age < 60 ? `${Math.floor(age)} с назад` : age < 3600 ? `${Math.floor(age / 60)} мин назад`
+    : age < 86400 ? `${Math.floor(age / 3600)} ч назад` : `${Math.floor(age / 86400)} дн. назад`
+  return `Последний замер ${relative}`
+}
+
+export function freshnessLabel(quality: DataQuality, elapsedSeconds = 0) {
+  const status = currentFreshness(quality, elapsedSeconds)
+  return status === 'stale'
+    ? `${freshnessLabels.stale}. ${formatMeasurementAge(quality.ageSeconds === null ? null : quality.ageSeconds + Math.max(0, elapsedSeconds))}`
+    : freshnessLabels[status]
+}
+
 export function qualityDescription(quality: DataQuality, elapsedSeconds = 0) {
   const status = currentFreshness(quality, elapsedSeconds)
   const window = formatFreshnessWindow(quality.freshForSeconds)
   switch (status) {
     case 'missing': return 'Измерений этого показателя пока нет.'
     case 'fresh': return `Время измерения укладывается в демо-срок ${window}. Это не оценка здоровья.`
-    case 'stale': return `Демо-срок ${window} истёк. Недавняя доставка не обновляет время измерения.`
+    case 'stale': return `${freshnessLabel(quality, elapsedSeconds)}. Демо-срок свежести ${window} истёк. Это характеристика данных, не оценка здоровья. Недавняя доставка не обновляет время измерения.`
     case 'unknownTime': return 'Время измерения неизвестно; время доставки не подтверждает свежесть.'
     case 'clockSkew': return 'Время измерения опережает часы сервера. Свежесть не подтверждена.'
   }

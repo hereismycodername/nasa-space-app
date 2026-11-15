@@ -1,6 +1,7 @@
 # AstroCheck UI (Rust)
 
-Both native programs now default to the same BE-06 HTTP API as React. Run
+Both native programs now default to the same shared HTTP API as React: BE-06
+measurements, BE-07 dated tasks and BE-08 health guidance. Run
 `npm run demo` from the repository root, then start the window or terminal client.
 No native SQLite database or additional API server is created. A shared `ui-http`
 adapter polls real measurements, server health guidance, seven-day UTC series and tasks on a background
@@ -17,9 +18,12 @@ cargo run --locked --manifest-path ui/Cargo.toml -p ui-gui -- --api-url http://1
 `--api-url` overrides `ASTROCHECK_API_URL`, whose default is `http://127.0.0.1:8080`.
 `--ground` starts TUI in Ground; GUI uses `--role ground`. Both support `--help`.
 The API owns the single `demo-astronaut` profile, measurements and task completion.
-The clients discover supported metrics from the latest-measurements response: the
-original six work on older servers; the additional six appear only when the
-server advertises them. Live clients display source, measurement/receipt time and
+The clients discover supported metrics from the latest-measurements response: a
+six-metric registry remains supported, and the additional six appear only when the
+server advertises them. Every connected server must implement the BE-07 task
+envelope `{missionDate, tasks}` and accept `missionDate` in task updates. Update
+the server and all three clients together; the old BE-06 task-array API is not
+supported by these clients. Live clients display source, measurement/receipt time and
 server freshness separately from BE-08 health guidance. The server owns all health
 rules; green means no configured rule alert, amber attention, red urgent action,
 and grey means unevaluated or insufficient data. These are demonstration rules,
@@ -33,15 +37,17 @@ urgent-symptom guidance and the five spaceflight hazards. In TUI, use `i` for th
 selected metric, `h` for health guidance, and `f` for flight education; arrow keys
 and PageUp/PageDown scroll these views. New urgent results automatically open the
 health view. `Enter` edits a measurement, `Tab` switches to tasks, and `?` lists keys.
-An older BE-06 server without health rules stays usable with neutral status.
+A server without optional BE-08 health rules displays neutral health status,
+provided it implements the required dated-task API.
 Scores, baseline advice, uplink and ACK remain unavailable in live mode. API failures keep the client in live
 mode with a visible error and cached data, never switch to fake measurements.
 Polling is about 2 seconds for latest/tasks/assessments and 10 seconds for series.
 Pending writes are in memory, not a durable offline outbox; await confirmation
 before closing the client. Retry attempts reuse the exact measurement payload/key.
-Task updates with a lost response are not automatically replayed: the existing
-PATCH changes the completion timestamp. The client reports an unconfirmed result
-and refreshes tasks from the server.
+Task updates preserve the displayed mission date. Repeated completion is
+idempotent on the server and retains its original timestamp. After a lost response,
+the client keeps its conservative retry policy: it reports an unconfirmed result
+and refreshes tasks instead of automatically replaying the update.
 The window retains a 2D body diagram; rotatable 3D belongs to the React client.
 
 Build both applications with
@@ -68,11 +74,15 @@ Both exist as a **window** (`astrocheck-gui`, egui) and a **terminal** program (
 works over SSH / serial console / on boards without a display). Switch role at runtime (GUI: Crew|Ground control
 in the top bar, TUI: key `r`).
 
-Reference anatomy: the figure is a frontal projection of the adult male meshes of BodyParts3D (skin, skull, spine,
-ribs, clavicles, scapulae, pelvis, arm and leg bones; brain, eyes, trachea, lungs, thymus, heart, liver, gallbladder, stomach,
-pancreas, kidneys, intestines, bladder). It is a simplified reference model, not a patient-specific scan. Layers: *Organs / Skeleton / X-ray*.
-Organ outlines and the hotspot markers show status; labels with leader lines are clickable. In the terminal the same figure
-is drawn with braille dots. Regenerate the data with `tools/gen_anatomy.py` (needs the BodyParts3D download, see the script).
+Real anatomy: the window shows a shaded frontal render of the CT-based adult male meshes of BodyParts3D (skin; skull,
+spine, ribs with costal cartilage, sternum, clavicles, scapulae, pelvis, arm and leg bones, hands, patellae, feet; brain,
+eyes, airways, lungs, thymus, heart, aorta, venae cavae, pulmonary trunk, oesophagus, liver, gallbladder, stomach, pancreas,
+kidneys, intestines, bladder), so sizes and positions are measured, not drawn. `tools/render_anatomy.py` rasterises every
+part with a z-buffer, key and fill light, specular and screen-space occlusion (2x2 supersampled) into one sprite atlas;
+the app colours it per layer: *Organs / Skeleton / X-ray* (the skin is a dark body behind and a glass surface in front).
+A body system's status is one outline around its organs plus a light tint; square markers and leader-line labels are
+clickable, and clicks are tested against the sprites' pixels. In the terminal the figure is drawn with braille dots from
+the vector outlines of `tools/gen_anatomy.py`. Both scripts need the BodyParts3D download (see the scripts).
 
 Screens: see `docs/*.png` (window) and `docs/terminal-*.txt` (terminal frames).
 
@@ -85,6 +95,10 @@ Screens: see `docs/*.png` (window) and `docs/terminal-*.txt` (terminal frames).
   ("use color sparingly", "quiet/dark" displays, standard colour meanings) the screen is *quiet*: NORMAL is neutral,
   colour appears only on departures: WATCH amber, ACT NOW red, NO DATA cyan. Healthy metric tiles carry no status bar,
   and the crew overview shows only what needs attention by default ("Show all metrics" is one click away).
+* **Shape language:** an instrument panel, not an app: square corners, hairline borders, one chamfered corner per panel,
+  square status markers and lamps, segmented gauges instead of rings, tracked DM Mono captions, a height scale and R / L
+  marks on the anatomy view (radiology convention: the patient's right is on the viewer's left). Translucent colours are
+  mixed in gamma space (`theme::alpha`), so a 12 % tint really is 12 %.
 * **Always visible:** a status bar with key parameters (DB / CRC / self-test / queue / due) and a one-line alert strip.
 * **Standard conventions:** no custom decorative icons, the crew never has to do arithmetic (baseline and delta are
   computed), ground view is denser than the crew view (tables, trends) as on NASA ground displays.
@@ -109,6 +123,7 @@ crates/ui-model   the contract + data. NO UI code.
     content.rs, rules.rs   demo content (thresholds, texts) from data/content.json
 crates/ui-tui     terminal UI (lib + bin astrocheck-tui), braille.rs rasteriser
 crates/ui-gui     window UI (bin astrocheck-gui): figure.rs, widgets.rs, theme.rs, main.rs
+    anatomy_sprites.rs + assets/anatomy_atlas.png   shaded anatomy sprites (generated by tools/render_anatomy.py)
 data/content.json   thresholds, advice texts, environments (demo only; the real backend owns its own)
 docs/             screenshots and terminal frames
 ```
@@ -162,8 +177,9 @@ adapter was added. They are not measurements of the current shared-API binaries.
 | | binary | idle CPU | RAM |
 |---|---|---|---|
 | `astrocheck-tui` | 0.71 MB | 0.13 % of one core | 6 MB |
-| `astrocheck-gui` (`--lite`) | 3.5 MB | about 2 % of one core | 84 MB |
-| `astrocheck-gui` (animated) | 3.5 MB | about 4 % of one core | 84 MB |
+| `astrocheck-gui` (window not focused, 1 repaint / s) | 6.9 MB (0.65 MB anatomy atlas included) | 1.6 % of one core | 92 MB |
+
+The focused, animated window (10 fps) was about 4 % of one core before the anatomy became sprites; not re-measured since.
 
 The window repaints about once a second when idle (10 fps with the heartbeat / breathing animation while the window is
 focused). Most of its CPU and RAM here is the *software* OpenGL path of this machine; on a board with a GPU driver it is
@@ -172,13 +188,16 @@ expected to differ - measure on the target. The terminal version is the lightwei
 ## Honest limits
 
 * The anatomy is one real adult male (BodyParts3D, 99 % reduced meshes, frontal view only, no spleen or lymph nodes in the
-  data set, hands and feet are skin only). It is not a patient-specific model. To use other artwork replace `anatomy::parts()`;
-  nothing else depends on how the shapes were made.
+  data set). BodyParts3D models the lungs only as their airway and vessel trees, so the lung surface is rebuilt from those
+  trees (closed outline raised as a dome, fissures between the lobes): its outline is close, not exact. It is not a
+  patient-specific model. To use other artwork, regenerate the atlas (window) or replace `anatomy::parts()` (terminal).
 * Thresholds, advice texts and the demo crew are illustrative. Not a medical device.
 * Originally developed on Windows 11; the integrated workspace also compiles and passes model/terminal tests on macOS.
   Linux headless workspace tests are configured in CI. Not yet run on a Raspberry Pi or any other board; the GUI needs the usual
   GL / X11 / Wayland runtime libraries there.
-* The demo backend keeps everything in memory; persistence, integrity checks and the downlink queue belong to the real backend.
+* In `--demo` the downlink queue, the built-in test and the corruption demo are simulated. The live window uses the
+  shaded anatomy and the instrument theme, but its screen is the simpler shared-server view (`live.rs`); the full crew /
+  ground prototype runs only with `--demo`.
 
 ## Credits and licences
 

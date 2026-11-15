@@ -50,6 +50,8 @@ function startBackend(base, port, noBuild) {
       BIND_ADDR: `127.0.0.1:${port}`,
       DATABASE_URL: `sqlite://${join(directory, 'pitch.db')}`,
       FRONTEND_DIST: join(root, 'dist'),
+      // Keep the presenter's scene controls readable; explicit diagnostics still win.
+      REQUEST_LOG: process.env.REQUEST_LOG ?? '0',
       SHUTDOWN_STDIN: isWindows ? '1' : '0',
     },
     stdio: [isWindows ? 'pipe' : 'ignore', 'pipe', 'inherit'],

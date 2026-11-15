@@ -165,7 +165,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         .send()?
         .error_for_status()?
         .json()?;
-    assert!(tasks[0]["completedAt"].is_string());
+    assert!(tasks["missionDate"].is_string());
+    assert!(tasks["tasks"][0]["completedAt"].is_string());
     tui.set_task_completed("daily-check", false)?;
     wait_for(&mut gui, &mut tui, "task undone in every client", |a, b| {
         b.pending_writes() == 0
@@ -180,7 +181,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         "systolicPressure",
         118.5,
         "mmHg",
-        Some((Utc::now() - ChronoDuration::hours(2)).to_rfc3339()),
+        Some((Utc::now() - ChronoDuration::hours(14)).to_rfc3339()),
     )?;
     post(
         "diastolicPressure",

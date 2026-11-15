@@ -1,9 +1,9 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import type { DailyTask } from '../../shared/types'
+import type { DailyTask, TaskList } from '../../shared/types'
 import { confirmTaskUpdate } from './confirmation'
 import '../check-in/forms.css'
 
-function TaskRow({ task, connected, onChanged }: { task: DailyTask; connected: boolean; onChanged: () => void }) {
+function TaskRow({ task, missionDate, connected, onChanged }: { task: DailyTask; missionDate: string; connected: boolean; onChanged: () => void }) {
   const [pending, setPending] = useState(false)
   const [confirmed, setConfirmed] = useState<{ snapshot: DailyTask; value: DailyTask }>()
   const [error, setError] = useState('')
@@ -17,7 +17,7 @@ function TaskRow({ task, connected, onChanged }: { task: DailyTask; connected: b
     setPending(true)
     setError('')
     try {
-      setConfirmed(await confirmTaskUpdate(task.id, completed, () => latestTask.current))
+      setConfirmed(await confirmTaskUpdate(task.id, missionDate, completed, () => latestTask.current))
       onChanged()
     } catch {
       setError('Не удалось подтвердить изменение. Обновите данные и повторите действие.')
@@ -40,16 +40,18 @@ function TaskRow({ task, connected, onChanged }: { task: DailyTask; connected: b
   </li>
 }
 
-export function TaskPanel({ tasks, connected, onChanged }: { tasks?: DailyTask[]; connected: boolean; onChanged: () => void }) {
+export function TaskPanel({ tasks: taskList, connected, onChanged }: { tasks?: TaskList; connected: boolean; onChanged: () => void }) {
+  const tasks = taskList?.tasks
   const completed = tasks?.filter(task => task.completedAt !== null).length ?? 0
   return <section className="panel task-panel" aria-labelledby="task-title">
     <div className="task-heading"><h2 id="task-title">Задачи экипажа</h2>
       {tasks ? <span className="task-counter">{completed} / {tasks.length}</span> : null}
     </div>
-    {!tasks ? <p className="form-hint">{connected ? 'Загрузка задач…' : 'Подключитесь к серверу, чтобы получить задачи.'}</p>
-      : tasks.length === 0 ? <p className="form-hint">Задач пока нет.</p>
-        : <ul className="task-list">{tasks.map(task => <TaskRow key={task.id} task={task} connected={connected} onChanged={onChanged} />)}</ul>}
+    {taskList ? <p className="note">Дата миссии (UTC): {taskList.missionDate}</p> : null}
+    {!taskList ? <p className="form-hint">{connected ? 'Загрузка задач…' : 'Подключитесь к серверу, чтобы получить задачи.'}</p>
+      : taskList.tasks.length === 0 ? <p className="form-hint">Задач пока нет.</p>
+        : <ul className="task-list">{taskList.tasks.map(task => <TaskRow key={`${taskList.missionDate}/${task.id}`} task={task} missionDate={taskList.missionDate} connected={connected} onChanged={onChanged} />)}</ul>}
     {tasks && !connected ? <p className="form-hint">Показаны последние полученные отметки. Изменение доступно после восстановления связи.</p> : null}
-    <p className="task-footnote">Отметки сохраняются до следующего изменения; автоматического сброса по дням пока нет.</p>
+    <p className="task-footnote">Отметки сохраняются для указанной даты миссии (UTC). Новый день имеет отдельный список выполнения.</p>
   </section>
 }

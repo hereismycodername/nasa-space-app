@@ -31,7 +31,7 @@ const evaluatedStatuses = new Set<RuleStatus>(['noAlert', 'attention', 'critical
 
 /** Only the server interprets values. Clients can withdraw, never promote, a result. */
 export function metricHealth(metric: Metric, context: HealthContext): RuleView {
-  const { assessment, latest, connected, updating, elapsedSeconds = 0, latestElapsedSeconds = 0 } = context
+  const { assessment, latest, connected, elapsedSeconds = 0, latestElapsedSeconds = 0 } = context
   const currentRule = assessment?.health?.rules.find(item => item.metric === metric)
   const previous = context.previousHealthAlerts?.[metric]
   const rule = currentRule && evaluatedStatuses.has(currentRule.status) ? currentRule : previous?.rule ?? currentRule
@@ -39,7 +39,8 @@ export function metricHealth(metric: Metric, context: HealthContext): RuleView {
   const neutral = (reason: string, status: RuleStatus = 'insufficientData'): RuleView => ({ status, current: false, reason, rule, evaluatedAt: evaluatedTime })
   if (!currentRule || !assessment) return neutral('Оценка правил ещё не получена.', 'notEvaluated')
   if (!connected) return neutral('Нет связи. Предыдущая оценка не подтверждает текущее состояние.')
-  if (updating) return neutral('Обновляем измерения и оценку. Предыдущий результат доступен ниже.')
+  // Polling publishes latest + assessment atomically. Keep that coherent snapshot
+  // during revalidation; expiry, evidence and connection checks still apply.
   if (!evaluatedStatuses.has(currentRule.status)) return neutral(currentRule.explanation, currentRule.status)
   if (!rule) return neutral('Оценка правил ещё не получена.', 'notEvaluated')
   const entry = latest?.metrics.find(item => item.metric === metric)

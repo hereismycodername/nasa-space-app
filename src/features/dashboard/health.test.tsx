@@ -28,10 +28,10 @@ it('does not interpret measurement values in the client, and requires full cover
   expect(summarizeHealth(METRICS.map(metric => metricHealth(metric.id, context)), 6)).toBe('critical')
 })
 
-it('withdraws results when disconnected, refreshing, replaced, mismatched or no longer fresh in either snapshot', () => {
+it('withdraws results when disconnected, replaced, mismatched or no longer fresh in either snapshot', () => {
   const context = healthFixture()
   expect(metricHealth('heartRate', { ...context, connected: false }).current).toBe(false)
-  expect(metricHealth('heartRate', { ...context, updating: true }).current).toBe(false)
+  expect(metricHealth('heartRate', { ...context, updating: true }).current).toBe(true)
   expect(metricHealth('heartRate', { ...context, latestElapsedSeconds: 16 }).current).toBe(false)
   context.latest.metrics[0].latestKnownMeasurement!.id = 'new'
   expect(metricHealth('heartRate', context).current).toBe(false)
@@ -88,7 +88,7 @@ it('leaves unsupported systems neutral and preserves anatomical navigation separ
   expect(html).toContain('3D-модель человека')
   expect(html).toContain('Сердце и кровообращение: есть данные')
   expect(html).toContain('anatomy-health-status health-attention')
-  expect(html).toContain('Цвет модели обозначает анатомию')
+  expect(html).toContain('Это оценка показателей системы, не диагноз органа')
 })
 
 it('supports a BE-06 server without inventing a health result or breaking the readings', () => {
@@ -105,7 +105,7 @@ it('keeps the six B/C metrics unassessed even with fresh zero-valued measurement
   expect(metricHealth('headache', context)).toMatchObject({ current: false, status: 'notEvaluated' })
   expect(summarizeHealth(METRICS.map(metric => metricHealth(metric.id, context)), METRICS.length)).toBe('insufficientData')
   const html = renderToStaticMarkup(<MetricOverview latest={context.latest} connected selectedSystem="brain" healthContext={context} />)
-  expect(html).toContain('0 <small>score</small>')
+  expect(html).toContain('0 <small>из 10</small>')
   expect(html).toContain('Правила ещё не подключены.')
 })
 

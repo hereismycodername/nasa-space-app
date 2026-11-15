@@ -2,22 +2,22 @@
   "status": "not-evaluated",
   "explanation": "Последнее принятое измерение достаточно свежее по демонстрационной политике показателя. Это сводка свежести; результаты демонстрационных правил возвращаются отдельно в health.",
   "astronautId": "demo-astronaut",
-  "evaluatedAt": "2026-11-14T21:54:24.037670Z",
+  "evaluatedAt": "2026-11-15T07:06:33.886036Z",
   "metrics": [
     {
       "metric": "heartRate",
       "quality": {
         "status": "fresh",
-        "measurementId": "9d24f3e9-818f-4eee-97ad-5ae91cf54c6f",
+        "measurementId": "88b6530b-7a5a-4431-9c2f-cb3a76af028d",
         "freshForSeconds": 15,
-        "ageSeconds": 0.00867,
+        "ageSeconds": 0.006036,
         "clockSkew": false
       },
       "latestReceivedQuality": {
         "status": "fresh",
-        "measurementId": "9d24f3e9-818f-4eee-97ad-5ae91cf54c6f",
+        "measurementId": "88b6530b-7a5a-4431-9c2f-cb3a76af028d",
         "freshForSeconds": 15,
-        "ageSeconds": 0.00867,
+        "ageSeconds": 0.006036,
         "clockSkew": false
       }
     },
@@ -25,16 +25,16 @@
       "metric": "systolicPressure",
       "quality": {
         "status": "fresh",
-        "measurementId": "f1be4de8-354f-4866-a3e1-62bded639761",
-        "freshForSeconds": 3600,
-        "ageSeconds": 0.00367,
+        "measurementId": "ff506e30-d2f2-44a2-96ef-8a64b2585eb4",
+        "freshForSeconds": 46800,
+        "ageSeconds": 0.002036,
         "clockSkew": false
       },
       "latestReceivedQuality": {
         "status": "fresh",
-        "measurementId": "f1be4de8-354f-4866-a3e1-62bded639761",
-        "freshForSeconds": 3600,
-        "ageSeconds": 0.00367,
+        "measurementId": "ff506e30-d2f2-44a2-96ef-8a64b2585eb4",
+        "freshForSeconds": 46800,
+        "ageSeconds": 0.002036,
         "clockSkew": false
       }
     },
@@ -42,16 +42,16 @@
       "metric": "diastolicPressure",
       "quality": {
         "status": "fresh",
-        "measurementId": "7262e673-fabf-42a6-ad0e-f31e25cb62ea",
-        "freshForSeconds": 3600,
-        "ageSeconds": 0.02767,
+        "measurementId": "64633801-594e-4b9e-9f50-e3174afc959d",
+        "freshForSeconds": 46800,
+        "ageSeconds": 0.018036,
         "clockSkew": false
       },
       "latestReceivedQuality": {
         "status": "fresh",
-        "measurementId": "7262e673-fabf-42a6-ad0e-f31e25cb62ea",
-        "freshForSeconds": 3600,
-        "ageSeconds": 0.02767,
+        "measurementId": "64633801-594e-4b9e-9f50-e3174afc959d",
+        "freshForSeconds": 46800,
+        "ageSeconds": 0.018036,
         "clockSkew": false
       }
     },
@@ -59,16 +59,16 @@
       "metric": "temperature",
       "quality": {
         "status": "fresh",
-        "measurementId": "dea97ec1-5d7d-4ff0-8169-f0e504fb81a0",
-        "freshForSeconds": 3600,
-        "ageSeconds": 0.02667,
+        "measurementId": "8362f64c-ecbc-41fb-b342-133f1069eadc",
+        "freshForSeconds": 46800,
+        "ageSeconds": 0.017036,
         "clockSkew": false
       },
       "latestReceivedQuality": {
         "status": "fresh",
-        "measurementId": "dea97ec1-5d7d-4ff0-8169-f0e504fb81a0",
-        "freshForSeconds": 3600,
-        "ageSeconds": 0.02667,
+        "measurementId": "8362f64c-ecbc-41fb-b342-133f1069eadc",
+        "freshForSeconds": 46800,
+        "ageSeconds": 0.017036,
         "clockSkew": false
       }
     },
@@ -76,16 +76,16 @@
       "metric": "sleepHours",
       "quality": {
         "status": "fresh",
-        "measurementId": "8ecbbfcf-5e6a-4c49-a6ca-569313868e55",
-        "freshForSeconds": 86400,
-        "ageSeconds": 0.01267,
+        "measurementId": "85b5f88b-250b-4585-8893-74cd322acf28",
+        "freshForSeconds": 93600,
+        "ageSeconds": 0.008036,
         "clockSkew": false
       },
       "latestReceivedQuality": {
         "status": "fresh",
-        "measurementId": "8ecbbfcf-5e6a-4c49-a6ca-569313868e55",
-        "freshForSeconds": 86400,
-        "ageSeconds": 0.01267,
+        "measurementId": "85b5f88b-250b-4585-8893-74cd322acf28",
+        "freshForSeconds": 93600,
+        "ageSeconds": 0.008036,
         "clockSkew": false
       }
     },
@@ -93,16 +93,16 @@
       "metric": "mood",
       "quality": {
         "status": "fresh",
-        "measurementId": "101e8d03-2355-400a-a807-ce5720b58557",
-        "freshForSeconds": 86400,
-        "ageSeconds": 0.01067,
+        "measurementId": "4eb4afaa-604a-4cae-b489-9cf05deee099",
+        "freshForSeconds": 93600,
+        "ageSeconds": 0.007036,
         "clockSkew": false
       },
       "latestReceivedQuality": {
         "status": "fresh",
-        "measurementId": "101e8d03-2355-400a-a807-ce5720b58557",
-        "freshForSeconds": 86400,
-        "ageSeconds": 0.01067,
+        "measurementId": "4eb4afaa-604a-4cae-b489-9cf05deee099",
+        "freshForSeconds": 93600,
+        "ageSeconds": 0.007036,
         "clockSkew": false
       }
     },
@@ -111,14 +111,14 @@
       "quality": {
         "status": "missing",
         "measurementId": null,
-        "freshForSeconds": 60,
+        "freshForSeconds": 7200,
         "ageSeconds": null,
         "clockSkew": false
       },
       "latestReceivedQuality": {
         "status": "missing",
         "measurementId": null,
-        "freshForSeconds": 60,
+        "freshForSeconds": 7200,
         "ageSeconds": null,
         "clockSkew": false
       }
@@ -128,14 +128,14 @@
       "quality": {
         "status": "missing",
         "measurementId": null,
-        "freshForSeconds": 3600,
+        "freshForSeconds": 93600,
         "ageSeconds": null,
         "clockSkew": false
       },
       "latestReceivedQuality": {
         "status": "missing",
         "measurementId": null,
-        "freshForSeconds": 3600,
+        "freshForSeconds": 93600,
         "ageSeconds": null,
         "clockSkew": false
       }
@@ -145,14 +145,14 @@
       "quality": {
         "status": "missing",
         "measurementId": null,
-        "freshForSeconds": 86400,
+        "freshForSeconds": 93600,
         "ageSeconds": null,
         "clockSkew": false
       },
       "latestReceivedQuality": {
         "status": "missing",
         "measurementId": null,
-        "freshForSeconds": 86400,
+        "freshForSeconds": 93600,
         "ageSeconds": null,
         "clockSkew": false
       }
@@ -162,14 +162,14 @@
       "quality": {
         "status": "missing",
         "measurementId": null,
-        "freshForSeconds": 86400,
+        "freshForSeconds": 93600,
         "ageSeconds": null,
         "clockSkew": false
       },
       "latestReceivedQuality": {
         "status": "missing",
         "measurementId": null,
-        "freshForSeconds": 86400,
+        "freshForSeconds": 93600,
         "ageSeconds": null,
         "clockSkew": false
       }
@@ -179,14 +179,14 @@
       "quality": {
         "status": "missing",
         "measurementId": null,
-        "freshForSeconds": 3600,
+        "freshForSeconds": 46800,
         "ageSeconds": null,
         "clockSkew": false
       },
       "latestReceivedQuality": {
         "status": "missing",
         "measurementId": null,
-        "freshForSeconds": 3600,
+        "freshForSeconds": 46800,
         "ageSeconds": null,
         "clockSkew": false
       }
@@ -196,14 +196,14 @@
       "quality": {
         "status": "missing",
         "measurementId": null,
-        "freshForSeconds": 3600,
+        "freshForSeconds": 46800,
         "ageSeconds": null,
         "clockSkew": false
       },
       "latestReceivedQuality": {
         "status": "missing",
         "measurementId": null,
-        "freshForSeconds": 3600,
+        "freshForSeconds": 46800,
         "ageSeconds": null,
         "clockSkew": false
       }
@@ -225,11 +225,11 @@
         "metric": "heartRate",
         "title": "Пульс",
         "status": "attention",
-        "explanation": "110 bpm. Сработал ориентир для пульса в покое: <60 или >100 bpm. Ориентир применим только в покое; нагрузка и тренированность меняют пульс. Контекст покоя приложению неизвестен.",
+        "explanation": "110 уд/мин. Сработал ориентир для пульса в покое: <60 или >100 уд/мин. Ориентир применим только в покое; нагрузка и тренированность меняют пульс. Контекст покоя приложению неизвестен.",
         "measurementIds": [
-          "9d24f3e9-818f-4eee-97ad-5ae91cf54c6f"
+          "88b6530b-7a5a-4431-9c2f-cb3a76af028d"
         ],
-        "validUntil": "2026-11-14T21:54:39.029Z",
+        "validUntil": "2026-11-15T07:06:48.880Z",
         "suggestedAction": "Повторите измерение в спокойном состоянии, отметьте недавнюю нагрузку и самочувствие. При повторении отклонения обсудите его с полётным врачом; при выраженных симптомах немедленно привлеките экипаж.",
         "escalation": "ground",
         "flightContext": "В изменённой гравитации кровообращение адаптируется. Сопоставляйте пульс с нагрузкой и индивидуальным планом; он не определяет причину изменения.",
@@ -245,11 +245,11 @@
         "metric": "systolicPressure",
         "title": "Систолическое давление",
         "status": "critical",
-        "explanation": "190 mmHg. Сработал срочный порог: систолическое давление >180 mmHg. Это отдельная часть давления; диагноз и общая категория давления по ней не устанавливаются. Нужны обе части и условия измерения.",
+        "explanation": "190 мм рт. ст. Сработал срочный порог: систолическое давление >180 мм рт. ст.. Это отдельная часть давления; диагноз и общая категория давления по ней не устанавливаются. Нужны обе части и условия измерения.",
         "measurementIds": [
-          "f1be4de8-354f-4866-a3e1-62bded639761"
+          "ff506e30-d2f2-44a2-96ef-8a64b2585eb4"
         ],
-        "validUntil": "2026-11-14T22:54:24.034Z",
+        "validUntil": "2026-11-15T20:06:33.884Z",
         "suggestedAction": "При боли в груди, выраженной одышке, внезапной слабости, нарушении речи/зрения или потере сознания немедленно привлеките экипаж и действуйте по аварийному протоколу, не ожидая повторного измерения или ответа с Земли. Сразу сообщите ответственному за медпомощь. Если тревожных симптомов нет, повторите обе части давления не раньше чем через минуту; при сохранении высокого значения нужна срочная медицинская консультация.",
         "escalation": "urgent",
         "flightContext": "Изменённая гравитация влияет на кровообращение. Давление помогает наблюдать изменения, но не объясняет их причину и не измеряет состояние всех органов.",
@@ -268,11 +268,11 @@
         "metric": "diastolicPressure",
         "title": "Диастолическое давление",
         "status": "noAlert",
-        "explanation": "76 mmHg. Пороги <60 или >=80 mmHg не сработали. Это отдельная часть давления; диагноз и общая категория давления по ней не устанавливаются. Нужны обе части и условия измерения.",
+        "explanation": "76 мм рт. ст. Пороги <60 или >=80 мм рт. ст. не сработали. Это отдельная часть давления; диагноз и общая категория давления по ней не устанавливаются. Нужны обе части и условия измерения.",
         "measurementIds": [
-          "7262e673-fabf-42a6-ad0e-f31e25cb62ea"
+          "64633801-594e-4b9e-9f50-e3174afc959d"
         ],
-        "validUntil": "2026-11-14T22:54:24.010Z",
+        "validUntil": "2026-11-15T20:06:33.868Z",
         "suggestedAction": "Измеряйте обе части давления вместе по плану миссии. При симптомах обращайтесь за помощью независимо от результата.",
         "escalation": "none",
         "flightContext": "Изменённая гравитация влияет на кровообращение. Давление помогает наблюдать изменения, но не объясняет их причину и не измеряет состояние всех органов.",
@@ -291,11 +291,11 @@
         "metric": "temperature",
         "title": "Температура",
         "status": "noAlert",
-        "explanation": "36.7 °C. Пороги <35 и >=38 °C не сработали. Результат зависит от способа и места измерения; причина изменения по одному значению неизвестна.",
+        "explanation": "36,7 °C. Пороги <35 и >=38 °C не сработали. Результат зависит от способа и места измерения; причина изменения по одному значению неизвестна.",
         "measurementIds": [
-          "dea97ec1-5d7d-4ff0-8169-f0e504fb81a0"
+          "8362f64c-ecbc-41fb-b342-133f1069eadc"
         ],
-        "validUntil": "2026-11-14T22:54:24.011Z",
+        "validUntil": "2026-11-15T20:06:33.869Z",
         "suggestedAction": "Продолжайте наблюдение и назначенный план миссии. При новых симптомах обращайтесь за помощью независимо от этого результата.",
         "escalation": "none",
         "flightContext": "В замкнутой среде важны гигиена и контроль окружающих условий. По одной температуре нельзя установить инфекцию или её причину.",
@@ -312,11 +312,11 @@
         "metric": "sleepHours",
         "title": "Сон",
         "status": "attention",
-        "explanation": "4.5 h. Продолжительность сна <7 часов — ниже выбранного ориентира для взрослых. Земной ориентир для взрослых не заменяет план миссии. Часы сна не показывают его качество.",
+        "explanation": "4,5 ч. Продолжительность сна <7 часов — ниже выбранного ориентира для взрослых. Земной ориентир для взрослых не заменяет план миссии. Часы сна не показывают его качество.",
         "measurementIds": [
-          "8ecbbfcf-5e6a-4c49-a6ca-569313868e55"
+          "85b5f88b-250b-4585-8893-74cd322acf28"
         ],
-        "validUntil": "2026-11-15T21:54:24.025Z",
+        "validUntil": "2026-11-16T09:06:33.878Z",
         "suggestedAction": "Запланируйте защищённое время для сна и обсудите нагрузку с экипажем. При повторении трудностей обратитесь к полётному врачу или специалисту поддержки.",
         "escalation": "crew",
         "flightContext": "Изоляция и нарушение привычного ритма могут влиять на сон и работоспособность. Защищённое время отдыха — часть профилактики.",
@@ -332,11 +332,11 @@
         "metric": "mood",
         "title": "Самооценка настроения",
         "status": "attention",
-        "explanation": "2 score. Сработал условный порог команды: настроение <3 из 5. Это приглашение к поддержке, не диагностическая шкала. NASA не задаёт этот числовой порог; самооценка не устанавливает психиатрический диагноз.",
+        "explanation": "2 из 5. Сработал условный порог команды: настроение <3 из 5. Это приглашение к поддержке, не диагностическая шкала. NASA не задаёт этот числовой порог; самооценка не устанавливает психиатрический диагноз.",
         "measurementIds": [
-          "101e8d03-2355-400a-a807-ce5720b58557"
+          "4eb4afaa-604a-4cae-b489-9cf05deee099"
         ],
-        "validUntil": "2026-11-15T21:54:24.027Z",
+        "validUntil": "2026-11-16T09:06:33.879Z",
         "suggestedAction": "Предложите себе отдых и приватный разговор с доверенным членом экипажа. Если трудности сохраняются, запросите помощь специалиста поддержки или полётного врача.",
         "escalation": "crew",
         "flightContext": "Изоляция и ограниченное пространство могут осложнять самочувствие и отношения в экипаже. Регулярная поддержка доступна без диагностического ярлыка.",

@@ -10,13 +10,21 @@ pub const DEFAULT_DATABASE_URL: &str = "sqlite://space-health.db";
 #[derive(Debug, thiserror::Error)]
 pub enum DatabaseError {
     /// DATABASE_URL cannot be represented as a UTF-8 connection URL.
-    #[error("DATABASE_URL must contain valid UTF-8")]
+    #[error(
+        "DATABASE_URL must contain valid UTF-8; set a SQLite URL such as sqlite://space-health.db"
+    )]
     InvalidEnvironment,
+    /// A connection URL for another database is not supported.
+    #[error("Invalid DATABASE_URL; use sqlite://space-health.db or an absolute sqlite:///path/file.db URL")]
+    InvalidScheme,
+    /// SQLite rejected the connection URL syntax or options.
+    #[error("Invalid DATABASE_URL: {0}; use a valid SQLite URL such as sqlite://space-health.db")]
+    InvalidUrl(#[source] sqlx::Error),
     /// SQLite could not parse its URL or establish the connection.
-    #[error("Could not open SQLite database: {0}")]
+    #[error("Could not open DATABASE_URL database: {0}; create its parent directory and grant write access to the directory and database file")]
     Connection(#[from] sqlx::Error),
     /// The current database cannot be migrated by this application version.
-    #[error("Could not migrate SQLite database: {0}")]
+    #[error("Could not migrate SQLite database: {0}; check database write permissions and use a database compatible with this release")]
     Migration(#[from] sqlx::migrate::MigrateError),
 }
 
@@ -35,7 +43,11 @@ pub async fn connect_from_env() -> Result<SqlitePool, DatabaseError> {
 /// A missing database file is created; its parent directory must already exist.
 /// The returned pool has completed every migration, just like server startup.
 pub async fn connect(database_url: &str) -> Result<SqlitePool, DatabaseError> {
-    let options = SqliteConnectOptions::from_str(database_url)?
+    if !database_url.starts_with("sqlite:") {
+        return Err(DatabaseError::InvalidScheme);
+    }
+    let options = SqliteConnectOptions::from_str(database_url)
+        .map_err(DatabaseError::InvalidUrl)?
         .create_if_missing(true)
         .foreign_keys(true)
         .busy_timeout(Duration::from_secs(5))

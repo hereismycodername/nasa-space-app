@@ -1,11 +1,11 @@
-# API v0.8.1 — BE-06, оценка BE-08 и метрики B/C
+# API v0.9.0 — ежедневные задачи BE-07, BE-06, оценка BE-08 и метрики B/C
 
 Машиночитаемая спецификация: [openapi.yaml](openapi.yaml).
 Готовые JSON-запросы и ответы: [examples](examples/README.md).
 Границы слоёв и их владельцы: [backend-architecture.md](backend-architecture.md).
 
 Контракт сохраняет BE-06 и добавляет объяснимые демонстрационные правила BE-08.
-Публичные ежедневные задачи по датам из [плана backend](backend-plan.md) пока не реализованы.
+Ежедневные задачи BE-07 доступны по явной UTC-дате миссии.
 
 ## Общие правила
 
@@ -18,7 +18,7 @@
   в доверенной локальной сети.
 - Неизвестные поля JSON отклоняются. История и series принимают только описанные ниже query-параметры;
   неизвестные и повторяющиеся имена отклоняются. `/measurements/latest` и `/assessments` не принимают query.
-  `date` пока не выбирает день в публичном API задач.
+  Задачи принимают только необязательный query `date`; неизвестные и повторяющиеся поля отклоняются.
 - История, latest, series и оценка читают данные профиля `demo-astronaut`, выбранного сервером.
   Параметра выбора астронавта нет. Это ограничение демонстрационного стенда, не авторизация.
 
@@ -33,8 +33,8 @@
 | MeasurementQuality | Статус свежести выбранной записи, её measurementId, окно и возраст; вычисляется, в БД не сохраняется |
 | MeasurementSeries | Вычисленный ряд одной метрики за весь диапазон; содержит ограниченное число интервалов SeriesPoint |
 | SeriesPoint | Агрегат всех измерений внутри UTC-интервала; исходные записи не изменяются |
-| Task | Постоянная запись id/title/completedAt; даты миссии и ежедневного экземпляра пока нет |
-| TaskTemplate / TaskCompletion | Внутренние таблицы шаблонов и выполнения по astronautId/taskId/missionDate; публичный API по датам появится в BE-07 |
+| Task | Шаблон id/title с completedAt для выбранного дня; GET и PATCH возвращают missionDate |
+| TaskTemplate / TaskCompletion | Шаблоны и выполнение по astronautId/taskId/missionDate; API использует demo-astronaut |
 | Assessment | Качество метрик на evaluatedAt, объяснимые правила health и совместимая сводка одной последней принятой записи |
 
 ## Измерения
@@ -69,17 +69,17 @@
 | metric | unit | Граница ввода | series | demo freshForSeconds |
 |---|---|---|---|---:|
 | heartRate | bpm | > 0 | mean | 15 |
-| systolicPressure | mmHg | > 0 | mean | 3600 |
-| diastolicPressure | mmHg | > 0 | mean | 3600 |
-| temperature | °C | > 0 | mean | 3600 |
-| sleepHours | h | 0…24 | last | 86400 |
-| mood | score | 1…5 | last | 86400 |
-| spo2 | % | 0…100 | mean | 60 |
-| glucose | mg/dL | > 0 | mean | 3600 |
-| visionBlur | score | 0…10 | last | 86400 |
-| exerciseMinutes | min | 0…1440 | last | 86400 |
-| headache | score | 0…10 | last | 3600 |
-| backPain | score | 0…10 | last | 3600 |
+| systolicPressure | mmHg | > 0 | mean | 46800 |
+| diastolicPressure | mmHg | > 0 | mean | 46800 |
+| temperature | °C | > 0 | mean | 46800 |
+| sleepHours | h | 0…24 | last | 93600 |
+| mood | score | 1…5 | last | 93600 |
+| spo2 | % | 0…100 | mean | 7200 |
+| glucose | mg/dL | > 0 | mean | 93600 |
+| visionBlur | score | 0…10 | last | 93600 |
+| exerciseMinutes | min | 0…1440 | last | 93600 |
+| headache | score | 0…10 | last | 46800 |
+| backPain | score | 0…10 | last | 46800 |
 
 Все значения конечные; дробное значение допустимо, в том числе для mood.
 Границы являются валидацией ввода, а не медицинскими нормами.
@@ -275,7 +275,7 @@ query-параметров дают 400 `INVALID_QUERY` без `field`.
 |---|---|
 | status | missing, fresh, stale, unknownTime или clockSkew |
 | measurementId | id оцениваемой записи, null только при missing |
-| freshForSeconds | Окно свежести метрики в секундах |
+| freshForSeconds | Ожидаемый интервал между замерами с запасом в секундах (демонстрационная политика, не медицинская норма) |
 | ageSeconds | Неотрицательный возраст с дробной частью для известного небудущего времени; иначе null |
 | clockSkew | true только для status=clockSkew |
 
@@ -285,17 +285,17 @@ query-параметров дают 400 `INVALID_QUERY` без `field`.
 | metric | freshForSeconds |
 |---|---:|
 | heartRate | 15 |
-| systolicPressure | 3600 |
-| diastolicPressure | 3600 |
-| temperature | 3600 |
-| sleepHours | 86400 |
-| mood | 86400 |
-| spo2 | 60 |
-| glucose | 3600 |
-| visionBlur | 86400 |
-| exerciseMinutes | 86400 |
-| headache | 3600 |
-| backPain | 3600 |
+| systolicPressure | 46800 |
+| diastolicPressure | 46800 |
+| temperature | 46800 |
+| sleepHours | 93600 |
+| mood | 93600 |
+| spo2 | 7200 |
+| glucose | 93600 |
+| visionBlur | 93600 |
+| exerciseMinutes | 93600 |
+| headache | 46800 |
+| backPain | 46800 |
 
 | status | Условие |
 |---|---|
@@ -355,20 +355,29 @@ query-параметров дают 400 `INVALID_QUERY` без `field`.
 
 ## Задачи
 
-- `GET /tasks`: массив `{id, title, completedAt}`, сортировка по id по возрастанию.
-- `PATCH /tasks/{id}`: только `{ "completed": true }` либо false.
-- true устанавливает серверное UTC-время; false очищает его до null.
-- Повтор true пока меняет completedAt. Идемпотентность по датам — BE-07.
-- Неизвестная задача — 404 TASK_NOT_FOUND.
-- `date` в JSON пока запрещён; `date` в query не выбирает день.
+- `GET /api/tasks?date=YYYY-MM-DD` → `{missionDate, tasks: [{id, title, completedAt}]}`.
+  Без `date` сервер один раз выбирает текущий день UTC и возвращает его в `missionDate`.
+  Все шаблоны отсортированы по id; пустой день содержит их с `completedAt: null`.
+- `PATCH /api/tasks/{id}` принимает `{ "missionDate": "2026-11-13", "completed": true }`
+  либо false и возвращает `{missionDate, id, title, completedAt}`.
+  Оба поля обязательны. Клиент использует дату из показанного GET, в том числе после полуночи UTC.
+- Дата — каноническая календарная `YYYY-MM-DD`, без времени или offset:
+  `2026-02-30` и `2026-1-5` недопустимы.
+- Первое true сохраняет серверное `Utc::now()`; повтор true сохраняет первое `completedAt`.
+  false снимает только отметку выбранного дня; повтор false успешен.
+  Новое true после отмены получает новое серверное время. Другие дни независимы.
+- Астронавта `demo-astronaut` выбирает сервер. `completedAt`, `astronautId` и другие
+  дополнительные поля тела запрещены. Недатированный writer удалён; legacy-таблица
+  `tasks` остаётся только для совместимости миграций.
+- Неверная дата query → 400 `VALIDATION_ERROR`, `field: "date"`; неверная или
+  отсутствующая дата тела → 400 `VALIDATION_ERROR`, `field: "missionDate"`.
+  Отсутствующий/неверный `completed` и лишние поля → 400 `INVALID_BODY`.
+  Неизвестные/повторяющиеся query-поля → 400 `INVALID_QUERY`.
+  Неизвестная задача → 404 `TASK_NOT_FOUND`. Все ошибки используют problem-envelope.
 
-**Целевая семантика после BE-07:** день миссии в UTC; PATCH адресует конкретный день,
-повтор выполнения сохраняет исходное время. Это ещё не контракт работающего API.
-
-В BE-02 добавлена схема шаблонов и выполнения по UTC-дате. Существующий
-недатированный API остаётся переходным интерфейсом; выбор дня через него ещё
-недоступен. Подробности переноса старых отметок и ограничения миграции описаны
-в [архитектуре](backend-architecture.md).
+Примеры: [GET](examples/tasks.response.json), [PATCH запрос](examples/task-update.request.json),
+[PATCH ответ](examples/task.response.json). Перенос старых отметок описан
+в [архитектуре](backend-architecture.md); миграции 0001–0003 не изменены.
 
 ## Health
 
@@ -404,12 +413,13 @@ SQLx, пути файлов и stack traces в ответ не включают�
 | HTTP | code | Когда |
 |---|---|---|
 | 400 | INVALID_JSON | JSON синтаксически неверен |
-| 422 | INVALID_BODY | Неверный тип JSON-поля, отсутствующее/неизвестное поле или число вне i64 |
+| 422 | INVALID_BODY | POST измерений: неверный тип JSON-поля, отсутствующее/неизвестное поле или число вне i64 |
+| 400 | INVALID_BODY | PATCH задач: отсутствующий/неверный completed, лишнее поле или неверная структура тела |
 | 415 | UNSUPPORTED_MEDIA_TYPE | Нет подходящего JSON Content-Type |
 | 413 | PAYLOAD_TOO_LARGE | Превышен лимит тела запроса |
 | 400 | INVALID_QUERY | Не удалось декодировать query в ожидаемую структуру |
 | 400 | INVALID_PATH | Некорректный параметр пути |
-| 400 | VALIDATION_ERROR | Неверные metric/unit/value/time или параметры истории/series; отсутствующие обязательные параметры series |
+| 400 | VALIDATION_ERROR | Неверные metric/unit/value/time, даты задач или параметры истории/series; отсутствующие missionDate и обязательные параметры series |
 | 400 | UNKNOWN_DEVICE | Устройство не зарегистрировано; field=deviceId |
 | 409 | SEQUENCE_CONFLICT | Ключ сообщения занят другим содержимым |
 | 404 | TASK_NOT_FOUND | Нет задачи с указанным id |
@@ -422,6 +432,10 @@ SQLx, пути файлов и stack traces в ответ не включают�
 раздачи статических файлов вне `/api`.
 
 ## Совместимость и развитие
+
+Версия 0.9.0 атомарно переключает сервер, React и native HTTP-клиент на задачи
+по датам: GET возвращает `{missionDate, tasks}`, PATCH требует `missionDate`.
+Контракт измерений и `AssessmentResponse.health` сохранён. Новых миграций нет.
 
 Версия 0.8.0 добавляет `health` к оценке без изменения пути `/api/assessments`,
 запросов, исходных quality или полей измерений. Потребители принимают это поле

@@ -25,8 +25,8 @@ it('keeps unknown delivery quality separate and suppresses freshness claims offl
     quality: { status: 'fresh', measurementId: sample.id, freshForSeconds: 15, ageSeconds: 0, clockSkew: false },
     latestReceivedQuality: { status: 'unknownTime', measurementId: unknown.id, freshForSeconds: 15, ageSeconds: null, clockSkew: false } }] }
   const online = renderToStaticMarkup(<ObservationLog latest={snapshot} connected elapsedSeconds={1} />)
-  expect(online).toContain('72 bpm')
-  expect(online).toContain('Последняя доставка: 80 bpm')
+  expect(online).toContain('72 уд/мин')
+  expect(online).toContain('Последняя доставка: 80 уд/мин')
   expect(online).toContain('quality-unknownTime')
   const offline = renderToStaticMarkup(<ObservationLog latest={snapshot} connected={false} elapsedSeconds={1} />)
   expect(offline).not.toContain('quality-fresh')

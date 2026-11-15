@@ -19,17 +19,19 @@ function Sources({ urls }: { urls: string[] }) {
 
 export function HealthDetails({ view }: { view: RuleView }) {
   const rule = view.rule
-  if (!rule) return <p className="health-reason note">{view.reason}</p>
+  if (!rule) return <div className="health-details"><div className="health-overview"><p className="health-reason note">{view.reason}</p></div></div>
   const historical = !view.current && ['noAlert', 'attention', 'critical'].includes(rule.status)
   const currentAlert = view.current && ['attention', 'critical'].includes(rule.status)
   return <div className="health-details">
-    <p className="health-reason">{view.reason}</p>
-    {currentAlert ? <div className="health-next-action"><strong>{escalationLabels[rule.escalation]}</strong><p>{rule.suggestedAction}</p></div> : null}
-    {historical ? <div className={`historical-health historical-${rule.status}`}>
-      <strong>Предыдущая оценка: {healthLabels[rule.status]}</strong>
-      <p>{view.evaluatedAt ? formatTime(view.evaluatedAt) : ''} · не текущий статус</p>
-      <p>{rule.explanation}</p>
-    </div> : null}
+    <div className="health-overview">
+      <p className="health-reason">{view.reason}</p>
+      {currentAlert ? <div className="health-next-action"><strong>{escalationLabels[rule.escalation]}</strong><p>{rule.suggestedAction}</p></div> : null}
+      {historical ? <div className={`historical-health historical-${rule.status}`}>
+        <strong>Предыдущая оценка: {healthLabels[rule.status]}</strong>
+        <p>{view.evaluatedAt ? formatTime(view.evaluatedAt) : ''} · не текущий статус</p>
+        <p>{rule.explanation}</p>
+      </div> : null}
+    </div>
     <details>
       <summary>{historical ? 'Предыдущая рекомендация и контекст' : 'Что делать и почему'}</summary>
       <div className="health-guidance">
@@ -66,7 +68,7 @@ export function HealthPanel({ context }: { context: HealthContext }) {
     <p className="health-summary">{status === 'noAlert' ? 'Заданные правила не сработали. Это не заключение о здоровье всех органов.' : status === 'critical' ? 'Есть срочный сигнал. Привлеките экипаж и следуйте медицинскому протоколу миссии.' : status === 'attention' ? 'Есть показатель, требующий внимания. Проверьте объяснение и следующий шаг.' : health ? withoutRules ? 'Для части показателей автоматические правила ещё не подключены. Их можно записывать и просматривать без автоматического заключения.' : 'Текущая оценка доступна не для всех показателей. Проверьте связь, время и свежесть измерений.' : 'Сервер пока не предоставил оценку показателей.'}</p>
     <div className="health-coverage"><span>Пригодны для оценки: {evaluatedCount} / {metrics.length}</span>{withoutRules > 0 && health ? <span>Без правил: {withoutRules}</span> : null}{context.assessment ? <span>Ответ сервера: {formatTime(context.assessment.evaluatedAt)}</span> : null}</div>
     {health ? <details className="emergency-guidance" open={status === 'critical'}><summary>Когда нужна срочная помощь</summary><p>{health.emergencyGuidance}</p><p>Приложение само никому сообщения не отправляет.</p></details> : null}
-    {alerts.length ? <div className="health-alerts">{alerts.map(({ metric, view }) => <div key={metric.id}><div className="health-alert-title"><strong>{metric.label}</strong><HealthBadge status={view.status} /></div><HealthDetails view={view} /></div>)}</div> : null}
+    <div className="health-alerts">{alerts.length ? alerts.map(({ metric, view }) => <div key={metric.id}><div className="health-alert-title"><strong>{metric.label}</strong><HealthBadge status={view.status} /></div><HealthDetails view={view} /></div>) : <p className="note">Предупреждений по доступным оценкам нет.</p>}</div>
     {health ? <>
       <p className="health-disclaimer">{health.disclaimer}</p>
     </> : <p className="note">Наличие или свежесть измерения сами по себе не означают нормальное состояние.</p>}

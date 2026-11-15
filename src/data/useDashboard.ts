@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { DailyTask, HealthAssessment, LatestMeasurements, PreviousHealthAlerts } from '../shared/types'
+import type { TaskList, HealthAssessment, LatestMeasurements, PreviousHealthAlerts } from '../shared/types'
 import { getAssessment, getLatestMeasurements, getTasks } from './measurements'
 
 export interface DashboardState {
   latest?: LatestMeasurements
   assessment?: HealthAssessment
-  tasks?: DailyTask[]
+  tasks?: TaskList
   connected: boolean
   loading: boolean
   error: string
@@ -66,7 +66,7 @@ export function startDashboardPolling(onChange: (state: DashboardState) => void)
     const requests = [
       getLatestMeasurements(requestController.signal),
       getAssessment(requestController.signal),
-      getTasks(requestController.signal),
+      getTasks(undefined, requestController.signal),
     ] as const
 
     try {

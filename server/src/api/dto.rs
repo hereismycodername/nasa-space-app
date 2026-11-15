@@ -478,9 +478,33 @@ impl From<Task> for TaskResponse {
     }
 }
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct TaskUpdateRequest {
+    // Missing, null and non-string dates all receive a field-specific validation error.
+    #[serde(default)]
+    pub mission_date: serde_json::Value,
     pub completed: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TasksRequest {
+    pub date: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TasksResponse {
+    pub mission_date: String,
+    pub tasks: Vec<TaskResponse>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TaskUpdateResponse {
+    pub mission_date: String,
+    #[serde(flatten)]
+    pub task: TaskResponse,
 }
 
 #[derive(Serialize)]

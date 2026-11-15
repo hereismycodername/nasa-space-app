@@ -1,4 +1,4 @@
-# JSON-примеры API v0.8.1 (с совместимыми fixtures BE-06)
+# JSON-примеры API v0.9.0 (с совместимыми fixtures BE-06)
 
 Файлы содержат чистые JSON payload, пригодные для UI fixtures и ручных запросов.
 UUID и timestamps в ответах иллюстративные, реальные значения генерирует сервер.
@@ -14,6 +14,10 @@ UUID и timestamps в ответах иллюстративные, реальн�
 `2026-11-13T08:00:03Z`; это fixtures, а не текущие показания. `quality.measurementId`
 связан с последним известным измерением (или последней доставкой, если известного
 нет), `latestReceivedQuality.measurementId` — с последней доставкой.
+Старые fixtures сохраняют первоначальные окна свежести 3600/86400 секунд;
+они не описывают текущую политику расписания. Текущие `assessment.rules-*`
+используют окна из [контракта](../contracts.md): пульс 15 секунд, SpO₂ 2 часа,
+давления/температура/боль 13 часов, ежедневные показатели 26 часов.
 Окна свежести — демонстрационные, не медицинские пороги.
 
 | Файл | Использование |
@@ -42,9 +46,9 @@ UUID и timestamps в ответах иллюстративные, реальн�
 | assessment.rules-normal.response.json | Свежие показатели без срабатывания заданных правил; не заключение о здоровье |
 | assessment.rules-attention.response.json | Сон, настроение и пульс требуют внимания; причины, действия и источники |
 | assessment.rules-critical.response.json | Высокое систолическое давление; срочный маршрут помощи и evidence ID |
-| tasks.response.json | GET /api/tasks |
-| task-update.request.json | PATCH /api/tasks/daily-check |
-| task.response.json | Обновлённая задача |
+| tasks.response.json | GET /api/tasks?date=2026-11-13: missionDate и список шаблонов с отметками |
+| task-update.request.json | PATCH /api/tasks/daily-check с явной missionDate |
+| task.response.json | Обновлённая задача с missionDate |
 | validation-error.response.json | Problem Details с кодом и полем |
 
 Пример отправки из корня репозитория:
@@ -76,8 +80,9 @@ curl --get http://127.0.0.1:8080/api/measurements \
 
 Для следующей страницы передать полученный `nextCursor` через `--data-urlencode`
 с теми же фильтрами. Курсор в JSON-примере иллюстративный; в запросах использовать
-реальный ответ сервера. `/api/measurements/latest` возвращает все шесть метрик
-независимо от этого диапазона и лимита истории.
+реальный ответ сервера. `/api/measurements/latest` возвращает все двенадцать
+зарегистрированных метрик (шесть на старом сервере) независимо от этого диапазона
+и лимита истории.
 
 Ряд пульса за семь дней, максимум 168 точек:
 
