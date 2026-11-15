@@ -5,6 +5,7 @@
 mod anatomy_sprites;
 mod figure;
 mod ground;
+mod female_shape;
 mod lang;
 mod live;
 mod theme;
@@ -49,6 +50,8 @@ struct Opts {
     api_url: Option<String>,
     /// live window language: ru (default) or en
     lang: Option<String>,
+    /// live window figure: male (default) or female
+    sex: Option<String>,
     lite: bool,
     shot: Option<String>,
     tab: Option<String>,
@@ -1204,6 +1207,7 @@ fn main() -> eframe::Result {
         match x.as_str() {
             "--demo" => o.demo = true,
             "--lang" => o.lang = a.next(),
+            "--sex" => o.sex = a.next(),
             "--api-url" => {
                 o.api_url = Some(a.next().ok_or_else(|| eframe::Error::AppCreation(Box::new(std::io::Error::other("--api-url requires a URL"))))?);
             }
@@ -1237,7 +1241,7 @@ fn main() -> eframe::Result {
                 }
             }
             "--help" | "-h" => {
-                println!("astrocheck-gui [--api-url URL] [--lang ru|en] [--role crew|ground] [--lite] [--size WxH]\n  Default: shared Rust API, ASTROCHECK_API_URL or http://127.0.0.1:8080\n  --lang: live window language, ASTROCHECK_LANG or ru; switchable in the window\n  --demo: standalone synthetic demo, separate from the server\n  visual checks: --screenshot FILE.png --system ID --metric ID --mode organs|skeleton|xray --pos X,Y\n  demo-only: --tab main|comms|system --crew ID --env iss|orion|moon|mars|transit --blackout --storm --checkin --pvt");
+                println!("astrocheck-gui [--api-url URL] [--lang ru|en] [--role crew|ground] [--lite] [--size WxH]\n  Default: shared Rust API, ASTROCHECK_API_URL or http://127.0.0.1:8080\n  --lang: live window language, ASTROCHECK_LANG or ru; switchable in the window\n  --demo: standalone synthetic demo, separate from the server\n  visual checks: --screenshot FILE.png --system ID --metric ID --mode organs|skeleton|xray|thermal --sex male|female --pos X,Y\n  demo-only: --tab main|comms|system --crew ID --env iss|orion|moon|mars|transit --blackout --storm --checkin --pvt");
                 return Ok(());
             }
             _ => return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(format!("Unknown option: {x}"))))),

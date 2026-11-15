@@ -57,7 +57,8 @@ pub(crate) struct LiveApp {
 impl LiveApp {
     pub(crate) fn new(backend: HttpBackend, options: Opts) -> Self {
         let lang = options.lang.as_deref().and_then(Lang::parse).unwrap_or(Lang::Ru);
-        let mut figure = figure::Figure::new().with_live_labels();
+        let sex = if matches!(options.sex.as_deref(), Some("female") | Some("f") | Some("w")) { figure::Sex::Female } else { figure::Sex::Male };
+        let mut figure = figure::Figure::with_sex(sex).with_live_labels();
         figure.set_russian(lang == Lang::Ru);
         Self {
             backend,
@@ -253,7 +254,11 @@ impl LiveApp {
             .frame(Frame::new().fill(BG).inner_margin(Margin::same(12)))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    caption(ui, l.t("Anatomy", "Анатомия"));
+                    let mut sex = self.figure.sex();
+                    if segmented(ui, &mut sex, &[(figure::Sex::Male, l.t("M", "М")), (figure::Sex::Female, l.t("F", "Ж"))]) {
+                        self.figure = figure::Figure::with_sex(sex).with_live_labels();
+                        self.figure.set_russian(self.lang == Lang::Ru);
+                    }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let mut mode = self.mode;
                         let modes = [(figure::Mode::Thermal, l.t("IR", "ИК")), (figure::Mode::XRay, l.t("X-ray", "Рентген")), (figure::Mode::Skeleton, l.t("Skeleton", "Скелет")), (figure::Mode::Organs, l.t("Organs", "Органы"))];

@@ -6,6 +6,7 @@
 //! Hit-testing reads the coverage of the sprites, so a click lands on exactly the organ under the cursor.
 
 use crate::anatomy_sprites::{Sprite, ATLAS_PNG, SPRITES, TEXELS_PER_UNIT as TPU};
+use crate::female_shape::{FEMALE_SHAPE, FEMALE_SKIN_ORIGIN, FEMALE_SKIN_PNG};
 use crate::theme::*;
 use eframe::egui::{self, pos2, vec2, Align2, Color32, ColorImage, FontId, Pos2, Rect, Sense, Shape, TextureFilter, TextureHandle, TextureOptions, TextureWrapMode, Vec2};
 use ui_model::anatomy::{self, Side, P};
@@ -201,8 +202,12 @@ struct Outline {
 
 struct Part {
     s: &'static Sprite,
+    /// top-left corner in design units (the sprite's own, or reshaped for the female figure)
+    origin: P,
     w: usize,
     h: usize,
+    /// atlas channels per texel: diffuse shade, rim, specular, coverage
+    texels: Vec<[u8; 4]>,
     /// coverage for hit-testing (0..255), row by row
     cov: Vec<u8>,
     gpu: Option<Gpu>,
@@ -210,14 +215,14 @@ struct Part {
 
 impl Part {
     fn origin(&self) -> P {
-        P { x: self.s.origin[0], y: self.s.origin[1] }
+        self.origin
     }
     fn size(&self) -> (f32, f32) {
         (self.w as f32 / TPU, self.h as f32 / TPU)
     }
     fn covers(&self, q: P) -> bool {
-        let tx = ((q.x - self.s.origin[0]) * TPU).floor();
-        let ty = ((q.y - self.s.origin[1]) * TPU).floor();
+        let tx = ((q.x - self.origin.x) * TPU).floor();
+        let ty = ((q.y - self.origin.y) * TPU).floor();
         if tx < 0.0 || ty < 0.0 || tx >= self.w as f32 || ty >= self.h as f32 {
             return false;
         }
@@ -229,10 +234,103 @@ impl Part {
 /// (the aorta and the vena cava run down to the pelvis, the oesophagus up into the neck).
 const NO_OUTLINE: &[&str] = &["Aorta", "Inferior vena cava", "Esophagus"];
 
+/// Body shape of the figure.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Sex {
+    Male,
+    Female,
+}
+
+/// Where a male silhouette edge lies on the female figure, for the row at design height `y`.
+fn shape_row(y: f32) -> &'static [(f32, f32)] {
+    let first = FEMALE_SHAPE[0].0;
+    let i = ((y - first).round().max(0.0) as usize).min(FEMALE_SHAPE.len() - 1);
+    FEMALE_SHAPE[i].1
+}
+
+/// Piecewise-linear map through the edge pairs of a row: male -> female (`forward`) or back.
+fn map_x(pairs: &[(f32, f32)], x: f32, forward: bool) -> f32 {
+    let get = |q: &(f32, f32)| if forward { (q.0, q.1) } else { (q.1, q.0) };
+    let (a0, b0) = get(&pairs[0]);
+    if x <= a0 {
+        return x + (b0 - a0);
+    }
+    for w in pairs.windows(2) {
+        let ((a, b), (c, d)) = (get(&w[0]), get(&w[1]));
+        if x <= c {
+            let t = if c > a { (x - a) / (c - a) } else { 0.0 };
+            return b + (d - b) * t;
+        }
+    }
+    let (an, bn) = get(&pairs[pairs.len() - 1]);
+    x + (bn - an)
+}
+
+/// Where a point of the male figure lands on the female one.
+fn female_point(q: P) -> P {
+    P { x: map_x(shape_row(q.y), q.x, true), y: q.y }
+}
+
+/// Resamples a sprite onto the female outline (rows stay, columns move); returns origin, width, texels.
+fn reshape(origin: P, w: usize, h: usize, texels: &[[u8; 4]]) -> (P, usize, Vec<[u8; 4]>) {
+    let (left, right) = (origin.x, origin.x + w as f32 / TPU);
+    let (mut x0, mut x1) = (f32::MAX, f32::MIN);
+    for ty in 0..h {
+        let y = origin.y + (ty as f32 + 0.5) / TPU;
+        for x in [left, right] {
+            let nx = female_point(P { x, y }).x;
+            x0 = x0.min(nx);
+            x1 = x1.max(nx);
+        }
+    }
+    let nw = ((x1 - x0) * TPU).ceil() as usize + 1;
+    let mut out = vec![[0u8; 4]; nw * h];
+    for ty in 0..h {
+        let y = origin.y + (ty as f32 + 0.5) / TPU;
+        let row = shape_row(y);
+        for tx in 0..nw {
+            let xd = x0 + (tx as f32 + 0.5) / TPU;
+            let xs = map_x(row, xd, false);
+            let sx = (xs - origin.x) * TPU - 0.5;
+            let i0 = sx.floor();
+            let f = sx - i0;
+            let at = |i: f32| -> [f32; 4] {
+                if i < 0.0 || i >= w as f32 {
+                    [0.0; 4]
+                } else {
+                    texels[ty * w + i as usize].map(|v| v as f32)
+                }
+            };
+            let (a, b) = (at(i0), at(i0 + 1.0));
+            let cov = a[3] * (1.0 - f) + b[3] * f;
+            if cov <= 0.0 {
+                continue;
+            }
+            // shading channels weighted by coverage, so edges do not darken
+            let mut t = [0u8; 4];
+            for c in 0..3 {
+                t[c] = ((a[c] * a[3] * (1.0 - f) + b[c] * b[3] * f) / cov).round().clamp(0.0, 255.0) as u8;
+            }
+            t[3] = cov.round().clamp(0.0, 255.0) as u8;
+            out[ty * nw + tx] = t;
+        }
+    }
+    (P { x: x0, y: origin.y }, nw, out)
+}
+
+/// The female skin sprite: shade, rim, specular, coverage per texel.
+fn female_skin() -> (P, usize, usize, Vec<[u8; 4]>) {
+    let img = image::load_from_memory_with_format(FEMALE_SKIN_PNG, image::ImageFormat::Png).expect("female skin").to_rgba8();
+    let (w, h) = (img.width() as usize, img.height() as usize);
+    let texels = img.pixels().map(|p| p.0).collect();
+    (P { x: FEMALE_SKIN_ORIGIN[0], y: FEMALE_SKIN_ORIGIN[1] }, w, h, texels)
+}
+
 pub struct Figure {
     parts: Vec<Part>,
     outlines: Vec<Outline>,
-    atlas: Option<(usize, Vec<u8>)>,
+    uploaded: bool,
+    sex: Sex,
     callouts: Vec<anatomy::Callout>,
     /// vertical extent of the body in design units
     top: f32,
@@ -302,6 +400,11 @@ fn look_alt(s: &Sprite, sh: f32, rim: f32, _sp: f32, cv: f32) -> Color32 {
 
 impl Figure {
     pub fn new() -> Self {
+        Self::with_sex(Sex::Male)
+    }
+
+    /// The male figure is the BodyParts3D render; the female one is reshaped from it.
+    pub fn with_sex(sex: Sex) -> Self {
         let img = image::load_from_memory_with_format(ATLAS_PNG, image::ImageFormat::Png).expect("anatomy atlas").to_rgba8();
         let aw = img.width() as usize;
         let raw = img.into_raw();
@@ -309,13 +412,24 @@ impl Figure {
             .iter()
             .map(|s| {
                 let [ax, ay, w, h] = s.atlas.map(|v| v as usize);
-                let mut cov = Vec::with_capacity(w * h);
+                let mut texels = Vec::with_capacity(w * h);
                 for y in 0..h {
                     for x in 0..w {
-                        cov.push(raw[((ay + y) * aw + ax + x) * 4 + 3]);
+                        let o = ((ay + y) * aw + ax + x) * 4;
+                        texels.push([raw[o], raw[o + 1], raw[o + 2], raw[o + 3]]);
                     }
                 }
-                Part { s, w, h, cov, gpu: None }
+                let mut origin = P { x: s.origin[0], y: s.origin[1] };
+                let (mut w, mut h) = (w, h);
+                if sex == Sex::Female {
+                    // the skin is the female render itself; everything inside follows its outline
+                    (origin, w, h, texels) = if s.layer == 0 { female_skin() } else {
+                        let (o, nw, t) = reshape(origin, w, h, &texels);
+                        (o, nw, h, t)
+                    };
+                }
+                let cov = texels.iter().map(|t| t[3]).collect();
+                Part { s, origin, w, h, texels, cov, gpu: None }
             })
             .collect();
         let (top, bottom) = parts.iter().find(|p| p.s.layer == 0).map(|p| (p.origin().y, p.origin().y + p.size().1)).unwrap_or((0.0, anatomy::H));
@@ -339,8 +453,8 @@ impl Figure {
             for p in &members {
                 let ox = ((p.origin().x - x0) * TPU).round() as usize;
                 let oy = ((p.origin().y - y0) * TPU).round() as usize;
-                for y in 0..p.h {
-                    for x in 0..p.w {
+                for y in 0..p.h.min(o.h.saturating_sub(oy)) {
+                    for x in 0..p.w.min(o.w.saturating_sub(ox)) {
                         let d = &mut o.cov[(oy + y) * o.w + ox + x];
                         *d = (*d).max(p.cov[y * p.w + x]);
                     }
@@ -349,7 +463,23 @@ impl Figure {
             fill_holes(&mut o.cov, o.w, o.h);
             o.lead = parts.iter().enumerate().filter(|(_, p)| p.s.layer == 2 && p.s.sys == o.sys).max_by_key(|(_, p)| p.w * p.h).map(|(i, _)| i).unwrap_or(0);
         }
-        Figure { parts, outlines, atlas: Some((aw, raw)), callouts: anatomy::callouts(), top, bottom, live_labels: false, russian: false, temp_c: None, heart_rate: None, skin: None, thermal: None, arteries: arteries(), beat_phase: 0.0, last_time: None, shown_temp: None }
+        let mut callouts = anatomy::callouts();
+        let mut arteries = arteries();
+        if sex == Sex::Female {
+            for c in callouts.iter_mut() {
+                c.anchor = female_point(c.anchor);
+            }
+            for v in arteries.iter_mut() {
+                for q in v.pts.iter_mut() {
+                    *q = female_point(*q);
+                }
+            }
+        }
+        Figure { parts, outlines, uploaded: false, sex, callouts, top, bottom, live_labels: false, russian: false, temp_c: None, heart_rate: None, skin: None, thermal: None, arteries, beat_phase: 0.0, last_time: None, shown_temp: None }
+    }
+
+    pub fn sex(&self) -> Sex {
+        self.sex
     }
 
     /// The shared-server view reports metric-rule alerts, not organ diagnoses.
@@ -496,27 +626,27 @@ impl Figure {
 
     /// Builds the textures on first use (needs the egui context).
     fn upload(&mut self, ctx: &egui::Context) {
-        let Some((aw, raw)) = self.atlas.take() else { return };
+        if self.uploaded {
+            return;
+        }
+        self.uploaded = true;
         let opts = TextureOptions { magnification: TextureFilter::Linear, minification: TextureFilter::Linear, wrap_mode: TextureWrapMode::ClampToEdge, mipmap_mode: Some(TextureFilter::Linear) };
         for (i, p) in self.parts.iter_mut().enumerate() {
-            let [ax, ay, w, h] = p.s.atlas.map(|v| v as usize);
+            let (w, h) = (p.w, p.h);
             let n = w * h;
             let (mut main, mut alt) = (Vec::with_capacity(n), Vec::with_capacity(n));
-            for y in 0..h {
-                for x in 0..w {
-                    let o = ((ay + y) * aw + ax + x) * 4;
-                    let (sh, rim, sp, cv) = (raw[o] as f32 / 255.0 * 1.25, raw[o + 1] as f32 / 255.0, raw[o + 2] as f32 / 255.0, raw[o + 3] as f32 / 255.0);
-                    main.push(look_main(p.s, sh, rim, sp, cv));
-                    alt.push(look_alt(p.s, sh, rim, sp, cv));
-                }
+            for t in &p.texels {
+                let (sh, rim, sp, cv) = (t[0] as f32 / 255.0 * 1.25, t[1] as f32 / 255.0, t[2] as f32 / 255.0, t[3] as f32 / 255.0);
+                main.push(look_main(p.s, sh, rim, sp, cv));
+                alt.push(look_alt(p.s, sh, rim, sp, cv));
             }
             let load = |tag: &str, pixels: Vec<Color32>| ctx.load_texture(format!("anatomy-{i}-{tag}"), ColorImage { size: [w, h], pixels }, opts);
             if p.s.layer == 0 && self.skin.is_none() {
                 let mut heat = Vec::with_capacity(n);
                 for y in 0..h {
                     for x in 0..w {
-                        let rim = raw[((ay + y) * aw + ax + x) * 4 + 1] as f32 / 255.0;
-                        heat.push(heat_factor(p.s.origin[0] + x as f32 / TPU, p.s.origin[1] + y as f32 / TPU, rim));
+                        let rim = p.texels[y * w + x][1] as f32 / 255.0;
+                        heat.push(heat_factor(p.origin.x + x as f32 / TPU, p.origin.y + y as f32 / TPU, rim));
                     }
                 }
                 self.skin = Some((i, heat));
@@ -962,11 +1092,23 @@ mod tests {
                     }
                 }
             }
-            P { x: p.s.origin[0] + (bx as f32 + 0.5) / TPU, y: p.s.origin[1] + (by as f32 + 0.5) / TPU }
+            P { x: p.origin.x + (bx as f32 + 0.5) / TPU, y: p.origin.y + (by as f32 + 0.5) / TPU }
         };
         assert!(heart.covers(at(heart)) && !liver.covers(at(heart)));
         assert!(liver.covers(at(liver)) && !heart.covers(at(liver)));
         assert!(!heart.covers(P { x: 5.0, y: 5.0 }));
+    }
+
+    #[test]
+    fn female_figure_keeps_markers_on_their_organs_and_is_wider_at_the_hips() {
+        let male = Figure::new();
+        let female = Figure::with_sex(Sex::Female);
+        for c in &female.callouts {
+            assert!(female.parts.iter().any(|p| p.s.sys == c.sys && p.s.hit && p.covers(c.anchor)), "nothing of '{}' under its marker {:?}", c.sys, c.anchor);
+        }
+        let span = |f: &Figure, name: &str| f.parts.iter().filter(|p| p.s.name == name).map(|p| p.size().0).sum::<f32>();
+        assert!(span(&female, "Pelvis") > span(&male, "Pelvis"));
+        assert!(span(&female, "Clavicle") < span(&male, "Clavicle"));
     }
 
     #[test]
