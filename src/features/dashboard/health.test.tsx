@@ -116,3 +116,14 @@ it('retains the last alert when the next server response withdraws a result beca
   const view = metricHealth('heartRate', { ...context, previousHealthAlerts: { heartRate: { rule: warning, evaluatedAt: context.assessment.evaluatedAt } } })
   expect(view).toMatchObject({ status: 'insufficientData', current: false, rule: warning, reason: 'Нужны свежие данные.' })
 })
+
+it('keeps emergency guidance open in the compact overview while preserving expandable rule details', () => {
+  const context = healthFixture()
+  context.assessment.health!.rules[0].status = 'critical'
+  const html = renderToStaticMarkup(<HealthPanel context={context} compact />)
+  expect(html).toContain('health-panel-compact')
+  expect(html).toContain('class="emergency-guidance" open=""')
+  expect(html).toContain(context.assessment.health!.emergencyGuidance)
+  expect(html).toContain('Причина и действия')
+  expect(html).toContain(context.assessment.health!.rules[0].suggestedAction)
+})

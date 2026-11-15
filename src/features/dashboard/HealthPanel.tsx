@@ -55,7 +55,7 @@ export function FlightEducationPanel({ education }: { education: FlightEducation
   </section>
 }
 
-export function HealthPanel({ context }: { context: HealthContext }) {
+export function HealthPanel({ context, compact = false }: { context: HealthContext; compact?: boolean }) {
   const health = context.assessment?.health
   const metrics = assessmentMetricConfigs(context)
   const views = metrics.map(metric => ({ metric, view: metricHealth(metric.id, context) }))
@@ -63,14 +63,14 @@ export function HealthPanel({ context }: { context: HealthContext }) {
   const evaluatedCount = views.filter(row => row.view.current).length
   const withoutRules = views.filter(row => !row.view.rule || row.view.rule.status === 'notEvaluated').length
   const alerts = views.filter(row => row.view.rule && ['attention', 'critical'].includes(row.view.rule.status))
-  return <section className={`panel health-panel health-panel-${status}`} aria-label="Оценка по демонстрационным правилам">
+  return <section className={`panel health-panel health-panel-${status}${compact ? ' health-panel-compact' : ''}`} aria-label="Оценка по демонстрационным правилам">
     <div className="section-heading"><div><h2>Оценка показателей</h2><p className="note">Демонстрационные правила · {health?.ruleSetVersion ?? 'ожидание сервера'}</p></div><HealthBadge status={status} /></div>
     <p className="health-summary">{status === 'noAlert' ? 'Заданные правила не сработали. Это не заключение о здоровье всех органов.' : status === 'critical' ? 'Есть срочный сигнал. Привлеките экипаж и следуйте медицинскому протоколу миссии.' : status === 'attention' ? 'Есть показатель, требующий внимания. Проверьте объяснение и следующий шаг.' : health ? withoutRules ? 'Для части показателей автоматические правила ещё не подключены. Их можно записывать и просматривать без автоматического заключения.' : 'Текущая оценка доступна не для всех показателей. Проверьте связь, время и свежесть измерений.' : 'Сервер пока не предоставил оценку показателей.'}</p>
     <div className="health-coverage"><span>Пригодны для оценки: {evaluatedCount} / {metrics.length}</span>{withoutRules > 0 && health ? <span>Без правил: {withoutRules}</span> : null}{context.assessment ? <span>Ответ сервера: {formatTime(context.assessment.evaluatedAt)}</span> : null}</div>
     {health ? <details className="emergency-guidance" open={status === 'critical'}><summary>Когда нужна срочная помощь</summary><p>{health.emergencyGuidance}</p><p>Приложение само никому сообщения не отправляет.</p></details> : null}
-    <div className="health-alerts">{alerts.length ? alerts.map(({ metric, view }) => <div key={metric.id}><div className="health-alert-title"><strong>{metric.label}</strong><HealthBadge status={view.status} /></div><HealthDetails view={view} /></div>) : <p className="note">Предупреждений по доступным оценкам нет.</p>}</div>
+    <div className="health-alerts">{alerts.length ? alerts.map(({ metric, view }) => <div key={metric.id}><div className="health-alert-title"><strong>{metric.label}</strong><HealthBadge status={view.status} /></div>{compact ? <details className="finding-details"><summary>Причина и действия</summary><HealthDetails view={view} /></details> : <HealthDetails view={view} />}</div>) : <p className="note">Предупреждений по доступным оценкам нет.</p>}</div>
     {health ? <>
-      <p className="health-disclaimer">{health.disclaimer}</p>
+      {compact ? <details className="health-disclaimer"><summary>О демонстрационных правилах</summary><p>{health.disclaimer}</p></details> : <p className="health-disclaimer">{health.disclaimer}</p>}
     </> : <p className="note">Наличие или свежесть измерения сами по себе не означают нормальное состояние.</p>}
   </section>
 }
