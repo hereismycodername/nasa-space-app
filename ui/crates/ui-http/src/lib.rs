@@ -187,6 +187,19 @@ fn normalize_url(input: &str) -> Result<String, String> {
 }
 
 impl Backend for HttpBackend {
+    fn research_insight(&self, indicator: &str) -> Option<ui_model::research::ResearchInsight> {
+        let state = lock(&self.state);
+        let assessment = state.assessment.as_ref()?;
+        if state.latest.as_ref().is_some_and(|latest| latest.astronaut_id != assessment.astronaut_id) { return None; }
+        let metric = ui_model::nasa::api_metric(indicator);
+        let mut insight = assessment.research_insights.iter().find(|i| i.metric == metric)?.clone();
+        insight.observation = format!("Снимок сервера {} (не текущая медицинская оценка): {}", assessment.evaluated_at, insight.observation);
+        if !state.online || state.assessment_error.is_some() {
+            insight.observation.push_str(" Нет актуального ответа: показан сохранённый снимок.");
+        }
+        Some(insight)
+    }
+
     fn is_demo(&self) -> bool {
         false
     }

@@ -3157,6 +3157,7 @@ version = "0.3.0"
 dependencies = [
  "chrono",
  "ratatui",
+ "serde_json",
  "ui-http",
  "ui-model",
 ]

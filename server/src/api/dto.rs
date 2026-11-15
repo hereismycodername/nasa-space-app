@@ -348,6 +348,7 @@ pub(crate) struct AssessmentResponse {
     evaluated_at: String,
     metrics: Vec<MetricQualityResponse>,
     health: HealthEvaluationResponse,
+    research_insights: Vec<crate::domain::research::ResearchInsight>,
 }
 impl AssessmentResponse {
     pub fn from_data(
@@ -358,6 +359,7 @@ impl AssessmentResponse {
         let summary = assessments::assess_snapshot(metrics, now)?;
         let qualities = freshness::evaluate_metrics(metrics, now)?;
         let health = health_rules::evaluate(metrics, &qualities)?;
+        let research_insights = crate::domain::research::insights(metrics, &qualities)?;
         Ok(Self {
             status: summary.status,
             explanation: summary.explanation,
@@ -365,6 +367,7 @@ impl AssessmentResponse {
             evaluated_at: now.to_rfc3339_opts(SecondsFormat::AutoSi, true),
             metrics: qualities.into_iter().map(Into::into).collect(),
             health: health.into(),
+            research_insights,
         })
     }
 }

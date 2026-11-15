@@ -182,6 +182,8 @@ pub(crate) fn now_text() -> String {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Assessment {
+    #[serde(default)]
+    pub research_insights: Vec<ui_model::research::ResearchInsight>,
     pub astronaut_id: String,
     pub evaluated_at: String,
     #[serde(default)]

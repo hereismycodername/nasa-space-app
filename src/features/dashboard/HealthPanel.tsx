@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { NasaMetricContext } from '../nasa/NasaContext'
 import type { FlightEducation, Metric, RuleStatus } from '../../shared/types'
 import { assessmentMetricConfigs, escalationLabels, healthLabels, metricHealth, summarizeHealth } from './health'
 import type { HealthContext, RuleView } from './health'
@@ -8,9 +10,9 @@ export function HealthBadge({ status, label }: { status: RuleStatus; label?: str
   return <span className={`health-badge health-${status}`}><i aria-hidden="true" />{label ?? healthLabels[status]}</span>
 }
 
-export function MetricHealth({ metric, context }: { metric: Metric; context: HealthContext }) {
+export function MetricHealth({ metric, context, onRecord, onHistory }: { metric: Metric; context: HealthContext; onRecord?: () => void; onHistory?: () => void }) {
   const view = metricHealth(metric, context)
-  return <div className="metric-health"><span className="metric-health-label">Оценка показателя · демо</span><HealthBadge status={view.status} /><HealthDetails view={view} /></div>
+  return <div className="metric-health"><span className="metric-health-label">Оценка показателя · демо</span><HealthBadge status={view.status} /><HealthDetails view={view} /><ResearchExplanation metric={metric} context={context} onRecord={onRecord} onHistory={onHistory} /><NasaMetricContext metric={metric} /></div>
 }
 
 function Sources({ urls }: { urls: string[] }) {
@@ -73,4 +75,28 @@ export function HealthPanel({ context, compact = false }: { context: HealthConte
       {compact ? <details className="health-disclaimer"><summary>О демонстрационных правилах</summary><p>{health.disclaimer}</p></details> : <p className="health-disclaimer">{health.disclaimer}</p>}
     </> : <p className="note">Наличие или свежесть измерения сами по себе не означают нормальное состояние.</p>}
   </section>
+}
+
+export function ResearchExplanation({ metric, context, onRecord, onHistory }: {
+  metric: Metric; context: HealthContext; onRecord?: () => void; onHistory?: () => void
+}) {
+  const [guidance, setGuidance] = useState(false)
+  const insight = context.assessment?.researchInsights?.find(item => item.metric === metric)
+  if (!insight) return null
+  return <details className="nasa-metric-context">
+    <summary>Что это значит в полёте · NASA / CSA + ваши данные</summary>
+    <p className="note">Снимок сервера {context.assessment?.evaluatedAt}. Не текущая медицинская оценка.{!context.connected ? ' Нет связи: показан сохранённый ответ.' : ''}</p>
+    <p>{insight.observation}</p>
+    {insight.contexts.map(item => <section key={item.title}>
+      <h4>{item.title}</h4><p>{item.explanation}</p>
+      <p>Как используем: {item.projectUse}</p><p>Ограничение: {item.limitation}</p>
+      <a href={item.sourceUrl} target="_blank" rel="noreferrer">{item.sourceAgency} · {item.sourceSection}</a>
+    </section>)}
+    <p className="note">Связи и действия разработаны командой. Пороги BE-08 имеют отдельные основания. Каталог: {insight.catalogVersion}.</p>
+    <div className="research-actions">{insight.actions.map(action => <button type="button" key={action.kind}
+      disabled={action.kind === 'record' ? !onRecord : action.kind === 'history' ? !onHistory : false}
+      onClick={() => { if (action.kind === 'record') onRecord?.(); else if (action.kind === 'history') onHistory?.(); else setGuidance(value => !value) }}>
+      {action.label}</button>)}</div>
+    {guidance ? <HealthDetails view={metricHealth(metric, context)} /> : null}
+  </details>
 }

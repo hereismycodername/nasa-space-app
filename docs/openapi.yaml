@@ -423,6 +423,40 @@ paths:
 
 components:
   schemas:
+    ResearchInsight:
+      type: object
+      required: [metric, catalogVersion, observation, measurementId, quality, contexts, actions]
+      properties:
+        metric:
+          type: string
+          enum: [sleepHours, heartRate, systolicPressure, diastolicPressure, exerciseMinutes]
+        catalogVersion: {type: string}
+        observation: {type: string}
+        measurementId: {type: [string, 'null']}
+        quality:
+          type: string
+          enum: [missing, fresh, stale, unknownTime, clockSkew]
+        contexts:
+          type: array
+          items:
+            type: object
+            required: [title, explanation, projectUse, limitation, sourceUrl, sourceAgency, sourceSection]
+            properties:
+              title: {type: string}
+              explanation: {type: string}
+              projectUse: {type: string}
+              limitation: {type: string}
+              sourceUrl: {type: string, format: uri}
+              sourceAgency: {type: string, enum: [NASA, CSA]}
+              sourceSection: {type: string}
+        actions:
+          type: array
+          items:
+            type: object
+            required: [kind, label]
+            properties:
+              kind: {type: string, enum: [record, history, guidance]}
+              label: {type: string}
     Metric:
       type: string
       enum:
@@ -1658,6 +1692,11 @@ components:
             it contains the original first six metrics. Clients discover supported metrics from this response.
           items:
             $ref: '#/components/schemas/MetricQuality'
+        researchInsights:
+          type: array
+          description: Server-owned NASA context for sleep, pulse, pressure and exercise. Snapshot facts only, not clinical rules or trends. Optional for older servers. Actions navigate existing client workflows and do not write automatically.
+          items:
+            $ref: '#/components/schemas/ResearchInsight'
         health:
           description: Always returned by BE-08. Optional here only to describe legacy BE-06 responses/examples;
             clients must show notEvaluated when connecting to an older server without this field.

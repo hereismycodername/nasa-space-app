@@ -725,3 +725,18 @@ fn old_six_metric_server_receives_only_supported_history_queries() {
         .message
         .contains("does not publish health rules"));
 }
+
+#[test]
+fn research_insight_preserves_server_content_and_labels_cached_snapshots() {
+    let mut value = assessment_json();
+    let insight: Value = serde_json::from_str(include_str!("../../../../docs/examples/research-insight.json")).unwrap();
+    value["researchInsights"] = json!([insight]);
+    let backend = assessed_backend(value);
+    let received = backend.research_insight("hr").unwrap();
+    assert!(received.observation.contains("72 bpm"));
+    assert!(received.observation.contains("Снимок сервера"));
+    assert_eq!(received.actions[0].kind, ui_model::research::ActionKind::Record);
+    assert!(backend.research_insight("glucose").is_none());
+    lock(&backend.state).online = false;
+    assert!(backend.research_insight("hr").unwrap().observation.contains("сохранённый снимок"));
+}

@@ -7,3 +7,5 @@ pub(crate) mod measurements;
 pub(crate) mod metric_config;
 pub(crate) mod series;
 pub(crate) mod tasks;
+
+pub(crate) mod research;

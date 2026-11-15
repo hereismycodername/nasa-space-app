@@ -28,6 +28,8 @@ struct LiveApp<B: Backend> {
     notice: String,
     help: bool,
     details: bool,
+    nasa: bool,
+    nasa_all: bool,
     health: bool,
     flight_only: bool,
     last_health_status: HealthStatus,
@@ -47,6 +49,8 @@ impl<B: Backend> LiveApp<B> {
             notice: String::new(),
             help: false,
             details: false,
+            nasa: false,
+            nasa_all: false,
             health: false,
             flight_only: false,
             last_health_status: HealthStatus::NotEvaluated,
@@ -109,7 +113,29 @@ impl<B: Backend> LiveApp<B> {
             self.help = false;
             return;
         }
-        if self.details || self.health {
+        if self.nasa && !self.nasa_all && !self.health {
+            let indicators = self.indicators();
+            let insight = indicators.get(self.metric).and_then(|i| self.backend.research_insight(&i.id));
+            if let Some(insight) = insight {
+                let requested = match key.code {
+                    KeyCode::Char('1') => Some(ui_model::research::ActionKind::Record),
+                    KeyCode::Char('2') => Some(ui_model::research::ActionKind::History),
+                    KeyCode::Char('3') => Some(ui_model::research::ActionKind::Guidance),
+                    _ => None,
+                };
+                if let Some(action) = requested.filter(|kind| insight.actions.iter().any(|a| &a.kind == kind)) {
+                    self.nasa = false;
+                    self.focus = Focus::Metrics;
+                    match action {
+                        ui_model::research::ActionKind::Record => self.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+                        ui_model::research::ActionKind::History => { self.notice = "История выбранного показателя — график в основной панели".into(); },
+                        ui_model::research::ActionKind::Guidance => { self.health = true; self.flight_only = false; self.details_scroll = 0; },
+                    }
+                    return;
+                }
+            }
+        }
+        if self.details || self.health || self.nasa {
             match key.code {
                 KeyCode::Down => {
                     self.details_scroll = self.details_scroll.saturating_add(1).min(2000)
@@ -120,6 +146,7 @@ impl<B: Backend> LiveApp<B> {
                 KeyCode::Up => self.details_scroll = self.details_scroll.saturating_sub(1),
                 KeyCode::PageUp => self.details_scroll = self.details_scroll.saturating_sub(10),
                 _ => {
+                    self.nasa = false;
                     self.details = false;
                     self.health = false;
                 }
@@ -133,6 +160,11 @@ impl<B: Backend> LiveApp<B> {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
             KeyCode::Char('?') => self.help = true,
+            KeyCode::Char('n') | KeyCode::Char('N') => {
+                self.nasa = true;
+                self.nasa_all = key.code == KeyCode::Char('N');
+                self.details_scroll = 0;
+            },
             KeyCode::Char('f') => {
                 self.health = true;
                 self.flight_only = true;
@@ -323,7 +355,7 @@ impl<B: Backend> LiveApp<B> {
         );
         frame.render_widget(
             Paragraph::new(
-                " Arrows select  Enter edit  Tab tasks  Space toggle  i detail  h health  f flight  q quit",
+                " Arrows select  Enter edit  Tab tasks  Space toggle  i detail  h health  f flight  n/N NASA  q quit",
             )
             .style(Style::new().fg(Color::Gray)),
             layout[4],
@@ -336,7 +368,7 @@ impl<B: Backend> LiveApp<B> {
                 area.height.saturating_sub(6),
             );
             frame.render_widget(Clear, help);
-            frame.render_widget(Paragraph::new("Shared Rust API\n\nUp/Down or j/k: choose a measurement or task.\nEnter on a measurement: enter its measured value; Enter again sends.\nTab: switch between measurements and tasks.\nSpace or Enter on a task: request completion/undo.\ni: full measurement details and history description; arrows scroll.\nr: switch Crew/Ground. Both see the same server profile.\n\nA pending message is not a saved measurement. Success appears only after the server replies.\nOffline data is a cached view; reconnect is automatic.\nChart gaps are missing samples, not zero values. Dates are UTC.\nHealth rules run on the server; h shows guidance, flight hazards and sources. A rule alert is not a diagnosis. Simulated demo tools are unavailable here.\n\nAny key closes help. Ctrl+C always exits.").block(Block::bordered().title(" Controls ")).wrap(Wrap { trim: false }), help);
+            frame.render_widget(Paragraph::new("Shared Rust API\n\nn: NASA sources for selected metric; N: full NASA catalogue. Arrows/PageDown scroll; Esc closes.\n\nUp/Down or j/k: choose a measurement or task.\nEnter on a measurement: enter its measured value; Enter again sends.\nTab: switch between measurements and tasks.\nSpace or Enter on a task: request completion/undo.\ni: full measurement details and history description; arrows scroll.\nr: switch Crew/Ground. Both see the same server profile.\n\nA pending message is not a saved measurement. Success appears only after the server replies.\nOffline data is a cached view; reconnect is automatic.\nChart gaps are missing samples, not zero values. Dates are UTC.\nHealth rules run on the server; h shows guidance, flight hazards and sources. A rule alert is not a diagnosis. Simulated demo tools are unavailable here.\n\nAny key closes help. Ctrl+C always exits.").block(Block::bordered().title(" Controls ")).wrap(Wrap { trim: false }), help);
         }
         if self.details {
             let popup = Rect::new(
@@ -376,6 +408,28 @@ impl<B: Backend> LiveApp<B> {
                     .scroll((self.details_scroll, 0)),
                 popup,
             );
+        }
+        if self.nasa && !self.health {
+            let popup = Rect::new(area.x + 1, area.y + 1, area.width.saturating_sub(2), area.height.saturating_sub(2));
+            let indicators = self.indicators();
+            let metric = if self.nasa_all { None } else { indicators.get(self.metric).map(|i| i.id.as_str()) };
+            let mut text = match ui_model::nasa::catalog() {
+                Ok(catalog) => catalog.text(metric),
+                Err(message) => message.to_owned(),
+            };
+            if let Some(insight) = metric.and_then(|id| self.backend.research_insight(id)) {
+                let mut live = format!("Что это значит в полёте\n{}\n", insight.observation);
+                for action in &insight.actions {
+                    let key = match action.kind { ui_model::research::ActionKind::Record => 1, ui_model::research::ActionKind::History => 2, ui_model::research::ActionKind::Guidance => 3 };
+                    live.push_str(&format!("[{key}] {}\n", action.label));
+                }
+                for context in &insight.contexts {
+                    live.push_str(&format!("\n{}\n{}\nКак используем: {}\nОграничение: {}\n{}: {} — {}\n", context.title, context.explanation, context.project_use, context.limitation, context.source_agency, context.source_section, context.source_url));
+                }
+                text = format!("{live}\nСвязи и действия — решения команды. {}\n", insight.catalog_version);
+            }
+            frame.render_widget(Clear, popup);
+            frame.render_widget(Paragraph::new(text).block(Block::bordered().title(" NASA / arrows scroll / Esc closes ")).wrap(Wrap { trim: false }).scroll((self.details_scroll, 0)), popup);
         }
         if self.health {
             let popup = Rect::new(
@@ -754,6 +808,7 @@ mod tests {
         fail: bool,
         latest: f64,
         report: HealthReport,
+        insight: Option<ui_model::research::ResearchInsight>,
     }
 
     impl FakeBackend {
@@ -771,11 +826,14 @@ mod tests {
                 fail: false,
                 latest: 72.0,
                 report: HealthReport::default(),
+                insight: None,
             }
         }
     }
 
     impl Backend for FakeBackend {
+        fn research_insight(&self, _: &str) -> Option<ui_model::research::ResearchInsight> { self.insight.clone() }
+
         fn is_demo(&self) -> bool {
             false
         }
@@ -939,6 +997,48 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn nasa_server_actions_open_input_history_and_guidance_without_writing() {
+        let mut backend = FakeBackend::new();
+        backend.insight = Some(serde_json::from_str(include_str!("../../../../docs/examples/research-insight.json")).unwrap());
+        let mut app = LiveApp::new(backend, Role::Crew);
+        app.on_key(key(KeyCode::Char('n')));
+        assert!(render(&app, 160, 55).contains("[1]"));
+        app.on_key(key(KeyCode::Char('1')));
+        assert!(app.edit.is_some());
+        assert!(app.backend.writes.is_empty());
+        app.on_key(key(KeyCode::Esc));
+        app.on_key(key(KeyCode::Char('n')));
+        app.on_key(key(KeyCode::Char('2')));
+        assert!(!app.nasa);
+        assert!(app.notice.contains("график"));
+        app.on_key(key(KeyCode::Char('n')));
+        app.on_key(key(KeyCode::Char('3')));
+        assert!(app.health);
+        assert!(!app.flight_only);
+    }
+
+    #[test]
+    fn nasa_catalog_opens_filters_scrolls_and_closes_without_measurements() {
+        let mut app = LiveApp::new(FakeBackend::new(), Role::Crew);
+        app.on_key(key(KeyCode::Char('n')));
+        assert!(app.nasa);
+        assert!(!app.nasa_all);
+        let screen = render(&app, 160, 55);
+        assert!(screen.contains("NASA / CSA"));
+        assert!(screen.contains("https://www.nasa.gov/hrp/risks/"));
+        assert!(!screen.contains("ARCHeR"));
+        app.on_key(key(KeyCode::PageDown));
+        assert_eq!(app.details_scroll, 10);
+        app.on_key(key(KeyCode::Esc));
+        assert!(!app.nasa);
+        assert!(!app.quit);
+        app.on_key(key(KeyCode::Char('N')));
+        assert!(app.nasa_all);
+        assert_eq!(app.details_scroll, 0);
+        render(&app, 40, 12);
     }
 
     #[test]

@@ -15,3 +15,8 @@ pub use demo::DemoBackend;
 pub use health::*;
 pub use rules::fmt as fmt_num;
 pub use types::*;
+
+pub mod nasa;
+
+#[path = "../../../../resources/nasa/insight_types.rs"]
+pub mod research;

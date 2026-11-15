@@ -33,7 +33,13 @@ const health = z.object({
   && value.rules.every(item => item.ruleVersion === value.ruleSetVersion)
   && value.evaluatedMetricCount === value.rules.filter(item => ['noAlert', 'attention', 'critical'].includes(item.status)).length)
 
+const researchInsight = z.object({
+  metric, catalogVersion: text, observation: text, measurementId: text.nullable(), quality: quality.shape.status,
+  contexts: z.array(z.object({ title: text, explanation: text, projectUse: text, limitation: text, sourceUrl: source, sourceAgency: z.enum(["NASA", "CSA"]), sourceSection: text })).min(1),
+  actions: z.array(z.object({ kind: z.enum(['record', 'history', 'guidance']), label: text })),
+})
 const assessment = z.object({
+  researchInsights: z.array(researchInsight).optional(),
   status: z.enum(['no-data', 'stale', 'not-evaluated', 'unknown-time', 'clock-skew']),
   explanation: z.string(), astronautId: text, evaluatedAt: timestamp,
   metrics: z.array(z.object({ metric, quality, latestReceivedQuality: quality })), health: health.optional(),

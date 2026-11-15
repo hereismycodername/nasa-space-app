@@ -21,6 +21,7 @@ const DAY_MS: i64 = 86_400_000;
 enum Tab {
     Health,
     Server,
+    Nasa,
 }
 
 pub(crate) struct LiveApp {
@@ -43,6 +44,7 @@ pub(crate) struct LiveApp {
     started: Instant,
     screenshot: Option<String>,
     screenshot_requested: bool,
+    research_action: Option<ui_model::research::ActionKind>,
 }
 
 impl LiveApp {
@@ -73,6 +75,7 @@ impl LiveApp {
             started: Instant::now(),
             screenshot: options.shot,
             screenshot_requested: false,
+            research_action: None,
         }
     }
 
@@ -251,7 +254,7 @@ impl LiveApp {
             self.alert_strip(ui);
             ui.horizontal(|ui| {
                 let main = if self.role == Role::Crew { l.t("Health", "Здоровье") } else { l.t("Telemetry", "Телеметрия") };
-                for (tab, name) in [(Tab::Health, main), (Tab::Server, l.t("Server link", "Связь с сервером"))] {
+                for (tab, name) in [(Tab::Health, main), (Tab::Server, l.t("Server link", "Связь с сервером")), (Tab::Nasa, "NASA / CSA")] {
                     if tab_btn(ui, name, self.tab == tab) {
                         self.tab = tab;
                     }
@@ -274,6 +277,7 @@ impl LiveApp {
                     }
                 }
                 Tab::Server => self.server_tab(ui),
+                Tab::Nasa => nasa_panel(ui, None),
             });
         });
     }
@@ -606,6 +610,34 @@ impl LiveApp {
         let color = health_color(status);
         let series = self.backend.data_series(id);
 
+        if let Some(insight) = self.backend.research_insight(id) {
+            ui.collapsing("Что это значит в полёте · NASA / CSA + ваши данные", |ui| {
+                ui.label(&insight.observation);
+                for context in &insight.contexts {
+                    ui.heading(&context.title);
+                    ui.label(&context.explanation);
+                    ui.label(format!("Как используем: {}", context.project_use));
+                    ui.label(format!("Ограничение: {}", context.limitation));
+                    ui.hyperlink_to(format!("{} · {}", context.source_agency, context.source_section), &context.source_url);
+                }
+                ui.label(format!("Связи и действия — решения команды. Не диагноз NASA. {}", insight.catalog_version));
+                ui.horizontal_wrapped(|ui| {
+                    for action in &insight.actions {
+                        if ui.button(&action.label).clicked() { self.research_action = Some(action.kind.clone()); }
+                    }
+                });
+                match self.research_action {
+                    Some(ui_model::research::ActionKind::Record) => self.entry(ui, &indicator),
+                    Some(ui_model::research::ActionKind::History) => telemetry_chart(ui, l, &series, &unit, 230.0),
+                    Some(ui_model::research::ActionKind::Guidance) => {
+                        if let Some(rule) = &rule { rule_block(ui, l, rule); }
+                        else { ui.label("Сервер пока не предоставил оценку BE-08."); }
+                    }
+                    None => {}
+                }
+            });
+        }
+
         ui.horizontal(|ui| {
             ui.label(RichText::new(&name).font(display(22.0)));
             pill(ui, l.short(status), color);
@@ -648,6 +680,7 @@ impl LiveApp {
         ui.add_space(8.0);
         card().show(ui, |ui| {
             ui.set_width(ui.available_width());
+            ui.collapsing("NASA: research context / научный контекст", |ui| nasa_panel(ui, Some(id)));
             caption(ui, l.t("About this measurement", "Об измерении"));
             let (why, how): (&str, Vec<String>) = match l {
                 Lang::En => (&indicator.why, indicator.how.clone()),
@@ -1212,5 +1245,30 @@ mod tests {
         assert_eq!(quality_word(detail), "stale");
         assert_eq!(quality_word("Offline / cached; fresh; source: manual-01"), "fresh");
         assert_eq!(quality_word("No data loaded"), "No data loaded");
+    }
+}
+
+/// Reference content is embedded from the same JSON used by React and the TUI.
+fn nasa_panel(ui: &mut Ui, metric: Option<&str>) {
+    let catalog = match ui_model::nasa::catalog() {
+        Ok(catalog) => catalog,
+        Err(message) => { ui.label(message); return; }
+    };
+    ui.heading("NASA / CSA");
+    ui.label(format!("{} · {}", catalog.version, catalog.reviewed_at));
+    ui.label(&catalog.notice);
+    ui.label("Синтетические показания симулятора — не данные NASA. Каталог не меняет пороги здоровья. Материалы доступны офлайн; ссылки требуют интернета.");
+    let entries: Vec<_> = catalog.entries_for(metric).collect();
+    if entries.is_empty() { ui.label("Прямой связи с показателем в каталоге нет."); }
+    for entry in entries {
+        ui.separator();
+        ui.heading(&entry.title);
+        ui.label(format!("{} · {}", entry.kind, entry.metrics.join(", ")));
+        ui.label(&entry.summary);
+        ui.label(format!("Как используем: {}", entry.project_use));
+        ui.label(format!("Ограничение: {}", entry.limitation));
+        if let Some(source) = catalog.source(entry) {
+            ui.hyperlink_to(format!("{}: {} — {}", source.agency, source.title, entry.source_section), &source.url);
+        }
     }
 }
