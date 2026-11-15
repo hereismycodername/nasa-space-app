@@ -97,12 +97,12 @@ pub(crate) fn evaluate(
     Ok(HealthEvaluation {
         status,
         explanation: format!(
-            "{} Оценено показателей: {} из {}.",
+            "{} Metrics evaluated: {} of {}.",
             match status {
-                RuleStatus::Critical => "Есть сигнал для срочного привлечения экипажа и медицинской помощи. Следуйте подсказке конкретного показателя.",
-                RuleStatus::Attention => "Есть показатели, требующие внимания и повторной проверки. См. причины и следующие действия.",
-                RuleStatus::NoAlert => "Заданные правила не сработали. Это не подтверждает здоровье всех органов и не исключает проблему при симптомах.",
-                RuleStatus::NotEvaluated | RuleStatus::InsufficientData => "Полная оценка недоступна: нужны свежие измерения с известным временем и правила для всех показателей.",
+                RuleStatus::Critical => "There is a signal to involve the crew and medical help urgently. Follow the guidance for the specific metric.",
+                RuleStatus::Attention => "Some metrics need attention and a repeat check. See the reasons and next steps.",
+                RuleStatus::NoAlert => "The configured rules did not trigger. This does not confirm that all organs are healthy and does not rule out a problem if there are symptoms.",
+                RuleStatus::NotEvaluated | RuleStatus::InsufficientData => "A full assessment is not available: it needs fresh measurements with a known time and rules for all metrics.",
             },
             evaluated_metric_count,
             METRICS.len(),
@@ -150,12 +150,12 @@ fn evaluate_metric(
             metric: policy.metric,
             title: policy.metric,
             status: RuleStatus::NotEvaluated,
-            explanation: "Для этого показателя правила оценки ещё не подключены. По его значению нельзя получить статус отсутствия предупреждений.".into(),
+            explanation: "Assessment rules are not connected for this metric yet. Its value cannot produce a no-alert status.".into(),
             measurement_ids: Vec::new(),
             valid_until: None,
-            suggested_action: "Сохраняйте измерения по плану миссии; для интерпретации обратитесь к ответственному за медицинскую помощь.",
+            suggested_action: "Keep taking measurements per the mission plan; for interpretation contact the person responsible for medical care.",
             escalation: "none",
-            flight_context: "Показатель доступен для наблюдения; автоматическая медицинская интерпретация отсутствует.",
+            flight_context: "The metric is available for observation; there is no automatic medical interpretation.",
             source_urls: &[],
         });
     };
@@ -164,10 +164,10 @@ fn evaluate_metric(
         metric: policy.metric,
         title: definition.title,
         status: RuleStatus::InsufficientData,
-        explanation: "Нет пригодного измерения с подтверждённой свежестью. Значение не оценено.".into(),
+        explanation: "There is no usable measurement with confirmed freshness. The value is not assessed.".into(),
         measurement_ids: Vec::new(),
         valid_until: None,
-        suggested_action: "Получите новое измерение по инструкции прибора и сохраните время измерения. При симптомах не ждите оценки приложения.",
+        suggested_action: "Take a new measurement following the device instructions and record the measurement time. If there are symptoms, do not wait for the app's assessment.",
         escalation: "self",
         flight_context: definition.flight_context,
         source_urls: definition.source_urls,
@@ -176,10 +176,10 @@ fn evaluate_metric(
         return Ok(result);
     };
     let unavailable = match quality.status {
-        FreshnessStatus::Missing => Some("Измерение отсутствует. Состояние по этому показателю не оценено."),
-        FreshnessStatus::Stale => Some("Измерение устарело по сроку свежести этого показателя. Недавнее получение не подтверждает свежесть; текущее состояние не оценено."),
-        FreshnessStatus::UnknownTime => Some("Время измерения неизвестно. Время доставки не заменяет его; состояние не оценено."),
-        FreshnessStatus::ClockSkew => Some("Время измерения находится в будущем. Проверьте часы источника и повторите измерение; состояние не оценено."),
+        FreshnessStatus::Missing => Some("The measurement is missing. The state for this metric is not assessed."),
+        FreshnessStatus::Stale => Some("The measurement is stale for this metric's freshness window. Recent receipt does not confirm freshness; the current state is not assessed."),
+        FreshnessStatus::UnknownTime => Some("Measurement time is unknown. Delivery time does not replace it; the state is not assessed."),
+        FreshnessStatus::ClockSkew => Some("Measurement time is in the future. Check the source clock and measure again; the state is not assessed."),
         FreshnessStatus::Fresh => None,
     };
     if let Some(explanation) = unavailable {
@@ -192,12 +192,12 @@ fn evaluate_metric(
     };
     if quality.measurement_id.as_deref() != Some(row.id.as_str()) {
         result.explanation =
-            "Измерение не совпадает со снимком качества. Обновите данные; состояние не оценено."
+            "The measurement does not match the quality snapshot. Refresh the data; the state is not assessed."
                 .into();
         return Ok(result);
     }
     if !valid_value(row, policy) {
-        result.explanation = "Единица или значение измерения не соответствует входному контракту. Проверьте источник; состояние не оценено.".into();
+        result.explanation = "The measurement unit or value does not match the input contract. Check the source; the state is not assessed.".into();
         return Ok(result);
     }
     let Some(measured_at) = row.measured_at.as_deref() else {
@@ -238,18 +238,18 @@ fn format_value(value: f64) -> String {
     format!("{value:.2}")
         .trim_end_matches('0')
         .trim_end_matches('.')
-        .replace('.', ",")
+        .to_string()
 }
 
 fn explanation_unit(policy: &MetricDefinition) -> &str {
     match policy.unit {
-        "score" if policy.metric == "mood" => "из 5",
-        "score" => "из 10",
-        "h" => "ч",
-        "bpm" => "уд/мин",
-        "mmHg" => "мм рт. ст.",
-        "min" => "мин",
-        "mg/dL" => "мг/дл",
+        "score" if policy.metric == "mood" => "of 5",
+        "score" => "of 10",
+        "h" => "h",
+        "bpm" => "bpm",
+        "mmHg" => "mmHg",
+        "min" => "min",
+        "mg/dL" => "mg/dL",
         unit => unit,
     }
 }

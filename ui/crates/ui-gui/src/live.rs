@@ -47,8 +47,6 @@ pub(crate) struct LiveApp {
     started: Instant,
     screenshot: Option<String>,
     screenshot_requested: bool,
-    /// views to go back to, newest last
-    history: Vec<View>,
     /// the last change of view was a step back, so it is not recorded again
     went_back: bool,
     research_action: Option<ui_model::research::ActionKind>,
@@ -84,7 +82,6 @@ impl LiveApp {
             started: Instant::now(),
             screenshot: options.shot,
             screenshot_requested: false,
-            history: vec![],
             went_back: false,
             research_action: None,
         }
@@ -148,13 +145,67 @@ impl LiveApp {
         (self.tab, self.system.clone(), self.metric.clone())
     }
 
-    /// Returns to the previous view (tab, body system, metric).
+    /// One level up: metric -> its body system -> overview; the server tab returns to health.
     fn go_back(&mut self) {
-        if let Some((tab, system, metric)) = self.history.pop() {
-            self.tab = tab;
+        if let Some(id) = self.metric.take() {
+            if self.system.is_none() {
+                self.system = self.indicator(&id).map(|indicator| indicator.system);
+            }
+        } else if self.system.is_some() {
+            self.system = None;
+        } else if self.tab == Tab::Server {
+            self.tab = Tab::Health;
+        }
+        self.went_back = true;
+    }
+
+    /// Overview plus every body system, each with its status square: one click to any of them.
+    fn system_bar(&mut self, ui: &mut Ui) {
+        let l = self.lang;
+        let current = self.system.clone().or_else(|| self.metric.as_deref().and_then(|id| self.indicator(id)).map(|indicator| indicator.system));
+        let mut items: Vec<(Option<String>, String, Option<Color32>)> = vec![(None, l.t("Overview", "Обзор").to_string(), None)];
+        for id in ["heart", "lungs", "brain", "eyes", "gut", "msk", "immune"] {
+            let (_, color) = system_label(l, self.backend.system_status(id));
+            let short = match id {
+                "heart" => l.t("Heart", "Сердце"),
+                "lungs" => l.t("Breathing", "Дыхание"),
+                "brain" => l.t("Sleep & mind", "Сон и голова"),
+                "eyes" => l.t("Vision", "Зрение"),
+                "gut" => l.t("Metabolism", "Обмен"),
+                "msk" => l.t("Bones & muscles", "Кости и мышцы"),
+                _ => l.t("Temperature", "Температура"),
+            };
+            items.push((Some(id.to_string()), short.to_string(), Some(color)));
+        }
+        let mut go: Option<Option<String>> = None;
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
+            for (id, name, color) in &items {
+                let active = *id == current && (id.is_some() || self.metric.is_none());
+                let text = RichText::new(name.to_uppercase()).font(mono(10.5)).extra_letter_spacing(0.6);
+                let width = galley_width(ui, &text) + if color.is_some() { 30.0 } else { 20.0 };
+                let (rect, response) = ui.allocate_exact_size(vec2(width, 26.0), Sense::click());
+                let hovered = response.hovered();
+                let painter = ui.painter_at(rect);
+                painter.rect_filled(rect, CornerRadius::ZERO, if active { alpha(ACCENT, 0.18) } else if hovered { SURFACE2 } else { SURFACE });
+                painter.rect_stroke(rect, CornerRadius::ZERO, stroke(1.0, if active { ACCENT } else { LINE }), egui::StrokeKind::Inside);
+                let mut x = rect.left() + 10.0;
+                if let Some(c) = color {
+                    painter.rect_filled(Rect::from_center_size(pos2(x + 3.0, rect.center().y), vec2(6.0, 6.0)), CornerRadius::ZERO, *c);
+                    x += 12.0;
+                }
+                painter.text(pos2(x, rect.center().y), Align2::LEFT_CENTER, name.to_uppercase(), mono(10.5), if active || hovered { TXT } else { MUT });
+                if hovered {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                if response.clicked() {
+                    go = Some(id.clone());
+                }
+            }
+        });
+        if let Some(system) = go {
             self.system = system;
-            self.metric = metric;
-            self.went_back = true;
+            self.metric = None;
         }
     }
 
@@ -293,18 +344,14 @@ impl LiveApp {
                         self.tab = tab;
                     }
                 }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let back = ui
-                        .add_enabled(!self.history.is_empty(), egui::Button::new(RichText::new(format!("\u{2039}  {}", l.t("Back", "Назад"))).size(12.5)))
-                        .on_hover_text(l.t("Esc, Backspace, Alt+Left or the mouse back button", "Esc, Backspace, Alt+← или боковая кнопка мыши"));
-                    if back.clicked() {
-                        self.go_back();
-                    }
-                });
             });
             let rect = ui.min_rect();
             ui.painter().hline(rect.left()..=ui.max_rect().right(), rect.bottom() + 1.0, stroke(1.0, LINE));
-            ui.add_space(10.0);
+            ui.add_space(8.0);
+            if self.tab == Tab::Health {
+                self.system_bar(ui);
+                ui.add_space(10.0);
+            }
             // every view keeps its own scroll position, so a newly opened one starts at the top
             let view = (self.tab, self.system.clone(), self.metric.clone());
             egui::ScrollArea::vertical().id_salt(("live-view", view)).auto_shrink([false, false]).show(ui, |ui| match self.tab {
@@ -379,38 +426,23 @@ impl LiveApp {
         }
     }
 
+    /// Inside a metric: a link back to its body system (the system bar above covers the rest).
     fn crumbs(&mut self, ui: &mut Ui) {
         let l = self.lang;
-        let profile = self.backend.selected_crew();
-        let root = if self.role == Role::Crew || profile.is_empty() {
-            l.t("Overview", "Обзор").to_string()
-        } else {
-            format!("{}  \u{203A}  {profile}", l.t("Crew status", "Экипаж"))
-        };
-        let mut to: Option<(Option<String>, Option<String>)> = None;
+        let Some(indicator) = self.metric.as_deref().and_then(|id| self.indicator(id)) else { return };
+        let parent = if self.system.is_some() || self.role == Role::Crew { self.system_name(&indicator.system) } else { l.t("Overview", "Обзор").to_string() };
+        let mut up = false;
         ui.horizontal(|ui| {
-            if link_label(ui, &root, self.system.is_none() && self.metric.is_none()) {
-                to = Some((None, None));
+            if link_label(ui, &format!("\u{2039}  {parent}"), false) {
+                up = true;
             }
-            let separator = |ui: &mut Ui| {
-                ui.label(RichText::new("\u{203A}").color(MUT));
-            };
-            if let Some(indicator) = self.metric.as_deref().and_then(|id| self.indicator(id)) {
-                separator(ui);
-                if link_label(ui, &self.system_name(&indicator.system), false) {
-                    to = Some((Some(indicator.system.clone()), None));
-                }
-                separator(ui);
-                ui.label(RichText::new(self.name(&indicator)).size(12.5).color(MUT));
-            } else if let Some(system) = &self.system {
-                separator(ui);
-                ui.label(RichText::new(self.system_name(system)).size(12.5).color(MUT));
-            }
+            ui.label(RichText::new("/").color(LINE_HI));
+            ui.label(RichText::new(self.name(&indicator)).size(12.5).color(MUT));
+            ui.label(RichText::new(l.t("Esc: up one level", "Esc: на уровень выше")).font(mono(9.5)).color(alpha(MUT, 0.7)));
         });
         ui.add_space(6.0);
-        if let Some((system, metric)) = to {
-            self.system = system;
-            self.metric = metric;
+        if up {
+            self.go_back();
         }
     }
 
@@ -558,7 +590,7 @@ impl LiveApp {
                     let lines = [
                         one_line(ui, &format!("{}{}", self.name(indicator), value), FontId::proportional(12.5), TXT, width),
                         one_line(ui, l.health(rule.current_status()), FontId::proportional(11.0), color, width),
-                        one_line(ui, &rule.suggested_action, FontId::proportional(10.5), MUT, width),
+                        one_line(ui, &l.message(&rule.suggested_action), FontId::proportional(10.5), MUT, width),
                     ];
                     let painter = ui.painter_at(rect);
                     painter.rect_filled(Rect::from_min_size(rect.min + vec2(0.0, 6.0), vec2(3.0, 46.0)), CornerRadius::ZERO, color);
@@ -923,12 +955,7 @@ impl eframe::App for LiveApp {
         self.left_panel(ctx);
         self.central(ctx);
         self.capture(ctx);
-        if !self.went_back && self.view() != before {
-            self.history.push(before);
-            if self.history.len() > 50 {
-                self.history.remove(0);
-            }
-        }
+        let _ = before;
         // Repaint budget: about 30 fps while focused and animating (smooth pulse), otherwise once a second.
         let focused = ctx.input(|input| input.focused);
         let interval = if self.screenshot.is_some() || self.backend.pending_writes() > 0 {
@@ -1012,7 +1039,7 @@ fn guidance_card(ui: &mut Ui, l: Lang, report: &HealthReport) {
                 ui.label(RichText::new(l.message(&report.message)).size(12.5));
                 if let Some(health) = &report.evaluation {
                     if report.status == health.status && health.rules.iter().all(|rule| !rule.status.is_evaluated() || rule.current) {
-                        ui.label(RichText::new(&health.explanation).size(12.5).color(MUT));
+                        ui.label(RichText::new(l.message(&health.explanation)).size(12.5).color(MUT));
                     }
                 }
             });
@@ -1025,20 +1052,20 @@ fn guidance_card(ui: &mut Ui, l: Lang, report: &HealthReport) {
             .id_salt("urgent-help")
             .default_open(report.status == HealthStatus::Critical)
             .show(ui, |ui| {
-                ui.label(RichText::new(&health.emergency_guidance).size(12.5).color(CRIT));
+                ui.label(RichText::new(l.message(&health.emergency_guidance)).size(12.5).color(CRIT));
                 ui.label(RichText::new(l.t("The application does not send messages to the crew or ground automatically.", "Приложение не отправляет сообщения экипажу или на Землю автоматически.")).size(11.0).color(MUT));
             });
         egui::CollapsingHeader::new(RichText::new(l.t("Spaceflight hazards and prevention", "Факторы полёта и профилактика")).size(12.5)).id_salt("hazards").show(ui, |ui| {
             for topic in &health.education {
                 ui.separator();
-                ui.label(RichText::new(&topic.title).size(12.5).strong());
-                ui.label(RichText::new(&topic.explanation).size(12.5).color(MUT));
-                ui.label(RichText::new(&topic.suggested_action).size(12.5));
+                ui.label(RichText::new(l.message(&topic.title)).size(12.5).strong());
+                ui.label(RichText::new(l.message(&topic.explanation)).size(12.5).color(MUT));
+                ui.label(RichText::new(l.message(&topic.suggested_action)).size(12.5));
                 source_links(ui, &topic.source_urls);
             }
         });
         egui::CollapsingHeader::new(RichText::new(l.t("Scope and limitations", "Границы применения")).size(12.5)).id_salt("scope").show(ui, |ui| {
-            ui.label(RichText::new(&health.disclaimer).size(12.5).color(MUT));
+            ui.label(RichText::new(l.message(&health.disclaimer)).size(12.5).color(MUT));
             ui.label(RichText::new(format!("{} {}  \u{00B7}  {}", l.t("Rule set", "Набор правил"), health.rule_set_version, l.t("demonstration guidance", "демонстрационные рекомендации"))).font(mono(10.5)).color(MUT));
         });
     });
@@ -1059,18 +1086,18 @@ fn rule_block(ui: &mut Ui, l: Lang, rule: &HealthRule) {
             if let Some(reason) = &rule.unavailable_reason {
                 ui.label(RichText::new(l.message(reason)).size(12.0).color(MUT));
             }
-            ui.label(RichText::new(&rule.explanation).size(12.5));
+            ui.label(RichText::new(l.message(&rule.explanation)).size(12.5));
             ui.label(RichText::new(l.escalation(rule.escalation)).size(12.5).strong().color(if urgent { CRIT } else { TXT }));
-            ui.label(RichText::new(format!("\u{2022} {}", rule.suggested_action)).size(12.5));
+            ui.label(RichText::new(format!("\u{2022} {}", l.message(&rule.suggested_action))).size(12.5));
             if !rule.flight_context.is_empty() {
-                ui.label(RichText::new(&rule.flight_context).size(12.0).color(MUT));
+                ui.label(RichText::new(l.message(&rule.flight_context)).size(12.0).color(MUT));
             }
         });
     });
     let rect = response.response.rect;
     ui.painter().rect_filled(Rect::from_min_size(rect.min, vec2(3.0, rect.height())), CornerRadius::ZERO, color);
     ui.add_space(4.0);
-    egui::CollapsingHeader::new(RichText::new(format!("{}: {}", l.t("Rule and sources", "Правило и источники"), rule.title)).size(12.5))
+    egui::CollapsingHeader::new(RichText::new(format!("{}: {}", l.t("Rule and sources", "Правило и источники"), l.message(&rule.title))).size(12.5))
         .id_salt(&rule.rule_id)
         .show(ui, |ui| {
             let until = rule.valid_until.as_deref().map(|t| l.timestamp(t)).unwrap_or_else(|| l.t("not evaluated", "не оценено").into());
@@ -1333,4 +1360,8 @@ fn nasa_panel(ui: &mut Ui, metric: Option<&str>) {
             ui.hyperlink_to(format!("{}: {} — {}", source.agency, source.title, entry.source_section), &source.url);
         }
     }
+}
+
+fn galley_width(ui: &Ui, text: &RichText) -> f32 {
+    egui::WidgetText::from(text.clone()).into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, FontId::default()).size().x
 }

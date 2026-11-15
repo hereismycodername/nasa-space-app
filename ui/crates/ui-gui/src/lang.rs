@@ -213,6 +213,9 @@ impl Lang {
         if let Some(count) = text.strip_suffix(RULES_SUFFIX) {
             return format!("Актуальных оценок правил: {count}. Отсутствие срабатываний не означает, что все органы здоровы.");
         }
+        if let Some(ru) = server_ru(text) {
+            return ru;
+        }
         let mut out = text.to_string();
         if let Some(at) = out.find(NOTE_PREFIX) {
             if let Some(note) = series_note_ru(&out[at + NOTE_PREFIX.len()..]) {
@@ -224,6 +227,50 @@ impl Lang {
         }
         out
     }
+}
+
+/// The server speaks English; known server sentences are shown in Russian here: whole sentences, the
+/// overall summary ("... Metrics evaluated: a of b.") and rule explanations that start with the value
+/// ("195 mmHg. Urgent threshold ...").
+fn server_ru(text: &str) -> Option<String> {
+    use crate::server_ru::SERVER_RU;
+    let exact = |t: &str| SERVER_RU.iter().find(|(en, _)| *en == t).map(|(_, ru)| ru.to_string());
+    if let Some(ru) = exact(text) {
+        return Some(ru);
+    }
+    if let Some(at) = text.find(" Metrics evaluated: ") {
+        let head = exact(&text[..at])?;
+        let tail = text[at + " Metrics evaluated: ".len()..].trim_end_matches('.');
+        let (done, total) = tail.split_once(" of ")?;
+        return Some(format!("{head} Оценено показателей: {done} из {total}."));
+    }
+    let (first, rest) = text.split_once(". ")?;
+    let (value, unit) = first.split_once(' ')?;
+    value.parse::<f64>().ok()?;
+    let unit = match unit {
+        "of 5" => "из 5",
+        "of 10" => "из 10",
+        "h" => "ч",
+        "bpm" => "уд/мин",
+        "mmHg" => "мм рт. ст.",
+        "min" => "мин",
+        "mg/dL" => "мг/дл",
+        other => other,
+    };
+    let rest = exact(rest).unwrap_or_else(|| sentences_ru(rest));
+    Some(format!("{} {unit}. {rest}", value.replace('.', ",")))
+}
+
+/// Translates each known server sentence inside a longer text (longest first).
+fn sentences_ru(text: &str) -> String {
+    use crate::server_ru::SERVER_RU;
+    let mut pairs: Vec<&(&str, &str)> = SERVER_RU.iter().filter(|(en, _)| en.len() > 24).collect();
+    pairs.sort_by_key(|(en, _)| std::cmp::Reverse(en.len()));
+    let mut out = text.to_string();
+    for (en, ru) in pairs {
+        out = out.replace(en, ru);
+    }
+    out
 }
 
 const RULES_SUFFIX: &str = " current rule evaluations. No rule alerts does not mean that all organs are healthy.";
@@ -320,6 +367,21 @@ mod tests {
             Lang::Ru.message(note),
             "Нет связи, сохранённые данные. 7 дней, UTC; среднее за интервал; шкала: время измерения; по времени получения: 0. Пропуск означает, что замеров не было."
         );
+    }
+
+    #[test]
+    fn english_server_texts_read_in_russian() {
+        assert_eq!(Lang::Ru.message("Sleep"), "Сон");
+        assert_eq!(Lang::Ru.message("4.14 h. Sleep duration <7 hours is below the selected adult reference."), "4,14 ч. Продолжительность сна <7 часов — ниже выбранного ориентира для взрослых.");
+        assert_eq!(
+            Lang::Ru.message("Some metrics need attention and a repeat check. See the reasons and next steps. Metrics evaluated: 5 of 12."),
+            "Есть показатели, требующие внимания и повторной проверки. См. причины и следующие действия. Оценено показателей: 5 из 12."
+        );
+        assert_eq!(
+            Lang::Ru.message("68 bpm. The <60 or >100 bpm reference did not trigger. The reference applies only at rest; exertion and fitness change heart rate. The app does not know whether you are at rest."),
+            "68 уд/мин. Ориентир <60 или >100 bpm не сработал. Ориентир применим только в покое; нагрузка и тренированность меняют пульс. Контекст покоя приложению неизвестен."
+        );
+        assert_eq!(Lang::En.message("Sleep"), "Sleep");
     }
 
     #[test]

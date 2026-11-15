@@ -53,10 +53,10 @@ fn find_rule<'a>(health: &'a HealthEvaluation, metric: &str) -> &'a HealthRule {
 #[test]
 fn explanations_use_russian_units_and_compact_decimal_values() {
     for (metric, value, expected) in [
-        ("mood", 2.0, "2 из 5."),
-        ("sleepHours", 4.14, "4,14 ч."),
-        ("heartRate", 72.0, "72 уд/мин."),
-        ("systolicPressure", 115.0, "115 мм рт. ст."),
+        ("mood", 2.0, "2 of 5."),
+        ("sleepHours", 4.14, "4.14 h."),
+        ("heartRate", 72.0, "72 bpm."),
+        ("systolicPressure", 115.0, "115 mmHg."),
     ] {
         let result = assess(&[entry(metric, value, Some(now()))], now());
         let explanation = &find_rule(&result, metric).explanation;
@@ -188,7 +188,7 @@ fn newest_unknown_delivery_does_not_override_known_fresh_observation() {
     let rule = find_rule(&result, "systolicPressure");
     assert_eq!(rule.status, RuleStatus::NoAlert);
     assert_eq!(rule.measurement_ids, ["observed"]);
-    assert!(rule.explanation.starts_with("115 мм рт. ст."));
+    assert!(rule.explanation.starts_with("115 mmHg."));
 }
 
 #[test]
@@ -318,18 +318,18 @@ fn all_six_unconfigured_registry_metrics_stay_unevaluated_for_every_quality_stat
 fn critical_pressure_guidance_places_emergency_actions_before_asymptomatic_repeat() {
     let result = assess(&[entry("systolicPressure", 200.0, Some(now()))], now());
     let action = find_rule(&result, "systolicPressure").suggested_action;
-    let emergency = action.find("немедленно привлеките экипаж").unwrap();
-    let repeat = action.find("не раньше чем через минуту").unwrap();
+    let emergency = action.find("involve the crew immediately").unwrap();
+    let repeat = action.find("after at least one minute").unwrap();
     assert!(emergency < repeat);
-    assert!(action.contains("Если тревожных симптомов нет"));
+    assert!(action.contains("If there are no alarming symptoms"));
 }
 
 #[test]
 fn mood_threshold_is_labeled_as_team_policy_and_not_attributed_to_nasa() {
     let result = assess(&[entry("mood", 2.0, Some(now()))], now());
     let rule = find_rule(&result, "mood");
-    assert!(rule.explanation.contains("условный порог команды"));
-    assert!(rule.explanation.contains("NASA не задаёт"));
+    assert!(rule.explanation.contains("eam threshold"));
+    assert!(rule.explanation.contains("NASA does not set"));
     assert_eq!(rule.escalation, "crew");
 }
 

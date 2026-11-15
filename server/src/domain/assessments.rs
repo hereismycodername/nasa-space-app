@@ -24,7 +24,7 @@ pub(crate) fn assess(
     let Some(row) = latest else {
         return Ok(Assessment {
             status: "no-data",
-            explanation: "Нет измерений. Запустите симулятор или введите показатель.",
+            explanation: "No measurements. Start the simulator or enter a reading.",
         });
     };
     let policy = definition_for(&row.metric).ok_or(InvalidStoredTimestamp)?;
@@ -32,24 +32,24 @@ pub(crate) fn assess(
     Ok(match quality.status {
         FreshnessStatus::Missing => Assessment {
             status: "no-data",
-            explanation: "Нет измерений. Запустите симулятор или введите показатель.",
+            explanation: "No measurements. Start the simulator or enter a reading.",
         },
         FreshnessStatus::UnknownTime => Assessment {
             status: "unknown-time",
             explanation:
-                "Время измерения неизвестно. Время получения не подтверждает свежесть показателя.",
+                "Measurement time is unknown. The time of receipt does not confirm that the reading is fresh.",
         },
         FreshnessStatus::ClockSkew => Assessment {
             status: "clock-skew",
-            explanation: "Время измерения находится в будущем относительно сервера. Проверьте часы источника; свежесть не подтверждена.",
+            explanation: "Measurement time is in the future relative to the server. Check the source clock; freshness is not confirmed.",
         },
         FreshnessStatus::Stale => Assessment {
             status: "stale",
-            explanation: "Последнее принятое измерение устарело по демонстрационной политике показателя. Это не медицинская оценка.",
+            explanation: "The latest accepted measurement is stale under the metric's demonstration policy. This is not a medical assessment.",
         },
         FreshnessStatus::Fresh => Assessment {
             status: "not-evaluated",
-            explanation: "Последнее принятое измерение достаточно свежее по демонстрационной политике показателя. Это сводка свежести; результаты демонстрационных правил возвращаются отдельно в health.",
+            explanation: "The latest accepted measurement is fresh under the metric's demonstration policy. This is a freshness summary; demonstration rule results are returned separately in health.",
         },
     })
 }

@@ -71,7 +71,7 @@ async fn empty_assessment_preserves_be06_and_appends_versioned_health_contract()
     assert_eq!(assessment["astronautId"], "demo-astronaut");
     assert_eq!(
         assessment["explanation"],
-        "Нет измерений. Запустите симулятор или введите показатель."
+        "No measurements. Start the simulator or enter a reading."
     );
     let health = &assessment["health"];
     assert_eq!(health["ruleSetVersion"], "be08-demo-1");
@@ -413,6 +413,6 @@ async fn research_context_uses_real_records_preserves_quality_and_never_invents_
         assert_eq!(insight["measurementId"], saved["id"]);
         let observation = insight["observation"].as_str().unwrap();
         assert!(observation.contains(&format!("{value} {unit}")));
-        assert!(observation.contains("не вывод о тенденции"));
+        assert!(observation.contains("not a trend"));
     }
 }

@@ -1,0 +1,172 @@
+{
+  "version": "space-health-research-2026-11-15-v2",
+  "reviewedAt": "2026-11-15",
+  "contentType": "curated-research-context",
+  "mappingAuthor": "AstroCheck team",
+  "notice": "Short summaries of NASA and CSA material. The links to metrics were chosen by the AstroCheck team; they are not diagnostic rules of the agencies and not astronaut measurements.",
+  "sources": [
+    {
+      "id": "hrp-risks",
+      "title": "Risks of Human Spaceflight",
+      "url": "https://www.nasa.gov/hrp/risks/",
+      "agency": "NASA"
+    },
+    {
+      "id": "hrp-research",
+      "title": "Ongoing HRP Research in Space",
+      "url": "https://www.nasa.gov/hrp/ongoing-hrp-research/",
+      "agency": "NASA"
+    },
+    {
+      "id": "csa-radiation",
+      "agency": "CSA",
+      "title": "Monitoring radiation for astronaut health",
+      "url": "https://www.asc-csa.gc.ca/eng/news/articles/2026/2026-02-26-monitoring-radiation-astronaut-health.asp"
+    },
+    {
+      "id": "csa-space-science",
+      "agency": "CSA",
+      "title": "Why do we conduct science experiments in space?",
+      "url": "https://www.asc-csa.gc.ca/eng/iss/science/why-do-we-conduct-science-experiments-in-space.asp"
+    }
+  ],
+  "entries": [
+    {
+      "id": "cardiovascular",
+      "kind": "risk",
+      "title": "Circulation in weightlessness",
+      "sourceSection": "Risk of Cardiovascular Adaptations",
+      "sourceId": "hrp-risks",
+      "summary": "Weightlessness changes how the heart, blood vessels and circulation work.",
+      "metrics": [
+        "heartRate",
+        "systolicPressure",
+        "diastolicPressure"
+      ],
+      "projectUse": "We show heart rate and blood pressure together with their history to follow changes.",
+      "limitation": "These measurements do not identify the cause of changes and do not diagnose the effects of weightlessness."
+    },
+    {
+      "id": "sleep",
+      "kind": "risk",
+      "title": "Sleep and irregular schedules",
+      "sourceSection": "Risk of Inadequate Sleep and Irregular Schedules",
+      "sourceId": "hrp-risks",
+      "summary": "Sleep loss and disrupted biological rhythms are among the risks under study.",
+      "metrics": [
+        "sleepHours"
+      ],
+      "projectUse": "Sleep duration is part of the daily entry and the charts.",
+      "limitation": "Duration does not describe sleep quality; the BE-08 threshold comes from a separate terrestrial source, not NASA."
+    },
+    {
+      "id": "fitness",
+      "kind": "risk",
+      "title": "Fitness, bones and muscles",
+      "sourceSection": "Risk of Reduced Cardiorespiratory and Musculoskeletal Fitness",
+      "sourceId": "hrp-risks",
+      "summary": "NASA studies exercise to preserve physical fitness in flight.",
+      "metrics": [
+        "exerciseMinutes",
+        "backPain"
+      ],
+      "projectUse": "We show activity and back-pain reports as context for a discussion with a medic.",
+      "limitation": "Exercise minutes and pain do not measure bone density or muscle strength. The pain scale is a team choice."
+    },
+    {
+      "id": "sans",
+      "kind": "risk",
+      "title": "Eye and brain changes",
+      "sourceSection": "Risk of Spaceflight Associated Neuro-ocular Syndrome (SANS)",
+      "sourceId": "hrp-risks",
+      "summary": "Spaceflight can be accompanied by changes in the structure of the eyes and the brain.",
+      "metrics": [
+        "visionBlur"
+      ],
+      "projectUse": "We added a diary of subjective blurred vision.",
+      "limitation": "A self-rating does not diagnose SANS and does not replace an eye examination."
+    },
+    {
+      "id": "hypoxia",
+      "kind": "risk",
+      "title": "Lack of oxygen",
+      "sourceSection": "Risk of Hypoxia",
+      "sourceId": "hrp-risks",
+      "summary": "NASA studies the risk of hypoxia in preparation for spacewalks.",
+      "metrics": [
+        "spo2"
+      ],
+      "projectUse": "SpO₂ can be recorded and its trend reviewed.",
+      "limitation": "A pulse oximeter does not identify the cause of a deviation. The prototype has no automatic SpO₂ rule."
+    },
+    {
+      "id": "immune",
+      "kind": "risk",
+      "title": "Immune response changes",
+      "sourceSection": "Risk of Altered Immune System Responses",
+      "sourceId": "hrp-risks",
+      "summary": "Spaceflight stressors can affect the immune system.",
+      "metrics": [
+        "temperature"
+      ],
+      "projectUse": "Temperature is included as a general self-monitoring metric.",
+      "limitation": "Temperature does not measure the immune response and does not confirm an infection."
+    },
+    {
+      "id": "archer",
+      "kind": "study",
+      "title": "ARCHeR: sleep, activity and well-being",
+      "sourceSection": "ARCHeR",
+      "sourceId": "hrp-research",
+      "summary": "The study tracked the well-being, activity and sleep of the Artemis II crew.",
+      "metrics": [
+        "sleepHours",
+        "exerciseMinutes",
+        "mood"
+      ],
+      "projectUse": "We grouped these metrics into daily observation.",
+      "limitation": "Our self-reports do not reproduce the ARCHeR protocol or instruments; the mood scale was designed by the team."
+    },
+    {
+      "id": "standard-measures",
+      "kind": "study",
+      "title": "Standard Measures: consistent observations",
+      "sourceSection": "Standard Measures",
+      "sourceId": "hrp-research",
+      "summary": "The study collects a consistent set of physiological and psychological measurements.",
+      "metrics": [
+        "sleepHours",
+        "mood"
+      ],
+      "projectUse": "We use repeated records with units, times and provenance.",
+      "limitation": "This is how our app is organised, not an implementation of a NASA research protocol."
+    },
+    {
+      "id": "csa-cans",
+      "kind": "research",
+      "title": "Radiation: a separate instrument channel",
+      "sourceSection": "Monitoring radiation for astronaut health",
+      "sourceId": "csa-radiation",
+      "summary": "CSA describes the development of CANS, an autonomous instrument for continuous measurement of neutron exposure in space.",
+      "metrics": [],
+      "projectUse": "We show the limit of the monitoring: radiation needs its own measurement channel. Heart rate, blood pressure and well-being do not replace it.",
+      "limitation": "AstroCheck has no dosimeter and no radiation channel. We do not receive CANS data, do not calculate dose and do not assess radiation safety."
+    },
+    {
+      "id": "csa-space-science",
+      "kind": "research",
+      "title": "Weightlessness, physical activity and the heart",
+      "sourceSection": "Using the knowledge obtained to improve our quality of life on Earth",
+      "sourceId": "csa-space-science",
+      "summary": "CSA explains how studies of the body in weightlessness help to understand the effects of reduced physical activity; the heart, blood vessels and bones are among the subjects.",
+      "metrics": [
+        "heartRate",
+        "systolicPressure",
+        "diastolicPressure",
+        "exerciseMinutes"
+      ],
+      "projectUse": "We link the activity diary with heart-rate and blood-pressure observation: you can open the history or record a new measurement. This is the team's choice for organising observations.",
+      "limitation": "The CSA overview sets no heart-rate or blood-pressure thresholds and no exercise norms. Our records do not reproduce the research protocol and do not prove the effect of weightlessness on a specific measurement."
+    }
+  ]
+}

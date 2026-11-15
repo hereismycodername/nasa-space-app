@@ -35,26 +35,26 @@ pub(crate) fn insights(
     qualities: &[MetricQuality],
 ) -> Result<Vec<ResearchInsight>, InvalidStoredTimestamp> {
     let catalog: Catalog =
-        serde_json::from_str(include_str!("../../../resources/nasa/catalog.json"))
+        serde_json::from_str(include_str!("../../../resources/nasa/catalog.en.json"))
             .map_err(|_| InvalidStoredTimestamp)?;
     metrics.iter().filter(|m| matches!(m.metric, "sleepHours" | "heartRate" | "systolicPressure" | "diastolicPressure" | "exerciseMinutes")).map(|m| {
         let quality = &qualities.iter().find(|q| q.metric == m.metric).ok_or(InvalidStoredTimestamp)?.quality;
         let measurement = m.latest_known_measurement.as_ref().or(m.latest_received_measurement.as_ref());
         let quality_label = match quality.status.as_str() {
-            "fresh" => "свежее по политике данных",
-            "stale" => "устарело; нужно новое измерение",
-            "unknownTime" => "время неизвестно; свежесть не подтверждена",
-            "clockSkew" => "время в будущем; проверьте часы источника",
-            _ => "нет данных",
+            "fresh" => "fresh under the data policy",
+            "stale" => "stale; a new measurement is needed",
+            "unknownTime" => "time unknown; freshness not confirmed",
+            "clockSkew" => "time in the future; check the source clock",
+            _ => "no data",
         };
         let observation = match measurement {
-            Some(row) => format!("Записано: {} {}. Время измерения: {}. Источник: {}. Качество на момент ответа: {}. Это одно наблюдение, а не вывод о тенденции или диагноз.", row.value, row.unit, row.measured_at.as_deref().unwrap_or("неизвестно"), row.source, quality_label),
-            None => "Измерений пока нет. Заполните показатель, чтобы наблюдать его вместе с научным контекстом.".into(),
+            Some(row) => format!("Recorded: {} {}. Measured at: {}. Source: {}. Quality at response time: {}. This is a single observation, not a trend or a diagnosis.", row.value, row.unit, row.measured_at.as_deref().unwrap_or("unknown"), row.source, quality_label),
+            None => "No measurements yet. Enter this metric to follow it together with the research context.".into(),
         };
         let label = match m.metric {
-            "sleepHours" => "Записать длительность сна",
-            "exerciseMinutes" => "Записать минуты активности",
-            _ => "Записать повторное измерение",
+            "sleepHours" => "Record sleep duration",
+            "exerciseMinutes" => "Record active minutes",
+            _ => "Record a repeat measurement",
         };
         let contexts = catalog.entries.iter().filter(|e| e.metrics.iter().any(|id| id == m.metric)).map(|e| {
             let source = catalog.sources.iter().find(|s| s.id == e.source_id).ok_or(InvalidStoredTimestamp)?;
@@ -63,8 +63,8 @@ pub(crate) fn insights(
         }).collect::<Result<Vec<_>, InvalidStoredTimestamp>>()?;
         Ok(ResearchInsight { metric: m.metric.into(), catalog_version: catalog.version.clone(), observation, measurement_id: quality.measurement_id.clone(), quality: quality.status.as_str().into(), contexts, actions: vec![
             ResearchAction { kind: ActionKind::Record, label: label.into() },
-            ResearchAction { kind: ActionKind::History, label: "Посмотреть историю показателя".into() },
-            ResearchAction { kind: ActionKind::Guidance, label: "Открыть оценку BE-08 и рекомендации".into() },
+            ResearchAction { kind: ActionKind::History, label: "View metric history".into() },
+            ResearchAction { kind: ActionKind::Guidance, label: "Open the BE-08 assessment and guidance".into() },
         ] })
     }).collect()
 }

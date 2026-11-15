@@ -396,7 +396,9 @@ impl Backend for HttpBackend {
             Status::Act
         } else if statuses.contains(&Status::Watch) {
             Status::Watch
-        } else if !statuses.is_empty() && statuses.iter().all(|status| *status == Status::Normal) {
+        } else if statuses.contains(&Status::Normal) {
+            // no rule fired among the metrics the rules evaluated; metrics without a rule or without a
+            // fresh reading do not turn the system grey, but a system with no evaluated metric stays unassessed
             Status::Normal
         } else if statuses.iter().any(|status| *status != Status::NoData) {
             Status::Unassessed

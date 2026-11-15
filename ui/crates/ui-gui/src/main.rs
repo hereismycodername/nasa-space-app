@@ -7,6 +7,7 @@ mod figure;
 mod ground;
 mod female_shape;
 mod lang;
+mod server_ru;
 mod live;
 mod theme;
 mod widgets;
