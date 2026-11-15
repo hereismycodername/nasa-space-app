@@ -17,11 +17,14 @@ use ui_model::{Backend, HealthReport, HealthRule, HealthStatus, IndicatorInfo, R
 
 const DAY_MS: i64 = 86_400_000;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Tab {
     Health,
     Server,
 }
+
+/// Where the user is: tab, body system, metric.
+type View = (Tab, Option<String>, Option<String>);
 
 pub(crate) struct LiveApp {
     backend: HttpBackend,
@@ -43,6 +46,10 @@ pub(crate) struct LiveApp {
     started: Instant,
     screenshot: Option<String>,
     screenshot_requested: bool,
+    /// views to go back to, newest last
+    history: Vec<View>,
+    /// the last change of view was a step back, so it is not recorded again
+    went_back: bool,
 }
 
 impl LiveApp {
@@ -59,6 +66,7 @@ impl LiveApp {
             mode: match options.mode.as_deref() {
                 Some("skeleton") => figure::Mode::Skeleton,
                 Some("xray") => figure::Mode::XRay,
+                Some("thermal") | Some("ir") => figure::Mode::Thermal,
                 _ => figure::Mode::Organs,
             },
             role: if options.role.as_deref() == Some("ground") { Role::Ground } else { Role::Crew },
@@ -73,6 +81,8 @@ impl LiveApp {
             started: Instant::now(),
             screenshot: options.shot,
             screenshot_requested: false,
+            history: vec![],
+            went_back: false,
         }
     }
 
@@ -130,6 +140,20 @@ impl LiveApp {
     }
 
     /// Keep messages untranslated; they are translated when drawn, so a language switch applies to them too.
+    fn view(&self) -> View {
+        (self.tab, self.system.clone(), self.metric.clone())
+    }
+
+    /// Returns to the previous view (tab, body system, metric).
+    fn go_back(&mut self) {
+        if let Some((tab, system, metric)) = self.history.pop() {
+            self.tab = tab;
+            self.system = system;
+            self.metric = metric;
+            self.went_back = true;
+        }
+    }
+
     fn notice(&mut self, text: String) {
         self.toast = Some((text.clone(), Instant::now()));
         self.notices.push_front(text);
@@ -229,7 +253,7 @@ impl LiveApp {
                     caption(ui, l.t("Anatomy", "Анатомия"));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let mut mode = self.mode;
-                        let modes = [(figure::Mode::XRay, l.t("X-ray", "Рентген")), (figure::Mode::Skeleton, l.t("Skeleton", "Скелет")), (figure::Mode::Organs, l.t("Organs", "Органы"))];
+                        let modes = [(figure::Mode::Thermal, l.t("IR", "ИК")), (figure::Mode::XRay, l.t("X-ray", "Рентген")), (figure::Mode::Skeleton, l.t("Skeleton", "Скелет")), (figure::Mode::Organs, l.t("Organs", "Органы"))];
                         if segmented(ui, &mut mode, &modes) {
                             self.mode = mode;
                         }
@@ -237,8 +261,13 @@ impl LiveApp {
                 });
                 ui.add_space(4.0);
                 let selected = self.selected_system();
-                let height = (ui.available_height() - 4.0).max(300.0);
+                let height = (ui.available_height() - 32.0).max(300.0);
+                let vital = |id: &str| self.backend.latest(id).map(|r| r.value as f32);
+                let (temp, hr) = (vital("temp"), vital("hr"));
+                self.figure.set_vitals(temp, hr);
                 let clicked = self.figure.show(ui, vec2(ui.available_width(), height), &|system| self.backend.system_status(system), &selected, self.mode, time, animate);
+                ui.add_space(4.0);
+                self.figure.legend(ui, self.mode, time, animate);
                 if let Some(system) = clicked {
                     self.open_system(system);
                 }
@@ -256,11 +285,21 @@ impl LiveApp {
                         self.tab = tab;
                     }
                 }
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let back = ui
+                        .add_enabled(!self.history.is_empty(), egui::Button::new(RichText::new(format!("\u{2039}  {}", l.t("Back", "Назад"))).size(12.5)))
+                        .on_hover_text(l.t("Esc, Backspace, Alt+Left or the mouse back button", "Esc, Backspace, Alt+← или боковая кнопка мыши"));
+                    if back.clicked() {
+                        self.go_back();
+                    }
+                });
             });
             let rect = ui.min_rect();
             ui.painter().hline(rect.left()..=ui.max_rect().right(), rect.bottom() + 1.0, stroke(1.0, LINE));
             ui.add_space(10.0);
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| match self.tab {
+            // every view keeps its own scroll position, so a newly opened one starts at the top
+            let view = (self.tab, self.system.clone(), self.metric.clone());
+            egui::ScrollArea::vertical().id_salt(("live-view", view)).auto_shrink([false, false]).show(ui, |ui| match self.tab {
                 Tab::Health => {
                     self.crumbs(ui);
                     if let Some(id) = self.metric.clone() {
@@ -829,17 +868,35 @@ impl eframe::App for LiveApp {
             self.fonts_for = Some(self.lang);
             ctx.request_repaint();
         }
+        // back: Esc, Backspace or Alt+Left (not while typing), or the mouse back button
+        let typing = ctx.wants_keyboard_input();
+        let back = ctx.input(|i| {
+            (!typing && (i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Backspace)))
+                || (i.modifiers.alt && i.key_pressed(egui::Key::ArrowLeft))
+                || i.pointer.button_pressed(egui::PointerButton::Extra1)
+        });
+        let before = self.view();
+        self.went_back = false;
+        if back {
+            self.go_back();
+        }
         self.top_bar(ctx);
         self.status_bar(ctx);
         self.left_panel(ctx);
         self.central(ctx);
         self.capture(ctx);
-        // Repaint budget as in the prototype: 10 fps while focused and animating, otherwise once a second.
+        if !self.went_back && self.view() != before {
+            self.history.push(before);
+            if self.history.len() > 50 {
+                self.history.remove(0);
+            }
+        }
+        // Repaint budget: about 30 fps while focused and animating (smooth pulse), otherwise once a second.
         let focused = ctx.input(|input| input.focused);
         let interval = if self.screenshot.is_some() || self.backend.pending_writes() > 0 {
             250
         } else if !self.lite && focused {
-            100
+            33
         } else {
             1000
         };

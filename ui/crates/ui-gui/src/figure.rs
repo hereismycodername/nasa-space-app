@@ -16,6 +16,163 @@ pub enum Mode {
     Organs,
     Skeleton,
     XRay,
+    /// infrared: the skin surface in an ironbow palette, driven by the latest body temperature
+    Thermal,
+}
+
+/// Main arteries in design units: control points of smooth curves. The right half is listed; the left half
+/// is its mirror image. A branch starts on a control point of an earlier path, so its distance from the heart
+/// (which times the pulse wave) continues from there.
+const VESSELS: &[&[(f32, f32)]] = &[
+    // aortic arch and descending aorta
+    &[(126.0, 118.0), (125.0, 108.0), (122.0, 101.0), (117.0, 104.0), (119.0, 116.0), (120.0, 150.0), (120.0, 180.0), (120.0, 212.0)],
+    // renal artery
+    &[(120.0, 180.0), (112.0, 182.0), (104.0, 187.0)],
+    // common carotid, then internal (into the skull) and superficial temporal (the side of the head)
+    &[(122.0, 101.0), (117.0, 88.0), (114.0, 72.0), (113.0, 58.0)],
+    &[(113.0, 58.0), (113.0, 46.0), (116.0, 32.0)],
+    &[(113.0, 58.0), (107.0, 50.0), (104.0, 38.0), (106.0, 22.0)],
+    // subclavian, axillary and brachial down to the elbow
+    &[(117.0, 104.0), (106.0, 96.0), (90.0, 95.0), (76.0, 100.0), (66.0, 112.0), (61.0, 135.0), (59.0, 165.0), (56.0, 185.0)],
+    // radial (thumb side) and ulnar
+    &[(56.0, 185.0), (50.0, 205.0), (43.0, 230.0), (38.0, 255.0), (36.0, 270.0)],
+    &[(56.0, 185.0), (58.0, 205.0), (54.0, 230.0), (48.0, 255.0), (45.0, 272.0)],
+    // iliac, femoral and popliteal down to the knee
+    &[(120.0, 212.0), (112.0, 226.0), (105.0, 240.0), (101.0, 258.0), (99.0, 290.0), (98.0, 330.0), (97.0, 372.0)],
+    // anterior and posterior tibial
+    &[(97.0, 372.0), (101.0, 400.0), (102.0, 440.0), (100.0, 480.0), (96.0, 497.0), (90.0, 506.0)],
+    &[(97.0, 372.0), (95.0, 400.0), (94.0, 440.0), (93.0, 478.0), (92.0, 500.0)],
+];
+const MIRROR_X: f32 = 239.0;
+/// visual pulse-wave speed, design units per second (slowed down from ~6 m/s so the eye can follow it)
+const WAVE_SPEED: f32 = 380.0;
+/// how far behind the wave front the glow fades, design units
+const WAVE_TAIL: f32 = 42.0;
+/// curve samples per control-point span
+const SAMPLES: usize = 6;
+
+/// A smooth artery: sampled points and each point's distance from the heart along the vessels.
+struct Vessel {
+    pts: Vec<P>,
+    dist: Vec<f32>,
+}
+
+/// Catmull-Rom curve through the control points.
+fn smooth_curve(c: &[(f32, f32)]) -> Vec<P> {
+    let at = |i: isize| {
+        let i = i.clamp(0, c.len() as isize - 1) as usize;
+        c[i]
+    };
+    let mut out = vec![];
+    for i in 0..c.len() - 1 {
+        let (p0, p1, p2, p3) = (at(i as isize - 1), at(i as isize), at(i as isize + 1), at(i as isize + 2));
+        for k in 0..SAMPLES {
+            let t = k as f32 / SAMPLES as f32;
+            let (t2, t3) = (t * t, t * t * t);
+            let f = |a: f32, b: f32, c: f32, d: f32| 0.5 * (2.0 * b + (c - a) * t + (2.0 * a - 5.0 * b + 4.0 * c - d) * t2 + (3.0 * b - a - 3.0 * c + d) * t3);
+            out.push(P { x: f(p0.0, p1.0, p2.0, p3.0), y: f(p0.1, p1.1, p2.1, p3.1) });
+        }
+    }
+    let last = c[c.len() - 1];
+    out.push(P { x: last.0, y: last.1 });
+    out
+}
+
+/// All arteries, both halves.
+fn arteries() -> Vec<Vessel> {
+    let mut right: Vec<Vessel> = vec![];
+    for (n, ctrl) in VESSELS.iter().enumerate() {
+        let pts = smooth_curve(ctrl);
+        // where the branch leaves an earlier path: that control point's distance from the heart
+        let start = VESSELS[..n]
+            .iter()
+            .zip(&right)
+            .find_map(|(parent, v)| parent.iter().position(|&q| q == ctrl[0]).map(|i| v.dist[i * SAMPLES]))
+            .unwrap_or(0.0);
+        let mut dist = vec![start];
+        for w in pts.windows(2) {
+            let d = dist[dist.len() - 1] + ((w[1].x - w[0].x).powi(2) + (w[1].y - w[0].y).powi(2)).sqrt();
+            dist.push(d);
+        }
+        right.push(Vessel { pts, dist });
+    }
+    // the arch belongs to the midline; everything else also runs on the left
+    let left: Vec<Vessel> = right.iter().skip(1).map(|v| Vessel { pts: v.pts.iter().map(|q| P { x: MIRROR_X - q.x, y: q.y }).collect(), dist: v.dist.clone() }).collect();
+    right.into_iter().chain(left).collect()
+}
+
+/// A tapered, anti-aliased band through `pts` with a half width and a colour per point.
+fn ribbon(painter: &egui::Painter, pts: &[Pos2], half: &[f32], col: &[Color32], feather: f32) {
+    if pts.len() < 2 {
+        return;
+    }
+    let mut mesh = egui::Mesh::default();
+    for i in 0..pts.len() {
+        let a = pts[i.saturating_sub(1)];
+        let b = pts[(i + 1).min(pts.len() - 1)];
+        let n = (b - a).normalized().rot90();
+        let (p, h) = (pts[i], half[i]);
+        mesh.colored_vertex(p - n * (h + feather), Color32::TRANSPARENT);
+        mesh.colored_vertex(p - n * h, col[i]);
+        mesh.colored_vertex(p + n * h, col[i]);
+        mesh.colored_vertex(p + n * (h + feather), Color32::TRANSPARENT);
+        if i > 0 {
+            let (o, c) = ((i as u32 - 1) * 4, i as u32 * 4);
+            for k in 0..3 {
+                mesh.add_triangle(o + k, o + k + 1, c + k);
+                mesh.add_triangle(o + k + 1, c + k + 1, c + k);
+            }
+        }
+    }
+    painter.add(Shape::mesh(mesh));
+}
+
+/// Ironbow thermal palette, `t` 0 (cold) .. 1 (hot).
+fn ironbow(t: f32) -> [f32; 3] {
+    const STOPS: [(f32, [f32; 3]); 7] = [
+        (0.0, [0.02, 0.01, 0.06]),
+        (0.18, [0.16, 0.02, 0.40]),
+        (0.38, [0.55, 0.04, 0.55]),
+        (0.56, [0.88, 0.25, 0.14]),
+        (0.74, [0.98, 0.60, 0.02]),
+        (0.90, [1.0, 0.88, 0.32]),
+        (1.0, [1.0, 0.99, 0.90]),
+    ];
+    let t = t.clamp(0.0, 1.0);
+    for w in STOPS.windows(2) {
+        if t <= w[1].0 {
+            return mix(w[0].1, w[1].1, (t - w[0].0) / (w[1].0 - w[0].0));
+        }
+    }
+    STOPS[6].1
+}
+
+/// Thermal scale shown on the figure, degrees Celsius.
+pub const THERMAL_MIN: f32 = 24.0;
+pub const THERMAL_MAX: f32 = 41.0;
+
+/// Skin surface temperature for a body (core) temperature and a heat factor `h` (0 cold extremity .. 1 warm core).
+fn surface_temp(core: f32, h: f32) -> f32 {
+    core - 0.5 - (1.0 - h) * 10.0
+}
+
+/// How warm a point of the skin runs relative to the core: trunk and head warm, limbs cooling towards the
+/// hands and feet, edges (where the surface turns away) cooler. `rim` is 1 - n.view.
+fn heat_factor(x: f32, y: f32, rim: f32) -> f32 {
+    let smooth = |e0: f32, e1: f32, v: f32| {
+        let t = ((v - e0) / (e1 - e0)).clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
+    };
+    let dx = (x - MIRROR_X / 2.0).abs();
+    // away from the midline the surface cools (shoulders, arms, hands)
+    let lateral = (-(dx - 38.0).max(0.0) / 62.0).exp();
+    // the neck and head a little cooler than the chest, the legs cooling down to the feet
+    let vertical = 1.0 - 0.08 * smooth(86.0, 60.0, y) - 0.65 * smooth(225.0, 515.0, y);
+    // on the arms, cooler down towards the hands
+    let arm = smooth(46.0, 66.0, dx) * smooth(120.0, 300.0, y);
+    let trunk = lateral * vertical * (1.0 - 0.45 * arm);
+    let core = (1.0 - rim).clamp(0.0, 1.0).powf(0.7);
+    (0.4 * core + 0.6 * trunk.clamp(0.0, 1.0)).clamp(0.0, 1.0)
 }
 
 struct Gpu {
@@ -83,6 +240,19 @@ pub struct Figure {
     live_labels: bool,
     /// Russian callouts and frame marks (live window only)
     russian: bool,
+    /// latest body temperature (degrees C) and heart rate (bpm) from the server
+    temp_c: Option<f32>,
+    heart_rate: Option<f32>,
+    /// skin sprite: index, heat factor per texel
+    skin: Option<(usize, Vec<f32>)>,
+    /// thermal skin texture and the temperature it was made for (tenths of a degree; i32::MIN = no data)
+    thermal: Option<(i32, TextureHandle)>,
+    arteries: Vec<Vessel>,
+    /// heart beats so far (fractional), advanced each frame by the current rate so a new rate never jumps
+    beat_phase: f64,
+    last_time: Option<f64>,
+    /// temperature drawn on the infrared view, easing towards the measured one
+    shown_temp: Option<f32>,
 }
 
 fn rgb(c: [u8; 3]) -> [f32; 3] {
@@ -179,7 +349,7 @@ impl Figure {
             fill_holes(&mut o.cov, o.w, o.h);
             o.lead = parts.iter().enumerate().filter(|(_, p)| p.s.layer == 2 && p.s.sys == o.sys).max_by_key(|(_, p)| p.w * p.h).map(|(i, _)| i).unwrap_or(0);
         }
-        Figure { parts, outlines, atlas: Some((aw, raw)), callouts: anatomy::callouts(), top, bottom, live_labels: false, russian: false }
+        Figure { parts, outlines, atlas: Some((aw, raw)), callouts: anatomy::callouts(), top, bottom, live_labels: false, russian: false, temp_c: None, heart_rate: None, skin: None, thermal: None, arteries: arteries(), beat_phase: 0.0, last_time: None, shown_temp: None }
     }
 
     /// The shared-server view reports metric-rule alerts, not organ diagnoses.
@@ -225,6 +395,105 @@ impl Figure {
         }
     }
 
+    /// Latest temperature and heart rate: the infrared view and the pulse follow them.
+    pub fn set_vitals(&mut self, temp_c: Option<f32>, heart_rate: Option<f32>) {
+        self.temp_c = temp_c.filter(|t| t.is_finite());
+        self.heart_rate = heart_rate.filter(|h| h.is_finite() && *h > 0.0).map(|h| h.clamp(20.0, 240.0));
+    }
+
+    /// Seconds per heart beat: from the measured heart rate, otherwise a resting 1.1 s.
+    fn beat_period(&self) -> f64 {
+        self.heart_rate.map_or(1.1, |h| 60.0 / h as f64)
+    }
+
+    /// The row under the figure: the infrared scale in the thermal view, the pulse otherwise.
+    pub fn legend(&self, ui: &mut egui::Ui, mode: Mode, time: f64, animate: bool) {
+        let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::hover());
+        let p = ui.painter_at(rect);
+        let ru = self.russian;
+        let y = rect.center().y;
+        let no_data = if ru { "НЕТ ДАННЫХ" } else { "NO DATA" };
+        if mode == Mode::Thermal {
+            p.text(pos2(rect.left(), y), Align2::LEFT_CENTER, if ru { "ИК" } else { "IR" }, mono(10.0), MUT);
+            let bar = Rect::from_min_max(pos2(rect.left() + 26.0, y - 5.0), pos2(rect.right() - 92.0, y + 2.0));
+            let n = 48;
+            for i in 0..n {
+                let t0 = i as f32 / n as f32;
+                let r = Rect::from_min_max(pos2(bar.left() + bar.width() * t0, bar.top()), pos2(bar.left() + bar.width() * (t0 + 1.0 / n as f32) + 0.5, bar.bottom()));
+                let c = if self.temp_c.is_some() { ironbow(t0) } else { [0.10 + 0.32 * t0; 3] };
+                p.rect_filled(r, egui::CornerRadius::ZERO, px(c, 1.0));
+            }
+            p.rect_stroke(bar, egui::CornerRadius::ZERO, stroke(1.0, LINE_HI), egui::StrokeKind::Outside);
+            p.text(pos2(bar.left(), bar.bottom() + 1.0), Align2::LEFT_TOP, format!("{THERMAL_MIN:.0}°"), mono(8.0), alpha(MUT, 0.8));
+            p.text(pos2(bar.right(), bar.bottom() + 1.0), Align2::RIGHT_TOP, format!("{THERMAL_MAX:.0}°"), mono(8.0), alpha(MUT, 0.8));
+            let text = match self.temp_c {
+                Some(t) => {
+                    let k = ((t - THERMAL_MIN) / (THERMAL_MAX - THERMAL_MIN)).clamp(0.0, 1.0);
+                    let x = bar.left() + bar.width() * k;
+                    p.line_segment([pos2(x, bar.top() - 3.0), pos2(x, bar.bottom() + 3.0)], stroke(2.0, TXT));
+                    let v = format!("{t:.1}");
+                    format!("{} °C", if ru { v.replace('.', ",") } else { v })
+                }
+                None => no_data.to_owned(),
+            };
+            p.text(pos2(rect.right(), y), Align2::RIGHT_CENTER, text, mono(12.0), if self.temp_c.is_some() { TXT } else { MUT });
+        } else {
+            let _ = time;
+            let on = animate && self.heart_rate.is_some() && (self.beat_phase - 0.2).rem_euclid(1.0) < 0.16;
+            let col = Color32::from_rgb(0xe8, 0x4a, 0x52);
+            let m = Rect::from_center_size(pos2(rect.left() + 5.0, y), Vec2::splat(8.0));
+            if on {
+                p.rect_filled(m, egui::CornerRadius::ZERO, col);
+            } else {
+                p.rect_stroke(m, egui::CornerRadius::ZERO, stroke(1.0, alpha(col, 0.8)), egui::StrokeKind::Inside);
+            }
+            p.text(pos2(rect.left() + 18.0, y), Align2::LEFT_CENTER, if ru { "ПУЛЬС · АРТЕРИИ" } else { "PULSE · ARTERIES" }, mono(10.0), MUT);
+            let text = match self.heart_rate {
+                Some(h) => format!("{h:.0} {}", if ru { "уд/мин" } else { "bpm" }),
+                None => no_data.to_owned(),
+            };
+            p.text(pos2(rect.right(), y), Align2::RIGHT_CENTER, text, mono(12.0), if self.heart_rate.is_some() { TXT } else { MUT });
+        }
+    }
+
+    /// Rebuilds the infrared skin texture when the temperature changes by a tenth of a degree or more.
+    fn thermal_texture(&mut self, ctx: &egui::Context) -> Option<egui::TextureId> {
+        // ease the picture towards a new reading instead of switching at once
+        self.shown_temp = match (self.temp_c, self.shown_temp) {
+            (Some(t), Some(shown)) => {
+                let dt = ctx.input(|i| i.stable_dt).min(0.1);
+                let next = shown + (t - shown) * (1.0 - (-dt * 2.5).exp());
+                if (next - t).abs() < 0.05 {
+                    Some(t)
+                } else {
+                    ctx.request_repaint();
+                    Some(next)
+                }
+            }
+            (t, _) => t,
+        };
+        let key = self.shown_temp.map_or(i32::MIN, |t| (t * 10.0).round() as i32);
+        if self.thermal.as_ref().is_none_or(|(k, _)| *k != key) {
+            let (i, heat) = self.skin.as_ref()?;
+            let part = &self.parts[*i];
+            let pixels = heat
+                .iter()
+                .zip(&part.cov)
+                .map(|(&h, &c)| {
+                    let a = c as f32 / 255.0;
+                    match self.shown_temp {
+                        Some(t) => px(ironbow((surface_temp(t, h) - THERMAL_MIN) / (THERMAL_MAX - THERMAL_MIN)), a),
+                        None => px([0.10 + 0.32 * h; 3], a),
+                    }
+                })
+                .collect();
+            let opts = TextureOptions { magnification: TextureFilter::Linear, minification: TextureFilter::Linear, wrap_mode: TextureWrapMode::ClampToEdge, mipmap_mode: Some(TextureFilter::Linear) };
+            let tex = ctx.load_texture("anatomy-thermal", ColorImage { size: [part.w, part.h], pixels }, opts);
+            self.thermal = Some((key, tex));
+        }
+        self.thermal.as_ref().map(|(_, t)| t.id())
+    }
+
     /// Builds the textures on first use (needs the egui context).
     fn upload(&mut self, ctx: &egui::Context) {
         let Some((aw, raw)) = self.atlas.take() else { return };
@@ -242,6 +511,16 @@ impl Figure {
                 }
             }
             let load = |tag: &str, pixels: Vec<Color32>| ctx.load_texture(format!("anatomy-{i}-{tag}"), ColorImage { size: [w, h], pixels }, opts);
+            if p.s.layer == 0 && self.skin.is_none() {
+                let mut heat = Vec::with_capacity(n);
+                for y in 0..h {
+                    for x in 0..w {
+                        let rim = raw[((ay + y) * aw + ax + x) * 4 + 1] as f32 / 255.0;
+                        heat.push(heat_factor(p.s.origin[0] + x as f32 / TPU, p.s.origin[1] + y as f32 / TPU, rim));
+                    }
+                }
+                self.skin = Some((i, heat));
+            }
             let mask = (p.s.layer == 2 && p.s.hit).then(|| load("mask", p.cov.iter().map(|&c| white_a(c)).collect()));
             p.gpu = Some(Gpu { main: load("main", main), alt: load("alt", alt), mask });
         }
@@ -261,6 +540,7 @@ impl Figure {
             (_, Mode::Organs) => 1.0,
             (_, Mode::Skeleton) => 0.10,
             (_, Mode::XRay) => 1.0,
+            (_, Mode::Thermal) => 0.0,
         }
     }
 
@@ -282,7 +562,12 @@ impl Figure {
 
         frame_marks(&painter, rect, to_screen(P { x: 0.0, y: self.top }).y, to_screen(P { x: 0.0, y: self.bottom }).y, self.live_labels && self.russian);
 
-        let beat = if animate { (time * std::f64::consts::TAU / 1.1).sin().max(0.0).powi(6) as f32 } else { 0.0 };
+        let period = self.beat_period();
+        let dt = self.last_time.map_or(0.0, |last| (time - last).clamp(0.0, 0.1));
+        self.last_time = Some(time);
+        self.beat_phase += dt / period;
+        let thermal_tex = if mode == Mode::Thermal { self.thermal_texture(ui.ctx()) } else { None };
+        let beat = if animate { (self.beat_phase * std::f64::consts::TAU).sin().max(0.0).powi(6) as f32 } else { 0.0 };
         let breathe = if animate { (0.5 + 0.5 * (time * std::f64::consts::TAU / 4.2).sin()) as f32 } else { 0.0 };
         let alert = if animate { (0.5 + 0.5 * (time * std::f64::consts::TAU / 1.4).sin()) as f32 } else { 0.5 };
 
@@ -381,7 +666,13 @@ impl Figure {
             let g = p.gpu.as_ref().unwrap();
             painter.image(g.main.id(), place(p), full, lit(1.0 - 0.3 * any, if xray { 0.75 } else { 1.0 }));
         }
-        for layer in order {
+        if let Some(id) = thermal_tex {
+            for p in self.parts.iter().filter(|p| p.s.layer == 0) {
+                painter.image(id, place(p), full, lit(1.0 - 0.15 * any, 1.0));
+            }
+        }
+        let layers: &[u8] = if thermal_tex.is_some() { &[] } else { &order };
+        for &layer in layers {
             for p in self.parts.iter().filter(|p| p.s.layer == layer) {
                 let sel = p.s.sys == selected;
                 let hov = hovered == Some(p.s.sys);
@@ -410,9 +701,58 @@ impl Figure {
                 }
             }
         }
-        for p in self.parts.iter().filter(|p| p.s.layer == 0) {
-            let g = p.gpu.as_ref().unwrap();
-            painter.image(g.alt.id(), place(p), full, tint(1.0 - 0.45 * any));
+        // arteries: a dim network; with each heart beat a bright pulse wave runs out from the heart
+        let vessel_a = match mode {
+            Mode::Organs => 1.0,
+            Mode::XRay => 0.85,
+            Mode::Skeleton => 0.35,
+            Mode::Thermal => 0.0,
+        } * light_of("heart");
+        if vessel_a > 0.0 {
+            let red = Color32::from_rgb(0xd8, 0x3c, 0x46);
+            let bright = Color32::from_rgb(0xff, 0x9c, 0x94);
+            // beats counted from systole; the wave front leaves the heart at phase 0
+            let ph = (animate && self.heart_rate.is_some()).then_some((self.beat_phase - 0.2) as f32);
+            let span = WAVE_SPEED * period as f32;
+            for v in &self.arteries {
+                let pts: Vec<Pos2> = v.pts.iter().map(|&q| to_screen(q)).collect();
+                // wide near the heart, fine at the hands and feet
+                let half: Vec<f32> = v.dist.iter().map(|&d| ((0.32 + 0.95 * (-d / 150.0).exp()) * s).max(0.45)).collect();
+                let glow: Vec<f32> = v
+                    .dist
+                    .iter()
+                    .map(|&d| {
+                        ph.map_or(0.0, |ph| {
+                            let behind = (ph - d / span).rem_euclid(1.0) * span;
+                            // soft rise at the front, slow fade behind it, weaker far from the heart
+                            (1.0 - (-behind / 5.0).exp()) * (-behind / WAVE_TAIL).exp() * (-d / 1100.0).exp()
+                        })
+                    })
+                    .collect();
+                if glow.iter().any(|&g| g > 0.02) {
+                    let halo_w: Vec<f32> = half.iter().map(|h| h * 2.4 + 1.0).collect();
+                    let halo_c: Vec<Color32> = glow.iter().map(|&g| alpha(red, 0.22 * g * vessel_a)).collect();
+                    ribbon(&painter, &pts, &halo_w, &halo_c, 2.5);
+                }
+                let core: Vec<Color32> = glow
+                    .iter()
+                    .map(|&g| {
+                        let c = Color32::from_rgb(
+                            (red.r() as f32 + (bright.r() as f32 - red.r() as f32) * g) as u8,
+                            (red.g() as f32 + (bright.g() as f32 - red.g() as f32) * g) as u8,
+                            (red.b() as f32 + (bright.b() as f32 - red.b() as f32) * g) as u8,
+                        );
+                        alpha(c, (0.38 + 0.55 * g) * vessel_a)
+                    })
+                    .collect();
+                ribbon(&painter, &pts, &half, &core, 0.8);
+            }
+        }
+        if thermal_tex.is_none() {
+            for p in self.parts.iter().filter(|p| p.s.layer == 0) {
+                let g = p.gpu.as_ref().unwrap();
+                painter.image(g.alt.id(), place(p), full, tint(1.0 - 0.45 * any));
+            }
         }
         // one outline per system: thin white when selected / hovered, otherwise the status colour
         for o in &self.outlines {
