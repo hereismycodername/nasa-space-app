@@ -81,6 +81,8 @@ pub struct Figure {
     top: f32,
     bottom: f32,
     live_labels: bool,
+    /// Russian callouts and frame marks (live window only)
+    russian: bool,
 }
 
 fn rgb(c: [u8; 3]) -> [f32; 3] {
@@ -177,7 +179,7 @@ impl Figure {
             fill_holes(&mut o.cov, o.w, o.h);
             o.lead = parts.iter().enumerate().filter(|(_, p)| p.s.layer == 2 && p.s.sys == o.sys).max_by_key(|(_, p)| p.w * p.h).map(|(i, _)| i).unwrap_or(0);
         }
-        Figure { parts, outlines, atlas: Some((aw, raw)), callouts: anatomy::callouts(), top, bottom, live_labels: false }
+        Figure { parts, outlines, atlas: Some((aw, raw)), callouts: anatomy::callouts(), top, bottom, live_labels: false, russian: false }
     }
 
     /// The shared-server view reports metric-rule alerts, not organ diagnoses.
@@ -186,8 +188,32 @@ impl Figure {
         self
     }
 
+    /// Russian or English callouts in the live window; the demo keeps its English labels.
+    pub fn set_russian(&mut self, russian: bool) {
+        self.russian = russian;
+    }
+
     fn callout_labels<'a>(&self, system: &str, original: &'a str, status: Status) -> (&'a str, &'a str) {
-        if self.live_labels {
+        if self.live_labels && self.russian {
+            (
+                match system {
+                    "brain" => "Мозг",
+                    "eyes" => "Зрение",
+                    "lungs" => "Дыхание",
+                    "heart" => "Сердце",
+                    "gut" => "Обмен",
+                    "msk" => "Кости",
+                    "immune" => "Всё тело",
+                    _ => original,
+                },
+                match status {
+                    Status::Normal => "НЕТ СИГНАЛОВ",
+                    Status::Watch => "ВНИМАНИЕ",
+                    Status::Act => "СРОЧНО",
+                    Status::Unassessed | Status::NoData => "НЕ ОЦЕНЕНО",
+                },
+            )
+        } else if self.live_labels {
             (if system == "immune" { "BODY / TEMP" } else { original }, match status {
                 Status::Normal => "NO ALERTS",
                 Status::Watch => "ATTENTION",
@@ -254,7 +280,7 @@ impl Figure {
         let to_screen = move |q: P| origin + vec2(q.x, q.y) * s;
         let to_design = move |q: Pos2| P { x: (q.x - origin.x) / s, y: (q.y - origin.y) / s };
 
-        frame_marks(&painter, rect, to_screen(P { x: 0.0, y: self.top }).y, to_screen(P { x: 0.0, y: self.bottom }).y);
+        frame_marks(&painter, rect, to_screen(P { x: 0.0, y: self.top }).y, to_screen(P { x: 0.0, y: self.bottom }).y, self.live_labels && self.russian);
 
         let beat = if animate { (time * std::f64::consts::TAU / 1.1).sin().max(0.0).powi(6) as f32 } else { 0.0 };
         let breathe = if animate { (0.5 + 0.5 * (time * std::f64::consts::TAU / 4.2).sin()) as f32 } else { 0.0 };
@@ -475,7 +501,7 @@ impl Figure {
 }
 
 /// Measurement marks: a height scale on the left edge (10 cm ticks), corner brackets, R / L and the view name.
-fn frame_marks(p: &egui::Painter, rect: Rect, y_top: f32, y_bottom: f32) {
+fn frame_marks(p: &egui::Painter, rect: Rect, y_top: f32, y_bottom: f32, russian: bool) {
     let c = alpha(LINE_HI, 0.9);
     // scale: the body spans 0..~174 cm from the soles up; 10 cm ticks, 50 cm long ticks
     let cm = (y_bottom - y_top) / 174.0;
@@ -492,9 +518,11 @@ fn frame_marks(p: &egui::Painter, rect: Rect, y_top: f32, y_bottom: f32) {
         p.line_segment([corner, corner + vec2(dx * b, 0.0)], stroke(1.0, c));
         p.line_segment([corner, corner + vec2(0.0, dy * b)], stroke(1.0, c));
     }
-    p.text(rect.left_bottom() + vec2(14.0, -12.0), Align2::LEFT_BOTTOM, "R", mono(10.0), MUT);
-    p.text(rect.right_bottom() + vec2(-14.0, -12.0), Align2::RIGHT_BOTTOM, "L", mono(10.0), MUT);
-    p.text(pos2(rect.center().x, rect.bottom() - 12.0), Align2::CENTER_BOTTOM, "ANTERIOR", mono(9.0), alpha(MUT, 0.7));
+    // radiology convention: the patient's right is on the viewer's left
+    let (right, left, view) = if russian { ("П", "Л", "ВИД СПЕРЕДИ") } else { ("R", "L", "ANTERIOR") };
+    p.text(rect.left_bottom() + vec2(14.0, -12.0), Align2::LEFT_BOTTOM, right, mono(10.0), MUT);
+    p.text(rect.right_bottom() + vec2(-14.0, -12.0), Align2::RIGHT_BOTTOM, left, mono(10.0), MUT);
+    p.text(pos2(rect.center().x, rect.bottom() - 12.0), Align2::CENTER_BOTTOM, view, mono(9.0), alpha(MUT, 0.7));
 }
 
 /// Fills enclosed gaps (between intestine loops, ...) so an outline only runs around the outside.
@@ -622,5 +650,9 @@ mod live_label_tests {
         assert_eq!(live.callout_labels("eyes", "Eyes", Status::NoData), ("Eyes", "NOT ASSESSED"));
         assert_eq!(live.callout_labels("heart", "Heart", Status::Unassessed), ("Heart", "NOT ASSESSED"));
         assert_eq!(live.callout_labels("heart", "Heart", Status::Act), ("Heart", "URGENT"));
+        let mut russian = live;
+        russian.set_russian(true);
+        assert_eq!(russian.callout_labels("heart", "Heart", Status::Watch), ("Сердце", "ВНИМАНИЕ"));
+        assert_eq!(russian.callout_labels("immune", "Immune", Status::NoData), ("Всё тело", "НЕ ОЦЕНЕНО"));
     }
 }
