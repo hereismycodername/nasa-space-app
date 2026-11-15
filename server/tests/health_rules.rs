@@ -366,3 +366,53 @@ async fn future_and_stale_values_remain_unassessed_even_when_severe_and_just_del
         assert_eq!(rule["validUntil"], Value::Null);
     }
 }
+
+#[tokio::test]
+async fn research_context_uses_real_records_preserves_quality_and_never_invents_trends() {
+    let app = setup().await;
+    let (_, empty) = call(&app, "GET", "/api/assessments", Value::Null).await;
+    let insights = empty["researchInsights"].as_array().unwrap();
+    assert_eq!(insights.len(), 5);
+    for insight in insights {
+        assert_eq!(insight["quality"], "missing");
+        assert!(insight["measurementId"].is_null());
+        assert_eq!(insight["actions"][0]["kind"], "record");
+        assert_eq!(insight["actions"][1]["kind"], "history");
+        assert_eq!(insight["actions"][2]["kind"], "guidance");
+        assert!(insight["contexts"][0]["sourceUrl"]
+            .as_str()
+            .unwrap()
+            .starts_with("https://www.nasa.gov/hrp/"));
+    }
+    let now = Utc::now();
+    for (sequence, metric, value, unit, at, expected) in [
+        (100, "sleepHours", 5.0, "h", Some(now), "fresh"),
+        (
+            101,
+            "heartRate",
+            72.0,
+            "bpm",
+            Some(now - Duration::days(2)),
+            "stale",
+        ),
+        (102, "systolicPressure", 120.0, "mmHg", None, "unknownTime"),
+        (
+            103,
+            "diastolicPressure",
+            80.0,
+            "mmHg",
+            Some(now + Duration::minutes(2)),
+            "clockSkew",
+        ),
+        (104, "exerciseMinutes", 32.5, "min", Some(now), "fresh"),
+    ] {
+        let saved = insert(&app, sequence, metric, value, unit, at).await;
+        let (_, response) = call(&app, "GET", "/api/assessments", Value::Null).await;
+        let insight = by_metric(&response["researchInsights"], metric);
+        assert_eq!(insight["quality"], expected);
+        assert_eq!(insight["measurementId"], saved["id"]);
+        let observation = insight["observation"].as_str().unwrap();
+        assert!(observation.contains(&format!("{value} {unit}")));
+        assert!(observation.contains("не вывод о тенденции"));
+    }
+}

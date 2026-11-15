@@ -1,6 +1,7 @@
 # AstroCheck UI (Rust)
 
-Both native programs now default to the same BE-06 HTTP API as React. Run
+Both native programs now default to the same shared HTTP API as React: BE-06
+measurements, BE-07 dated tasks and BE-08 health guidance. Run
 `npm run demo` from the repository root, then start the window or terminal client.
 No native SQLite database or additional API server is created. A shared `ui-http`
 adapter polls real measurements, server health guidance, seven-day UTC series and tasks on a background
@@ -20,9 +21,12 @@ The GUI live window speaks Russian (default) or English: `--lang ru|en`, `ASTROC
 RU / EN switch in its top bar. Texts written by the server (rule explanations, actions, task titles)
 are shown as received. The live window uses the same instrument-panel look as the `--demo` prototype.
 The API owns the single `demo-astronaut` profile, measurements and task completion.
-The clients discover supported metrics from the latest-measurements response: the
-original six work on older servers; the additional six appear only when the
-server advertises them. Live clients display source, measurement/receipt time and
+The clients discover supported metrics from the latest-measurements response: a
+six-metric registry remains supported, and the additional six appear only when the
+server advertises them. Every connected server must implement the BE-07 task
+envelope `{missionDate, tasks}` and accept `missionDate` in task updates. Update
+the server and all three clients together; the old BE-06 task-array API is not
+supported by these clients. Live clients display source, measurement/receipt time and
 server freshness separately from BE-08 health guidance. The server owns all health
 rules; green means no configured rule alert, amber attention, red urgent action,
 and grey means unevaluated or insufficient data. These are demonstration rules,
@@ -36,15 +40,17 @@ urgent-symptom guidance and the five spaceflight hazards. In TUI, use `i` for th
 selected metric, `h` for health guidance, and `f` for flight education; arrow keys
 and PageUp/PageDown scroll these views. New urgent results automatically open the
 health view. `Enter` edits a measurement, `Tab` switches to tasks, and `?` lists keys.
-An older BE-06 server without health rules stays usable with neutral status.
+A server without optional BE-08 health rules displays neutral health status,
+provided it implements the required dated-task API.
 Scores, baseline advice, uplink and ACK remain unavailable in live mode. API failures keep the client in live
 mode with a visible error and cached data, never switch to fake measurements.
 Polling is about 2 seconds for latest/tasks/assessments and 10 seconds for series.
 Pending writes are in memory, not a durable offline outbox; await confirmation
 before closing the client. Retry attempts reuse the exact measurement payload/key.
-Task updates with a lost response are not automatically replayed: the existing
-PATCH changes the completion timestamp. The client reports an unconfirmed result
-and refreshes tasks from the server.
+Task updates preserve the displayed mission date. Repeated completion is
+idempotent on the server and retains its original timestamp. After a lost response,
+the client keeps its conservative retry policy: it reports an unconfirmed result
+and refreshes tasks instead of automatically replaying the update.
 The window retains a 2D body diagram; rotatable 3D belongs to the React client.
 
 Build both applications with

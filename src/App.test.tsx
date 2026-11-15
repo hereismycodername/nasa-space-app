@@ -58,7 +58,7 @@ it('keeps per-metric freshness independent and expires a cached result between s
   latest.metrics = latest.metrics.map(entry => entry.metric === 'sleepHours' ? sleep : entry)
   const html = renderToStaticMarkup(<MetricOverview latest={latest} connected elapsedSeconds={2} />)
   const cards = html.match(/<article[\s\S]*?<\/article>/g)!
-  expect(cards[0]).toContain('Последний замер только что')
+  expect(cards[0]).toContain('Ожидается новый замер. Последний замер 16 с назад')
   expect(cards[0]).toContain('Демо-срок: 15 с')
   expect(cards[4]).toContain('Свежее измерение')
   expect(cards[4]).toContain('Демо-срок: 1 сут.')

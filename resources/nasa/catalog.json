@@ -1,0 +1,172 @@
+{
+  "version": "space-health-research-2026-11-15-v2",
+  "reviewedAt": "2026-11-15",
+  "contentType": "curated-research-context",
+  "mappingAuthor": "AstroCheck team",
+  "notice": "Краткие пересказы материалов NASA и CSA. Связи с показателями выбраны командой AstroCheck; это не диагностические правила агентств и не измерения астронавтов.",
+  "sources": [
+    {
+      "id": "hrp-risks",
+      "title": "Risks of Human Spaceflight",
+      "url": "https://www.nasa.gov/hrp/risks/",
+      "agency": "NASA"
+    },
+    {
+      "id": "hrp-research",
+      "title": "Ongoing HRP Research in Space",
+      "url": "https://www.nasa.gov/hrp/ongoing-hrp-research/",
+      "agency": "NASA"
+    },
+    {
+      "id": "csa-radiation",
+      "agency": "CSA",
+      "title": "Monitoring radiation for astronaut health",
+      "url": "https://www.asc-csa.gc.ca/eng/news/articles/2026/2026-02-26-monitoring-radiation-astronaut-health.asp"
+    },
+    {
+      "id": "csa-space-science",
+      "agency": "CSA",
+      "title": "Why do we conduct science experiments in space?",
+      "url": "https://www.asc-csa.gc.ca/eng/iss/science/why-do-we-conduct-science-experiments-in-space.asp"
+    }
+  ],
+  "entries": [
+    {
+      "id": "cardiovascular",
+      "kind": "risk",
+      "title": "Кровообращение в невесомости",
+      "sourceSection": "Risk of Cardiovascular Adaptations",
+      "sourceId": "hrp-risks",
+      "summary": "Невесомость меняет работу сердца, сосудов и кровообращения.",
+      "metrics": [
+        "heartRate",
+        "systolicPressure",
+        "diastolicPressure"
+      ],
+      "projectUse": "Показываем пульс и давление вместе с историей для наблюдения за изменениями.",
+      "limitation": "Эти измерения не определяют причину изменений и не диагностируют последствия невесомости."
+    },
+    {
+      "id": "sleep",
+      "kind": "risk",
+      "title": "Сон и нерегулярное расписание",
+      "sourceSection": "Risk of Inadequate Sleep and Irregular Schedules",
+      "sourceId": "hrp-risks",
+      "summary": "Недостаток сна и нарушения биологических ритмов относятся к исследуемым рискам.",
+      "metrics": [
+        "sleepHours"
+      ],
+      "projectUse": "Включили продолжительность сна в ежедневный ввод и графики.",
+      "limitation": "Продолжительность не описывает качество сна; порог BE-08 взят из отдельного земного источника, не NASA."
+    },
+    {
+      "id": "fitness",
+      "kind": "risk",
+      "title": "Физическая форма, кости и мышцы",
+      "sourceSection": "Risk of Reduced Cardiorespiratory and Musculoskeletal Fitness",
+      "sourceId": "hrp-risks",
+      "summary": "NASA исследует упражнения для сохранения физической формы в полёте.",
+      "metrics": [
+        "exerciseMinutes",
+        "backPain"
+      ],
+      "projectUse": "Сопоставляем отчёты об активности и боли в спине как контекст для обсуждения с медиком.",
+      "limitation": "Минуты упражнений и боль не измеряют плотность костей или силу мышц. Шкала боли — решение команды."
+    },
+    {
+      "id": "sans",
+      "kind": "risk",
+      "title": "Изменения глаз и мозга",
+      "sourceSection": "Risk of Spaceflight Associated Neuro-ocular Syndrome (SANS)",
+      "sourceId": "hrp-risks",
+      "summary": "Космический полёт может сопровождаться изменениями структуры глаз и мозга.",
+      "metrics": [
+        "visionBlur"
+      ],
+      "projectUse": "Добавили дневник субъективной нечёткости зрения.",
+      "limitation": "Самооценка не диагностирует SANS и не заменяет офтальмологическое обследование."
+    },
+    {
+      "id": "hypoxia",
+      "kind": "risk",
+      "title": "Недостаток кислорода",
+      "sourceSection": "Risk of Hypoxia",
+      "sourceId": "hrp-risks",
+      "summary": "NASA изучает риск гипоксии при подготовке к выходам в открытый космос.",
+      "metrics": [
+        "spo2"
+      ],
+      "projectUse": "Предусмотрели запись SpO₂ и просмотр динамики.",
+      "limitation": "Пульсоксиметр не определяет причину отклонения. В прототипе нет автоматического правила SpO₂."
+    },
+    {
+      "id": "immune",
+      "kind": "risk",
+      "title": "Изменения иммунного ответа",
+      "sourceSection": "Risk of Altered Immune System Responses",
+      "sourceId": "hrp-risks",
+      "summary": "Стрессоры полёта могут влиять на иммунную систему.",
+      "metrics": [
+        "temperature"
+      ],
+      "projectUse": "Температура включена как общий показатель для самонаблюдения.",
+      "limitation": "Температура не измеряет иммунный ответ и не подтверждает инфекцию."
+    },
+    {
+      "id": "archer",
+      "kind": "study",
+      "title": "ARCHeR: сон, активность и самочувствие",
+      "sourceSection": "ARCHeR",
+      "sourceId": "hrp-research",
+      "summary": "Исследование отслеживало самочувствие, активность и сон экипажа Artemis II.",
+      "metrics": [
+        "sleepHours",
+        "exerciseMinutes",
+        "mood"
+      ],
+      "projectUse": "Сгруппировали эти показатели в ежедневное наблюдение.",
+      "limitation": "Наши самоотчёты не воспроизводят протокол или измерительные приборы ARCHeR; шкала настроения разработана командой."
+    },
+    {
+      "id": "standard-measures",
+      "kind": "study",
+      "title": "Standard Measures: последовательные наблюдения",
+      "sourceSection": "Standard Measures",
+      "sourceId": "hrp-research",
+      "summary": "Исследование собирает согласованный набор физиологических и психологических измерений.",
+      "metrics": [
+        "sleepHours",
+        "mood"
+      ],
+      "projectUse": "Используем повторные записи с единицами, временем и происхождением.",
+      "limitation": "Это принцип организации нашего приложения, а не реализация исследовательского протокола NASA."
+    },
+    {
+      "id": "csa-cans",
+      "kind": "research",
+      "title": "Радиация: отдельное инструментальное наблюдение",
+      "sourceSection": "Monitoring radiation for astronaut health",
+      "sourceId": "csa-radiation",
+      "summary": "CSA описывает разработку CANS — автономного прибора для непрерывного измерения нейтронного облучения в космосе.",
+      "metrics": [],
+      "projectUse": "Показываем границу возможностей мониторинга: для наблюдения радиации нужен отдельный измерительный канал. Пульс, давление и самочувствие его не заменяют.",
+      "limitation": "В AstroCheck нет дозиметра и канала радиации. Мы не получаем данные CANS, не рассчитываем дозу и не оцениваем радиационную безопасность."
+    },
+    {
+      "id": "csa-space-science",
+      "kind": "research",
+      "title": "Невесомость, физическая активность и сердце",
+      "sourceSection": "Using the knowledge obtained to improve our quality of life on Earth",
+      "sourceId": "csa-space-science",
+      "summary": "CSA объясняет, как исследования организма в невесомости помогают изучать последствия сниженной физической активности; среди объектов исследований — сердце, сосуды и кости.",
+      "metrics": [
+        "heartRate",
+        "systolicPressure",
+        "diastolicPressure",
+        "exerciseMinutes"
+      ],
+      "projectUse": "Связываем дневник активности с наблюдением пульса и давления: можно открыть историю или записать новое измерение. Это выбор команды для организации наблюдений.",
+      "limitation": "Обзор CSA не задаёт порогов пульса или давления и нормы нагрузки. Наши записи не воспроизводят исследовательский протокол и не доказывают влияние невесомости на конкретное измерение."
+    }
+  ]
+}

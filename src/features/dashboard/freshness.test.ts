@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import type { DataQuality, LatestMeasurements } from '../../shared/types'
-import { currentFreshness, formatMeasurementAge, nextFreshnessExpiry, qualityDescription } from './freshness'
+import { currentFreshness, formatMeasurementAge, freshnessLabel, nextFreshnessExpiry, qualityDescription } from './freshness'
 import { formatUnit, formatValue } from './metrics'
 import type { Metric, Unit } from '../../shared/types'
 
@@ -8,7 +8,7 @@ const pulse: DataQuality = { status: 'fresh', measurementId: 'pulse', ageSeconds
 const sleep: DataQuality = { ...pulse, measurementId: 'sleep', freshForSeconds: 86400 }
 
 it('formats relative measurement ages and display units in Russian without changing wire units', () => {
-  for (const [seconds, expected] of [[0, 'только что'], [59, 'только что'], [60, '1 мин назад'], [3599, '59 мин назад'], [3600, '1 ч назад'], [18000, '5 ч назад'], [86400, '1 дн. назад'], [172800, '2 дн. назад']] as const) {
+  for (const [seconds, expected] of [[0, 'только что'], [16, '16 с назад'], [59, '59 с назад'], [60, '1 мин назад'], [3599, '59 мин назад'], [3600, '1 ч назад'], [18000, '5 ч назад'], [86400, '1 дн. назад'], [172800, '2 дн. назад']] as const) {
     expect(formatMeasurementAge(seconds)).toBe(`Последний замер ${expected}`)
   }
   expect(formatMeasurementAge(null)).toBe('Время последнего замера неизвестно')
@@ -19,7 +19,18 @@ it('formats relative measurement ages and display units in Russian without chang
     [90.5, 'mg/dL', 'glucose', '90,5 мг/дл'], [36.7, '°C', 'temperature', '36,7 °C'], [98, '%', 'spo2', '98 %'],
   ]
   for (const [value, unit, metric, expected] of cases) expect(`${formatValue(value)} ${formatUnit(unit, metric)}`).toBe(expected)
-  expect(qualityDescription({ ...pulse, status: 'stale', freshForSeconds: 46800, ageSeconds: 50400 })).toContain('ожидается раз в 13 ч')
+  expect(qualityDescription({ ...pulse, status: 'stale', freshForSeconds: 46800, ageSeconds: 50400 })).toContain('Демо-срок свежести 13 ч истёк')
+})
+
+it('makes a stopped pulse stream visibly stale before one minute without turning freshness into a health alert', () => {
+  expect(freshnessLabel(pulse, 1)).toBe('Свежее измерение')
+  for (const quality of [pulse, { ...pulse, status: 'stale' as const, ageSeconds: 16 }]) {
+    const label = freshnessLabel(quality, quality.status === 'fresh' ? 2 : 0)
+    expect(label).toBe('Ожидается новый замер. Последний замер 16 с назад')
+    expect(label).not.toContain('только что')
+    expect(qualityDescription(quality, quality.status === 'fresh' ? 2 : 0)).toContain('не оценка здоровья')
+  }
+  expect(freshnessLabel({ ...pulse, status: 'stale', ageSeconds: null })).toBe('Ожидается новый замер. Время последнего замера неизвестно')
 })
 
 it('ages server-confirmed freshness independently of the client calendar and at the TTL boundary', () => {

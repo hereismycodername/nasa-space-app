@@ -157,4 +157,3 @@ pub fn apply(ctx: &egui::Context) {
         s.spacing.window_margin = egui::Margin::same(16);
     });
 }
-

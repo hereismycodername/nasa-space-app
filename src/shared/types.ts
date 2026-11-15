@@ -82,7 +82,17 @@ export interface LatestMeasurements {
   evaluatedAt: string
   metrics: LatestMetric[]
 }
+export interface ResearchInsight {
+  metric: Metric
+  catalogVersion: string
+  observation: string
+  measurementId: string | null
+  quality: string
+  contexts: { title: string; explanation: string; projectUse: string; limitation: string; sourceUrl: string; sourceAgency: string; sourceSection: string }[]
+  actions: { kind: 'record' | 'history' | 'guidance'; label: string }[]
+}
 export interface HealthAssessment {
+  researchInsights?: ResearchInsight[]
   status: 'no-data' | 'stale' | 'not-evaluated' | 'unknown-time' | 'clock-skew'
   explanation: string
   astronautId: string

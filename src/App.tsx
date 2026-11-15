@@ -1,3 +1,5 @@
+import { NasaCatalogPanel } from './features/nasa/NasaContext'
+import './features/dashboard/crew-layout.css'
 import { lazy, Suspense, useCallback, useState } from 'react'
 import { ArrowUpRight, Check, ChevronRight, CircleHelp, Database, Plus, Radio, RefreshCw, WifiOff } from 'lucide-react'
 import { useDashboard } from './data/useDashboard'
@@ -19,7 +21,7 @@ import type { TelemetryRange } from './features/ground/useTelemetry'
 
 const TrendPanel = lazy(() => import('./features/dashboard/TrendPanel'))
 const GroundConsole = lazy(() => import('./features/ground/GroundConsole'))
-type Tab = 'overview' | 'trends' | 'system'
+type Tab = 'overview' | 'trends' | 'system' | 'nasa'
 type Role = 'crew' | 'ground'
 const sourceNames = { manual: 'Ручной ввод', simulator: 'Симулятор', sensor: 'Датчик' }
 
@@ -64,7 +66,7 @@ export function MetricOverview({ latest, selectedSystem = null, onSelect, onAdd,
           <p>Последняя доставка: {formatValue(received.value)} {formatUnit(received.unit, config.id)}, получено {formatTime(received.receivedAt)}.</p>
           <QualityBadge quality={entry?.latestReceivedQuality} connected={connected} elapsedSeconds={elapsedSeconds} />
         </div> : null}</div>
-        <MetricHealth metric={config.id} context={context} />
+        <MetricHealth metric={config.id} context={context} onRecord={onAdd ? () => onAdd(config.id) : undefined} onHistory={onSelect ? () => onSelect(config.id) : undefined} />
         {onAdd ? <button type="button" className="metric-link" onClick={() => onAdd(config.id)}>{config.quickInputLabel ?? 'Внести измерение'} <Plus size={15} aria-hidden="true" /></button> : null}
         {onSelect ? <button className="metric-link" onClick={() => onSelect(config.id)} aria-label={`Динамика: ${config.label}`}>
           Динамика <ArrowUpRight size={15} aria-hidden="true" />
@@ -150,16 +152,17 @@ export default function App() {
           <button aria-current={tab === 'overview' && !checkIn ? 'page' : undefined} onClick={() => changeTab('overview')}>{role === 'crew' ? 'Обзор здоровья' : 'Наблюдение экипажа'}</button>
           <button aria-current={tab === 'trends' && !checkIn ? 'page' : undefined} onClick={() => changeTab('trends')}>Динамика</button>
           <button aria-current={tab === 'system' && !checkIn ? 'page' : undefined} onClick={() => changeTab('system')}>Система и связь</button>
+          <button aria-current={tab === 'nasa' && !checkIn ? 'page' : undefined} onClick={() => changeTab('nasa')}>Источники NASA / CSA</button>
         </nav>
         {!loading && !connected ? <div className="connection-banner" role="alert"><WifiOff size={18} aria-hidden="true" /><div><strong>Связь с сервером потеряна</strong><p>{lastUpdated ? `Показаны данные, полученные ${formatTime(lastUpdated.toISOString())}. Свежесть не подтверждена.` : 'Проверьте подключение и запущен ли сервер.'}</p></div><button className="secondary-button" onClick={refresh}>Повторить</button></div> : null}
         {formMetric ? <div hidden={!checkIn}><CheckInPanel key={formMetric} initialMetric={formMetric} supportedMetrics={supportedIds} onSaved={afterSave} onClose={() => setCheckIn(false)} /></div> : null}
         {!checkIn ? <>
-          <div className="page-heading"><div><p className="breadcrumb">{role === 'crew' ? 'Экипаж' : 'Наземная команда'} <ChevronRight size={13} aria-hidden="true" /> Демо-астронавт</p>
-            <h1>{tab === 'trends' ? 'Динамика показателей' : tab === 'system' ? 'Система и связь' : role === 'crew' ? 'Обзор состояния' : 'Мониторинг экипажа'}</h1>
-            <p className="heading-description">{tab === 'overview' ? 'Измерения, самочувствие и задачи в одном пространстве.' : tab === 'trends' ? 'Полная история за выбранный период. Пропуски остаются видимыми.' : 'Состояние подключения и доступные функции мониторинга.'}</p></div>
+          <div className="page-heading"><div><p className="breadcrumb"><button onClick={() => { changeTab('overview'); setSelectedSystem(null) }}>{role === 'crew' ? 'Экипаж' : 'Наземная команда'}</button> <ChevronRight size={13} aria-hidden="true" /> <span>Демо-астронавт</span></p>
+            <h1>{tab === 'nasa' ? 'Научная основа наблюдений' : tab === 'trends' ? 'Динамика показателей' : tab === 'system' ? 'Система и связь' : role === 'crew' ? 'Обзор состояния' : 'Мониторинг экипажа'}</h1>
+            <p className="heading-description">{tab === 'nasa' ? 'Риски и исследования NASA и CSA, связи с показателями и первоисточники.' : tab === 'overview' ? 'Измерения, самочувствие и задачи в одном пространстве.' : tab === 'trends' ? 'Полная история за выбранный период. Пропуски остаются видимыми.' : 'Состояние подключения и доступные функции мониторинга.'}</p></div>
             <button className="icon-button" aria-label="Обновить данные" title="Обновить данные" onClick={() => { refresh(); setRefreshVersion(value => value + 1) }}><RefreshCw size={17} aria-hidden="true" /></button>
           </div>
-          {tab === 'trends' ? <><Suspense fallback={<div className="panel loading-panel trend-placeholder">Загрузка графика…</div>}><TrendPanel metric={metric} supportedMetrics={supportedIds} onMetricChange={setMetric} refreshVersion={refreshVersion} onAdd={() => openMetricCheckIn(metric)} /></Suspense><section className="panel"><h2>{METRICS.find(item => item.id === metric)?.label}: оценка последнего измерения</h2><MetricHealth metric={metric} context={healthContext} /></section></> : tab === 'system' ? <>
+          {tab === 'nasa' ? <NasaCatalogPanel /> : tab === 'trends' ? <><Suspense fallback={<div className="panel loading-panel trend-placeholder">Загрузка графика…</div>}><TrendPanel metric={metric} supportedMetrics={supportedIds} onMetricChange={setMetric} refreshVersion={refreshVersion} onAdd={() => openMetricCheckIn(metric)} /></Suspense><section className="panel"><h2>{METRICS.find(item => item.id === metric)?.label}: оценка последнего измерения</h2><MetricHealth metric={metric} context={healthContext} onRecord={() => openMetricCheckIn(metric)} onHistory={() => document.querySelector(".trend-panel")?.scrollIntoView({ behavior: "smooth" })} /></section></> : tab === 'system' ? <>
             <div className="panel system-panel"><h2><Database size={18} aria-hidden="true" /> Состояние подключения</h2>
               <dl className="system-facts"><div><dt>Сервер</dt><dd>{loading ? 'Проверка…' : connected ? 'Доступен' : 'Недоступен'}</dd></div><div><dt>Последнее обновление</dt><dd>{lastUpdated ? formatTime(lastUpdated.toISOString()) : 'Ещё не получено'}</dd></div><div><dt>Хранение измерений</dt><dd>Локальная база данных</dd></div><div><dt>Источники</dt><dd>{sourceSet.join(', ') || 'Измерения пока не получены'}</dd></div></dl>
               <p className="note">Обновление каждые 5 секунд при открытой вкладке. После потери связи предыдущие данные остаются на экране.</p>
@@ -171,7 +174,6 @@ export default function App() {
             <Suspense fallback={<div className="loading-panel">Загрузка наземной консоли…</div>}><GroundConsole latest={latest} connected={connected} elapsedSeconds={freshnessElapsed} healthContext={healthContext} refreshVersion={refreshVersion} selectedSystem={selectedSystem} onSystemSelect={selectSystem} onOpenMetric={openMetric} onAddMetric={openMetricCheckIn} channels={groundChannels} onChannelsChange={setGroundChannels} days={groundDays} onDaysChange={setGroundDays} /></Suspense>
             <TaskPanel tasks={taskList} connected={connected} onChanged={refresh} />
           </> : <>
-            <HealthPanel context={healthContext} />
             <div className="summary-grid">
               <section className="panel coverage-panel"><h2>Полнота наблюдений</h2><div className="coverage-content"><CoverageGauge count={knownCount} total={supported.length} /><div><strong>{loading ? 'Получаем измерения' : supported.length && knownCount === supported.length ? 'Все показатели записаны' : `Без записи с известным временем: ${supported.length - knownCount}`}</strong><p>С известным временем измерения</p><span className="neutral-tag">Не оценка здоровья</span></div></div></section>
               <section className="panel session-panel"><h2>Сеанс наблюдения</h2><p className="session-title">Демо-миссия</p><dl><div><dt>Источники</dt><dd>{sourceSet.join(', ') || 'Ожидание данных'}</dd></div><div><dt>Обновлено</dt><dd>{lastUpdated ? formatTime(lastUpdated.toISOString()) : '—'}</dd></div></dl><span className={`status-tag ${connected ? 'online' : ''}`}>{connected ? 'Мониторинг подключён' : loading ? 'Подключение' : 'Нет связи'}</span></section>
@@ -187,8 +189,9 @@ export default function App() {
                   <span className="system-count">{configs.length ? `${count}/${configs.length}` : '—'}</span>
                 </button>
               })}</div><p className="note">Выберите область на схеме, чтобы отфильтровать показатели.</p></section>
-              <section className="panel attention-panel"><h2>О данных</h2>{unknownEntries.length ? <div className="data-notice"><strong>Время измерения неизвестно</strong><p>{unknownEntries.map(entry => METRICS.find(config => config.id === entry.metric)?.label).join(', ')}: последнее сообщение не содержит времени измерения. Оно не подтверждает свежесть.</p></div> : <div className="data-notice neutral"><strong>{loading ? 'Ожидание измерений' : knownCount ? 'Время измерений сохранено' : 'Начните с первого измерения'}</strong><p>{knownCount ? 'На карточках показаны последние значения с известным временем. В динамике можно посмотреть весь период.' : 'Запустите симулятор или внесите показания вручную.'}</p></div>}<p className="note">Свежесть — качество измерения. Цветная оценка — результат демо-правила. «Нет срабатываний» не означает, что все системы организма здоровы.</p></section>
+              <HealthPanel context={healthContext} compact />
             </div>
+            {unknownEntries.length ? <p className="data-notice note">Время последней доставки неизвестно: {unknownEntries.map(entry => METRICS.find(config => config.id === entry.metric)?.label).join(', ')}. Свежесть не подтверждена.</p> : null}
             <div className="section-heading metrics-heading"><div><h2>{selected?.label ?? 'Все показатели'}</h2>{selected ? <p className="note">{selected.description}</p> : null}</div>{selectedSystem ? <button className="text-button" onClick={() => setSelectedSystem(null)}>Показать все</button> : <span className="note">{supported.length} показателей</span>}</div>
             <SystemCheckInActions system={selectedSystem} onAdd={openMetricCheckIn} supportedMetrics={supportedIds} />
             {latest ? <p className="quality-context note">Оценка сервера: {formatTime(latest.evaluatedAt)}. Сроки различаются по показателям; время доставки не подтверждает свежесть.{!connected ? ' Показан предыдущий ответ; свежесть не подтверждена.' : ''}</p> : null}

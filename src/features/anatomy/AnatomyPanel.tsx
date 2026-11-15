@@ -63,6 +63,7 @@ export const AnatomyPanel = memo(function AnatomyPanel({ selected, onSelect, ava
     <div className="anatomy-caption">
       <span><i className="anatomy-legend-dot" aria-hidden="true" /> Наличие данных, не оценка здоровья</span>
       {healthStatuses ? <p>Жёлтый — требуется внимание, красный — срочная помощь по демо-правилам. Это оценка показателей системы, не диагноз органа.</p> : null}
+      {healthStatuses ? <p>На скелете подсвечивается область рядом с системой. Нажатие на кость выбирает кости и мышцы; для другой системы используйте подпись.</p> : null}
       {selected ? <button type="button" onClick={() => onSelect(null)}>Все системы</button> : <p>Выберите орган или подпись</p>}
       <a className="anatomy-credits" href="/anatomy-credits.txt" target="_blank" rel="noreferrer">Анатомия: BodyParts3D · условия использования</a>
     </div>

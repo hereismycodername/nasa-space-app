@@ -195,7 +195,7 @@ paths:
         for freshness. Raw measurements remain unchanged. No query parameters are accepted.
       responses:
         '200':
-          description: Six metric entries, explicit missing values and independent data quality.
+          description: Twelve metric entries on current servers; six on legacy servers, with explicit missing values and independent data quality.
           content:
             application/json:
               schema:
@@ -423,6 +423,40 @@ paths:
 
 components:
   schemas:
+    ResearchInsight:
+      type: object
+      required: [metric, catalogVersion, observation, measurementId, quality, contexts, actions]
+      properties:
+        metric:
+          type: string
+          enum: [sleepHours, heartRate, systolicPressure, diastolicPressure, exerciseMinutes]
+        catalogVersion: {type: string}
+        observation: {type: string}
+        measurementId: {type: [string, 'null']}
+        quality:
+          type: string
+          enum: [missing, fresh, stale, unknownTime, clockSkew]
+        contexts:
+          type: array
+          items:
+            type: object
+            required: [title, explanation, projectUse, limitation, sourceUrl, sourceAgency, sourceSection]
+            properties:
+              title: {type: string}
+              explanation: {type: string}
+              projectUse: {type: string}
+              limitation: {type: string}
+              sourceUrl: {type: string, format: uri}
+              sourceAgency: {type: string, enum: [NASA, CSA]}
+              sourceSection: {type: string}
+        actions:
+          type: array
+          items:
+            type: object
+            required: [kind, label]
+            properties:
+              kind: {type: string, enum: [record, history, guidance]}
+              label: {type: string}
     Metric:
       type: string
       enum:
@@ -1152,12 +1186,16 @@ components:
           type: integer
           enum:
           - 15
+          - 60
+          - 3600
           - 7200
           - 46800
+          - 86400
           - 93600
           description: 'Demo policy in seconds: heartRate 15; spo2 7200; both pressures, temperature, headache
             and backPain 46800; sleepHours, mood, glucose, visionBlur and exerciseMinutes 93600. These operational
-            freshness windows are not medical thresholds.'
+            freshness windows are not medical thresholds. Values 60, 3600 and 86400 are retained only for
+            older server responses and the documented legacy fixtures.'
         ageSeconds:
           type:
           - number
@@ -1654,6 +1692,11 @@ components:
             it contains the original first six metrics. Clients discover supported metrics from this response.
           items:
             $ref: '#/components/schemas/MetricQuality'
+        researchInsights:
+          type: array
+          description: Server-owned NASA context for sleep, pulse, pressure and exercise. Snapshot facts only, not clinical rules or trends. Optional for older servers. Actions navigate existing client workflows and do not write automatically.
+          items:
+            $ref: '#/components/schemas/ResearchInsight'
         health:
           description: Always returned by BE-08. Optional here only to describe legacy BE-06 responses/examples;
             clients must show notEvaluated when connecting to an older server without this field.

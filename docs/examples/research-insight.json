@@ -1,0 +1,32 @@
+{
+  "metric": "heartRate",
+  "catalogVersion": "space-health-research-2026-11-15-v2",
+  "observation": "Записано: 72 bpm. Это одно наблюдение, не диагноз.",
+  "measurementId": "example-pulse",
+  "quality": "fresh",
+  "contexts": [
+    {
+      "title": "Кровообращение в невесомости",
+      "explanation": "Невесомость меняет работу сердца, сосудов и кровообращения.",
+      "projectUse": "Показываем пульс и давление вместе с историей для наблюдения за изменениями.",
+      "limitation": "Эти измерения не определяют причину изменений и не диагностируют последствия невесомости.",
+      "sourceUrl": "https://www.nasa.gov/hrp/risks/",
+      "sourceSection": "Risk of Cardiovascular Adaptations",
+      "sourceAgency": "NASA"
+    }
+  ],
+  "actions": [
+    {
+      "kind": "record",
+      "label": "Записать повторное измерение"
+    },
+    {
+      "kind": "history",
+      "label": "Посмотреть историю показателя"
+    },
+    {
+      "kind": "guidance",
+      "label": "Открыть оценку BE-08 и рекомендации"
+    }
+  ]
+}

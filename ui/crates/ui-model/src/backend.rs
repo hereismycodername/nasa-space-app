@@ -5,6 +5,7 @@
 use crate::types::*;
 
 pub trait Backend {
+    fn research_insight(&self, _indicator: &str) -> Option<crate::research::ResearchInsight> { None }
     /// The explicit standalone demo has additional simulated capabilities.
     fn is_demo(&self) -> bool { true }
     /// Server-owned rules, evidence and flight guidance; independent of data freshness.
