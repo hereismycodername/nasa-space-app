@@ -67,8 +67,9 @@ export function MeasurementSeriesChart({ series, compact = false, syncId }: { se
         <LineChart data={chart.points} syncId={syncId} syncMethod="value" margin={compact ? { top: 5, right: 20, left: 0, bottom: 5 } : undefined}>
           <CartesianGrid stroke="#29323e" vertical={false} />
           <XAxis dataKey="time" type="number" scale="time" domain={chart.domain} ticks={chart.ticks}
-            allowDataOverflow interval="preserveStartEnd" minTickGap={32} tickFormatter={value => tickDate.format(new Date(value))} />
-          <YAxis tickFormatter={formatValue} width={compact ? 48 : 96} domain={['auto', 'auto']} unit={compact ? undefined : ` ${formatUnit(series.unit, series.metric)}`} />
+            allowDataOverflow interval="preserveStartEnd" minTickGap={32} tickMargin={8} tickFormatter={value => tickDate.format(new Date(value))} />
+          <YAxis tickFormatter={formatValue} width={compact ? 64 : 80} tickMargin={8}
+            padding={{ bottom: 12 }} domain={['auto', 'auto']} />
           <Tooltip filterNull={false} active={hoveredPoint ? true : undefined}
             content={props => <SeriesTooltip {...props} series={series} hoveredPoint={hoveredPoint} />} />
           <Line dataKey="value" name={series.aggregation === 'mean' ? 'Среднее' : 'Последнее'} stroke="#97b6df"

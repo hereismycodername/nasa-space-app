@@ -1,5 +1,6 @@
 //! NASA-style look, following what NASA publishes:
 //!  * Horizon Design System typography: Inter (display / headings), Public Sans (body), DM Mono (numbers, labels).
+//!    Cyrillic, which Public Sans and DM Mono lack, is set in Inter.
 //!  * Horizon blue as the single accent; neutral greys.
 //!  * "Quiet / dark" crew displays: colour is reserved for departures from normal (NASA crew-interface
 //!    guidance), so NORMAL is neutral, WATCH is amber, ACT is red, NO DATA is cyan.
@@ -78,7 +79,13 @@ pub fn panel_shape(r: Rect, cut: f32, fill: Color32, line: Stroke) -> Shape {
     Shape::convex_polygon(chamfer(inner, cut), fill, line)
 }
 
-fn install_fonts(ctx: &egui::Context) {
+/// Body text in Russian: Inter, which has Cyrillic, sets the whole text, so digits and punctuation
+/// match the letters. Otherwise Public Sans, with Inter only as the Cyrillic fallback.
+pub fn set_russian_text(ctx: &egui::Context, russian: bool) {
+    install_fonts(ctx, russian);
+}
+
+fn install_fonts(ctx: &egui::Context, russian: bool) {
     let mut f = FontDefinitions::default();
     let add = |f: &mut FontDefinitions, name: &str, bytes: &'static [u8]| {
         f.font_data.insert(name.to_owned(), Arc::new(FontData::from_static(bytes)));
@@ -86,16 +93,23 @@ fn install_fonts(ctx: &egui::Context) {
     add(&mut f, "PublicSans", include_bytes!("../assets/fonts/PublicSans.ttf"));
     add(&mut f, "Inter", include_bytes!("../assets/fonts/Inter.ttf"));
     add(&mut f, "DMMono", include_bytes!("../assets/fonts/DMMono-Regular.ttf"));
-    f.families.entry(FontFamily::Proportional).or_default().insert(0, "PublicSans".into());
-    f.families.entry(FontFamily::Monospace).or_default().insert(0, "DMMono".into());
+    // Public Sans and DM Mono have no Cyrillic. Inter, the third Horizon typeface, does: it follows them
+    // in both families, so Russian text stays within NASA's type system instead of egui's defaults.
+    let proportional = f.families.entry(FontFamily::Proportional).or_default();
+    let (first, second) = if russian { ("Inter", "PublicSans") } else { ("PublicSans", "Inter") };
+    proportional.insert(0, first.into());
+    proportional.insert(1, second.into());
+    let monospace = f.families.entry(FontFamily::Monospace).or_default();
+    monospace.insert(0, "DMMono".into());
+    monospace.insert(1, "Inter".into());
     let mut disp = vec!["Inter".to_owned()];
-    disp.extend(f.families.get(&FontFamily::Proportional).cloned().unwrap_or_default());
+    disp.extend(f.families.get(&FontFamily::Proportional).cloned().unwrap_or_default().into_iter().filter(|name| name != "Inter"));
     f.families.insert(FontFamily::Name("display".into()), disp);
     ctx.set_fonts(f);
 }
 
 pub fn apply(ctx: &egui::Context) {
-    install_fonts(ctx);
+    install_fonts(ctx, false);
     let mut v = egui::Visuals::dark();
     v.panel_fill = BG;
     v.window_fill = SURFACE;

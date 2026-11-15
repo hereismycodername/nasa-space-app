@@ -17,6 +17,9 @@ cargo run --locked --manifest-path ui/Cargo.toml -p ui-gui -- --api-url http://1
 
 `--api-url` overrides `ASTROCHECK_API_URL`, whose default is `http://127.0.0.1:8080`.
 `--ground` starts TUI in Ground; GUI uses `--role ground`. Both support `--help`.
+The GUI live window speaks Russian (default) or English: `--lang ru|en`, `ASTROCHECK_LANG`, or the
+RU / EN switch in its top bar. Texts written by the server (rule explanations, actions, task titles)
+are shown as received. The live window uses the same instrument-panel look as the `--demo` prototype.
 The API owns the single `demo-astronaut` profile, measurements and task completion.
 The clients discover supported metrics from the latest-measurements response: a
 six-metric registry remains supported, and the additional six appear only when the
