@@ -191,7 +191,7 @@ SIM_COUNT=10 npm run simulator
 
 ## Демо-сценарии
 
-Сценарий показа и чек-лист демо-машины: [docs/demo-runbook.md](docs/demo-runbook.md).
+Сценарий показа и чек-лист демо-машины: [docs/demo-runbook.md](docs/demo-runbook.md). Текст питча: [docs/pitch.md](docs/pitch.md).
 
 Все четыре сценария включают spo2, glucose, visionBlur, exerciseMinutes, headache и backPain; attention меняет их синтетические профили за последние трое суток.
 Live по умолчанию отправляет только пульс, поэтому spo2 в демо ожидаемо становится stale через 60 секунд.
